@@ -1,0 +1,322 @@
+.admin-store-modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(15, 23, 42, 0.28);
+  backdrop-filter: blur(4px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1.4rem;
+  z-index: 1200;
+}
+
+.admin-store-modal-card {
+  width: min(94vw, 1380px);
+  height: min(90vh, 900px);
+  background: linear-gradient(180deg, #ffffff 0%, #fff8f8 100%);
+  border: 1px solid rgba(218, 185, 191, 0.95);
+  border-radius: 2rem;
+  box-shadow: 0 32px 80px rgba(15, 23, 42, 0.18);
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+.admin-store-modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 1rem 1.25rem;
+  border-bottom: 1px solid rgba(226, 209, 213, 0.92);
+  background: linear-gradient(180deg, #ffffff 0%, #fff5f6 100%);
+}
+
+.admin-store-modal-header h3 {
+  margin: 0;
+  font-size: 1.15rem;
+  font-weight: 800;
+  color: #1f2937;
+}
+
+.admin-store-modal-header p {
+  margin: 0.18rem 0 0;
+  font-size: 0.82rem;
+  color: #7a7f87;
+}
+
+.admin-store-modal-close {
+  border: 1px solid #cdd3db;
+  border-radius: 999px;
+  background: #fff;
+  color: #1f2937;
+  font-size: 0.82rem;
+  font-weight: 700;
+  padding: 0.65rem 1rem;
+  cursor: pointer;
+}
+
+.admin-store-modal-body {
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+  padding: 1rem 1.1rem 1.2rem;
+  background: transparent;
+}
+
+.admin-store-modal-body .store-outer-container {
+  min-height: 100%;
+}
+
+.admission-dashboard-page .accountant-grid {
+  gap: 0.72rem;
+}
+
+.admission-dashboard-page .accountant-row-bottom {
+  min-height: 0;
+}
+
+.admission-dashboard-page .accountant-ticket-card {
+  display: flex !important;
+  flex-direction: column !important;
+  min-height: 0;
+  height: 100%;
+  overflow: hidden;
+}
+
+.admission-tickets-card {
+  display: flex !important;
+  flex-direction: column !important;
+  min-height: 0 !important;
+  height: 100% !important;
+  overflow: hidden !important;
+}
+
+.admission-events-summary {
+  display: flex;
+  gap: 0.8rem;
+  flex-wrap: nowrap;
+  overflow-x: auto;
+}
+
+.admission-events-summary-line {
+  white-space: nowrap;
+  flex: 0 0 auto;
+}
+
+.admission-events-card .accountant-card-filters,
+.admission-livechat-card .accountant-card-filters {
+  top: 0;
+  align-self: center;
+}
+
+.admission-events-card .accountant-card-filter,
+.admission-livechat-card .accountant-card-filter {
+  top: 0;
+}
+
+.admission-events-card .accountant-card-header,
+.admission-livechat-card .accountant-card-header {
+  align-items: flex-start;
+}
+
+.admission-tickets-card .tickets-container {
+  background: transparent;
+  min-height: 0 !important;
+  height: 100% !important;
+  flex: 1 1 auto !important;
+  padding: 0 !important;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden !important;
+}
+
+.admission-tickets-card .tickets-header {
+  font-size: 1rem;
+  font-weight: 700;
+  color: #000;
+  margin-bottom: 0.35rem;
+  text-align: left;
+}
+
+.admission-tickets-card .tickets-tabs {
+  gap: 0.65rem;
+  margin-bottom: 0.35rem;
+}
+
+.admission-tickets-card .tickets-tab {
+  background: transparent;
+  border: 0;
+  border-radius: 0;
+  padding: 0;
+  font-size: 0.72rem;
+  font-weight: 700;
+  color: #7f7f7f;
+}
+
+.admission-tickets-card .tickets-tab.active {
+  color: #000;
+  border-bottom: 2px solid #f36b79;
+}
+
+.admission-tickets-card .tickets-container .tickets-content {
+  width: 100%;
+  height: auto !important;
+  min-height: 0 !important;
+  flex: 1 1 auto !important;
+  background: transparent;
+  border-radius: 0;
+  padding: 0.08rem 0 0;
+  overflow: hidden !important;
+  display: flex;
+  flex-direction: column;
+}
+
+.admission-tickets-card .tc-staffAssignSection,
+.admission-tickets-card .tickets-student-panel {
+  min-height: 0 !important;
+  height: auto !important;
+  flex: 1 1 auto !important;
+  background: transparent;
+  padding: 0;
+  border: 0;
+  overflow: hidden !important;
+}
+
+.admission-tickets-card .tickets-student-panel-shell,
+.admission-tickets-card .tickets-student-grid-shell {
+  min-height: 0 !important;
+  height: auto !important;
+  flex: 1 1 auto !important;
+  overflow: hidden !important;
+}
+
+.admission-tickets-card .tc-staffHeader,
+.admission-tickets-card .payment-panel-header {
+  width: 100%;
+  padding-top: 0;
+  padding-bottom: 0;
+  background: transparent;
+}
+
+.admission-tickets-card .tc-staffTitle {
+  font-size: 0.95rem;
+  font-weight: 700;
+  color: #000;
+  text-align: left;
+}
+
+.admission-tickets-card .tc-teacherGrid,
+.admission-tickets-card .tickets-student-grid {
+  flex: 1 1 auto !important;
+  min-height: 0 !important;
+  max-height: 100% !important;
+  overflow: auto !important;
+  padding-top: 0.35rem;
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+.admission-tickets-card .tc-teacherGrid::-webkit-scrollbar,
+.admission-tickets-card .tickets-student-grid::-webkit-scrollbar {
+  width: 0;
+  height: 0;
+  background: transparent;
+}
+
+.admission-tickets-card .tc-teacherRow {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(5.2rem, 1fr));
+  gap: 0.18rem;
+  align-content: start;
+}
+
+.admission-tickets-card .tc-teacherCard,
+.admission-tickets-card .tickets-student-card {
+  background: transparent;
+  padding: 0;
+  border-radius: 0;
+  min-height: auto;
+}
+
+.admission-tickets-card .tc-teacherAvatar,
+.admission-tickets-card .tickets-student-photo-placeholder,
+.admission-tickets-card .tickets-student-photo {
+  width: 3.1rem;
+  height: 3.1rem;
+  margin-bottom: 0.5rem;
+}
+
+.admission-tickets-card .tc-teacherName,
+.admission-tickets-card .tickets-student-name {
+  font-size: 0.52rem;
+  font-weight: 700;
+  color: #000;
+  line-height: 1.04;
+}
+
+.admission-tickets-card .tickets-student-id {
+  font-size: 0.44rem;
+  color: #7f7f7f;
+  line-height: 1.02;
+}
+
+.admission-tickets-card .payment-class-section-dropdown .btn-dropdown-FeesManagement,
+.admission-tickets-card .payment-panel-header .btn-dropdown-FeesManagement,
+.admission-tickets-card .payment-panel-header input.btn-dropdown-FeesManagement {
+  height: 1.9rem;
+  border: 1px solid #7c7c7c;
+  border-radius: 0.62rem;
+  font-size: 0.72rem;
+  color: #7f7f7f;
+  background: #fff;
+}
+
+/* Active selectors after removing `.admission-tickets-card` class in JSX */
+.admission-dashboard-page .accountant-ticket-card .tickets-container {
+  min-height: 0 !important;
+  height: 100% !important;
+  max-height: 100% !important;
+  padding: 0 !important;
+  display: flex !important;
+  flex-direction: column !important;
+  overflow: hidden !important;
+}
+
+.admission-dashboard-page .accountant-ticket-card .tickets-content {
+  flex: 1 1 auto !important;
+  min-height: 0 !important;
+  height: auto !important;
+  overflow: hidden !important;
+  display: flex !important;
+  flex-direction: column !important;
+}
+
+.admission-dashboard-page .accountant-ticket-card .tc-staffAssignSection,
+.admission-dashboard-page .accountant-ticket-card .tickets-student-panel,
+.admission-dashboard-page .accountant-ticket-card .tickets-student-panel-shell,
+.admission-dashboard-page .accountant-ticket-card .tickets-student-grid-shell {
+  flex: 1 1 auto !important;
+  min-height: 0 !important;
+  height: auto !important;
+  overflow: hidden !important;
+  display: flex !important;
+  flex-direction: column !important;
+}
+
+.admission-dashboard-page .accountant-ticket-card .tc-teacherGrid,
+.admission-dashboard-page .accountant-ticket-card .tickets-student-grid {
+  flex: 1 1 auto !important;
+  min-height: 0 !important;
+  max-height: 100% !important;
+  overflow: auto !important;
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+.admission-dashboard-page .accountant-ticket-card .tc-teacherGrid::-webkit-scrollbar,
+.admission-dashboard-page .accountant-ticket-card .tickets-student-grid::-webkit-scrollbar {
+  width: 0;
+  height: 0;
+  background: transparent;
+}
