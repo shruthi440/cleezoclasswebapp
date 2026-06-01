@@ -19,6 +19,7 @@ import '../STYLES/externalScroll.css'
 // --- NEW IMPORT FOR BACKEND CALLS ---
 import axios from 'axios'; 
 // --- END NEW IMPORT ---
+import { resolveInstituteDisplayName } from "../shared/instituteNameUtils";
 import {
   LineChart,
   Line,
@@ -1276,11 +1277,28 @@ const handleStudentTransactions = useCallback(async () => {
     fetch(`https://cleezoclass.com:4000/api/institute?dbName=${currentDbName}`)
       .then((res) => res.json())
       .then((data) => {
-        setSchoolName(data.institute_name || "Unknown School");
+        const resolvedSchoolName = resolveInstituteDisplayName({
+          apiInstituteName: data?.institute_name || data?.instituteName || data?.schoolName || data?.name,
+          storedSchoolName: localStorage.getItem("schoolName"),
+          storedInstituteName: localStorage.getItem("instituteName"),
+          schoolCode: currentDbName,
+          fallback: "Unknown School",
+        });
+        setSchoolName(resolvedSchoolName);
+        localStorage.setItem("schoolName", resolvedSchoolName);
+        localStorage.setItem("instituteName", resolvedSchoolName);
       })
       .catch((err) => {
         console.error("Error fetching school name:", err);
-        setSchoolName("Unknown School");
+        const fallbackSchoolName = resolveInstituteDisplayName({
+          storedSchoolName: localStorage.getItem("schoolName"),
+          storedInstituteName: localStorage.getItem("instituteName"),
+          schoolCode: currentDbName,
+          fallback: "Unknown School",
+        });
+        setSchoolName(fallbackSchoolName);
+        localStorage.setItem("schoolName", fallbackSchoolName);
+        localStorage.setItem("instituteName", fallbackSchoolName);
       });
   }, []);
 

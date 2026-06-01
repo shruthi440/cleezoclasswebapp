@@ -779,6 +779,18 @@ font-weight: 900px;
   min-height: 0;
 }
 
+.tt-academics-right-column .admin-events-livechat,
+.tt-academics-right-column .admin-events-livechat .tt-academics-side-header,
+.tt-academics-right-column .admin-events-livechat .tt-academics-side-subtitle,
+.tt-academics-right-column .admin-events-livechat .tt-academics-po-list {
+  text-align: left;
+  align-items: flex-start;
+}
+
+.tt-academics-right-column .admin-events-livechat .tt-academics-request-count {
+  align-items: flex-start;
+}
+
 .tt-academics-side-header {
   display: flex;
   justify-content: space-between;

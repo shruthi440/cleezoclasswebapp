@@ -268,10 +268,28 @@ font-weight: 600;
   font-size: 0.95rem;
   font-weight: 600;
   color: #1f2937;
-  white-space: nowrap;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  line-height: 1.05;
+  white-space: normal;
   overflow: hidden;
-  text-overflow: ellipsis;
   max-width: 220px;
+}
+
+.dashboard-school-name-line {
+  display: block;
+  min-width: 0;
+}
+
+.dashboard-school-name-line-primary {
+  font-size: 0.95rem;
+  font-weight: 700;
+}
+
+.dashboard-school-name-line-secondary {
+  font-size: 0.85rem;
+  font-weight: 600;
 }
 
 .dashboard-topbar-right {
@@ -2183,10 +2201,28 @@ height: ;
   font-size: 0.95rem;
   font-weight: 600;
   color: #1f2937;
-  white-space: nowrap;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  line-height: 1.05;
+  white-space: normal;
   overflow: hidden;
-  text-overflow: ellipsis;
   max-width: 220px;
+}
+
+.accountant-school-name-line {
+  display: block;
+  min-width: 0;
+}
+
+.accountant-school-name-line-primary {
+  font-size: 0.95rem;
+  font-weight: 700;
+}
+
+.accountant-school-name-line-secondary {
+  font-size: 0.85rem;
+  font-weight: 600;
 }
 
 .accountant-topbar-right {
@@ -2784,6 +2820,13 @@ height: ;
   top: -0.62rem;
 }
 .accountant-outstanding-card .accountant-card-filters {
+  top: 0;
+}
+
+.accountant-outstanding-search {
+  width: min(12.5rem, 100%);
+  flex: 1 1 12.5rem;
+  min-width: 9.5rem;
   top: 0;
 }
 

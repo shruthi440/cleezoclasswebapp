@@ -39,6 +39,54 @@
   color: #1f2937;
 }
 
+.dashboard-school-brand,
+.accountant-school-brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  min-width: 0;
+}
+
+.dashboard-school-logo,
+.accountant-school-logo {
+  width: auto;
+  max-width: 6.2rem;
+  height: 3.6rem;
+  object-fit: contain;
+}
+
+.dashboard-school-name,
+.accountant-school-name {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  line-height: 1.05;
+  white-space: normal;
+  overflow: hidden;
+  max-width: 220px;
+  font-size: 0.95rem;
+  font-weight: 600;
+  color: #1f2937;
+}
+
+.dashboard-school-name-line,
+.accountant-school-name-line {
+  display: block;
+  min-width: 0;
+}
+
+.dashboard-school-name-line-primary,
+.accountant-school-name-line-primary {
+  font-size: 0.95rem;
+  font-weight: 700;
+}
+
+.dashboard-school-name-line-secondary,
+.accountant-school-name-line-secondary {
+  font-size: 0.85rem;
+  font-weight: 600;
+}
+
 .admin-store-modal-header p {
   margin: 0.18rem 0 0;
   font-size: 0.82rem;
@@ -152,7 +200,7 @@
 .admission-events-card .accountant-card-filters,
 .admission-livechat-card .accountant-card-filters {
   top: 0;
-  align-self: center;
+  align-self: flex-end;
 }
 
 .admission-events-card .accountant-card-filter,
@@ -163,6 +211,28 @@
 .admission-events-card .accountant-card-header,
 .admission-livechat-card .accountant-card-header {
   align-items: flex-start;
+}
+
+.admission-livechat-card,
+.admission-livechat-card .accountant-card-header,
+.admission-livechat-card .accountant-card-filters,
+.admission-livechat-card .chat-list {
+  text-align: left;
+  align-items: flex-start;
+}
+
+.admission-livechat-card .accountant-card-filters {
+  justify-content: flex-end;
+}
+
+.admission-livechat-card .accountant-feetype-count {
+  margin-left: auto;
+  justify-content: flex-end;
+}
+
+.admission-livechat-card .chat-list > * {
+  justify-items: flex-start;
+  text-align: left;
 }
 
 .admission-dashboard-page .accountant-ticket-card .tickets-container {

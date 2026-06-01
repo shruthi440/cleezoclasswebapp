@@ -26,16 +26,19 @@
 
 .accountant-reports-card-row {
   display: grid;
-  grid-template-columns: repeat(7, minmax(0, 1fr));
-  gap: 0.85rem;
+  grid-template-columns: repeat(8, minmax(0, 1fr));
+  gap: 0.6rem;
+  justify-items: center;
 }
 
 .accountant-reports-card {
   border: 2px solid #efefef;
   border-radius: 20px;
   background: #fff;
-  min-height: 118px;
-  padding: 10px 8px;
+  width: 100%;
+  max-width: 250px;
+  min-height: 114px;
+  padding: 9px 7px;
   box-shadow: 0 3px 10px rgba(0, 0, 0, 0.08);
   display: flex;
   flex-direction: column;
@@ -62,14 +65,14 @@
 }
 
 .accountant-reports-card img {
-  width: 46px;
-  height: 46px;
+  width: 50px;
+  height: 50px;
   object-fit: contain;
   margin-bottom: 6px;
 }
 
 .accountant-reports-card-title {
-  font-size: 15px;
+  font-size: 16px;
   line-height: 1.05;
   font-weight: 800;
   color: #212121;
@@ -77,7 +80,7 @@
 }
 
 .accountant-reports-card-subtitle {
-  font-size: 10px;
+  font-size: 10.5px;
   color: #6a6a6a;
   margin-top: 2px;
   text-align: center;
@@ -346,9 +349,9 @@
 }
 @media (max-width:1200px) {
   div.accountant-main-area>div.accountant-reports-content>div.accountant-reports-card-row>button.accountant-reports-card {
-    width: 100px !important;
-    height: 100px !important;
-    font-size: 1.1rem;
+    width: 90px !important;
+    height: 90px !important;
+    font-size: 1rem;
     min-height: auto;
     margin-top: 0;
   }
@@ -362,7 +365,7 @@
   }
 
   .accountant-reports-card-row {
-    grid-template-columns: repeat(7, minmax(0, 1fr));
+    grid-template-columns: repeat(8, minmax(0, 1fr));
 
   }
   .accountant-reports-toolbar{

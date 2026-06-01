@@ -1,11 +1,20 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import axios from "axios";
 import * as XLSX from "xlsx";
-import { Link, useNavigate } from "react-router-dom";
+import { Link, useLocation, useNavigate } from "react-router-dom";
 import "./AccountantDashboardnew.css";
 import "./AccountantReportsPage.css";
 import EditableProfileMenu from "../shared/EditableProfileMenu.jsx";
-
+import InstituteBrand from "../shared/InstituteBrand.jsx";
+import { resolveInstituteDisplayName } from "../shared/instituteNameUtils";
+import DaywiseIcon from "../assets/Daywise.png";
+import TransactionIcon from "../assets/Transactions2.png";
+import FeesReportIcon from "../assets/Fees Report.png";
+import DueReportIcon from "../assets/Due Report.png";
+import FeeTypeIcon from "../assets/Fee Type.png";
+import DiscountsIcon from "../assets/Discounts.png";
+import ReferralsIcon from "../assets/Referrals.png";
+import FeesSearchIcon from "../assets/Fees Search.png";
 import collectFeeIcon from "../assets/collect.png";
 import addFeeIcon from "../assets/Navbar-AddFee.png";
 import expenseIcon from "../assets/Navbar-Expenses.png";
@@ -22,7 +31,7 @@ import campaignStaffIcon from "../assets/Campaign_Staff.png";
 import timelineIcon from "../assets/Timeline.png";
 import feesSearchIcon from "../assets/user (1).png";
 
-type ReportView = "main" | "ledger" | "previous" | "complete" | "bus" | "studentTransactions" | "paid" | "unpaid";
+type ReportView = "main" | "ledger" | "previous" | "complete" | "bus" | "studentTransactions" | "paid" | "unpaid" | "discounts" | "referrals" | "feeType";
 type ReportRow = Record<string, any>;
 
 type Filters = {
@@ -155,13 +164,21 @@ const getDefaultMonthRange = () => {
 };
 
 const reportCards = [
-  { key: "ledger", title: "Ledger", subtitle: "Today Ledger", icon: timelineIcon },
-  { key: "previous", title: "Previous Due", subtitle: "Pending Report", icon: reportIcon },
-  { key: "complete", title: "Complete Fee", subtitle: "Summary Report", icon: campaignAutomatedIcon },
-  { key: "bus", title: "Bus/Residential", subtitle: "Payment Report", icon: campaignStaffIcon },
-  { key: "paid", title: "Paid", subtitle: "Collection Report", icon: transactionsIcon },
-  { key: "main", title: "Unpaid", subtitle: "Due Report", icon: transactionsIcon },
-  { key: "studentTransactions", title: "Transactions", subtitle: "Student Report", icon: transactionsIcon },
+  { key: "ledger", title: "Day-wise", subtitle: " Ledger", icon: DaywiseIcon },
+    { key: "studentTransactions", title: "Transactions", subtitle: "Student Report", icon: TransactionIcon },
+
+  // { key: "previous", title: "Previous Due", subtitle: "Pending Report", icon: reportIcon },
+  { key: "complete", title: "Fees Report", subtitle: "Total Fee & Installments", icon: FeesReportIcon },
+  // { key: "bus", title: "Bus/Residential", subtitle: "Payment Report", icon: campaignStaffIcon },
+  // { key: "paid", title: "Paid", subtitle: "Collection Report", icon: transactionsIcon },
+  { key: "main", title: "Due Report", subtitle: "Current & previous", icon: DueReportIcon },
+    { key: "feeType", title: "Fee Type", subtitle: "Tuition,books...etc", icon: FeeTypeIcon },
+    { key: "discounts", title: "Discounts", subtitle: "Fees and closings", icon: DiscountsIcon },
+
+            { key: "referrals", title: "Referrals", subtitle: " Reference", icon: ReferralsIcon },
+                { key: "FeesSearch", title: "Fees Search", subtitle: "Student transactions", icon: FeesSearchIcon },
+
+
 ] as const;
 
 const STATIC_TRANSACTION_PAID_KEYS = new Set([
@@ -190,6 +207,28 @@ const STATIC_FEE_BASE_KEYS = new Set([
   "previous",
   "saving",
   "savings",
+]);
+
+const DISCOUNT_REPORT_KEYS = new Set([
+  "discount",
+  "Discount",
+  "tuition_discount",
+  "fee_discount",
+  "bus_discount",
+  "uniform_discount",
+  "exam_discount",
+  "stationary_discount",
+  "sports_discount",
+  "guides_discount",
+  "belt_discount",
+  "tie_discount",
+  "cultural_activities_discount",
+  "anual_discount",
+  "library_discount",
+  "transportation_discount",
+  "xyz_discount",
+  "abc_discount",
+  "Admission_Discount",
 ]);
 
 const NON_FEE_REPORT_KEYS = new Set([
@@ -308,6 +347,96 @@ const getDynamicFeeValue = (row: ReportRow, baseKey: string) =>
     getAny(row, [baseKey, `${baseKey}_fee`, `${baseKey}_fees`, `${baseKey}_amount`, baseKey.toUpperCase()], 0)
   );
 
+const getDynamicDiscountColumns = (rows: ReportRow[]) => {
+  const columns = new Set<string>();
+
+  rows.forEach((row) => {
+    Object.entries(row || {}).forEach(([key, value]) => {
+      const trimmedKey = String(key || "").trim();
+      const lowerKey = trimmedKey.toLowerCase();
+      if (!trimmedKey) return;
+      if (lowerKey === "discount_reason" || lowerKey === "reason" || lowerKey === "fee_type") return;
+      if (!lowerKey.includes("discount")) return;
+      if (toAmount(value) <= 0 && lowerKey !== "discount") return;
+      if (DISCOUNT_REPORT_KEYS.has(trimmedKey) || lowerKey.endsWith("_discount") || lowerKey === "discount") {
+        columns.add(trimmedKey);
+      }
+    });
+  });
+
+  return Array.from(columns).sort((a, b) => a.localeCompare(b, undefined, { sensitivity: "base" }));
+};
+
+const getDiscountReason = (row: ReportRow) =>
+  getAny(row, ["discount_reason", "discountReason", "reason", "editReason"], "-");
+
+const isReferralDiscountRow = (row: ReportRow) => {
+  const reason = String(getDiscountReason(row) || "").trim().toLowerCase();
+  if (!reason || reason === "-") return false;
+  return ["staff", "parent", "sibling"].some((term) => reason.includes(term));
+};
+
+const normalizeFeeTypeRow = (row: ReportRow) => ({
+  ...row,
+  feeName: getAny(row, ["feeName", "fee_name"], ""),
+  feesType: getAny(row, ["feesType", "fees_type", "feeType"], ""),
+  scope: getAny(row, ["scope"], "All"),
+  frequency: getAny(row, ["frequency"], "One time"),
+  installments: getAny(row, ["installments"], 1),
+});
+
+const normalizeFeeTypeMatchKey = (value: any) =>
+  String(value || "")
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "")
+    .replace(/fees?$/, "")
+    .replace(/fee$/, "");
+
+const getFeeTypeMatchKeys = (value: any) => {
+  const baseKey = normalizeFeeTypeMatchKey(value);
+  if (!baseKey) return [];
+
+  const aliases = new Set<string>([baseKey]);
+
+  if (baseKey === "guide" || baseKey === "guides") {
+    aliases.add("guide");
+    aliases.add("guides");
+  }
+
+  if (baseKey === "stationary" || baseKey === "stationery") {
+    aliases.add("stationary");
+    aliases.add("stationery");
+  }
+
+  if (baseKey === "belt" || baseKey === "beltfee") {
+    aliases.add("belt");
+    aliases.add("beltfee");
+  }
+
+  if (baseKey === "transport" || baseKey === "transportation" || baseKey === "transportfee") {
+    aliases.add("transport");
+    aliases.add("transportation");
+    aliases.add("transportfee");
+  }
+
+  return Array.from(aliases);
+};
+
+const buildActiveFeeTypeKeySet = (rows: ReportRow[]) => {
+  const keys = new Set<string>();
+
+  rows.forEach((row) => {
+    [row?.feeName, row?.fee_name, row?.feesType, row?.fees_type, row?.feeType].forEach((value) => {
+      getFeeTypeMatchKeys(value).forEach((key) => {
+        if (key) keys.add(key);
+      });
+    });
+  });
+
+  return keys;
+};
+
 const getDynamicPaidValue = (row: ReportRow, baseKey: string) =>
   toAmount(getAny(row, [`${baseKey}_paid`, `${baseKey}_fee_paid`, `${baseKey.toUpperCase()}_PAID`], 0));
 
@@ -316,6 +445,7 @@ const hasAnyAmount = (rows: ReportRow[], getter: (row: ReportRow) => any) =>
 
 const AccountantReportsPage: React.FC = () => {
   const navigate = useNavigate();
+  const location = useLocation();
   const currentFinancialYear = getCurrentFinancialYear();
   const currentFyStart = Number(currentFinancialYear.split("-")[0]);
   const { firstDay, lastDay } = getDefaultMonthRange();
@@ -332,6 +462,7 @@ const AccountantReportsPage: React.FC = () => {
   });
   const [currentPage, setCurrentPage] = useState(1);
   const [activeView, setActiveView] = useState<ReportView>("main");
+  const [activeCardKey, setActiveCardKey] = useState<string>("main");
 
   const [classList, setClassList] = useState<any[]>([]);
   const [sectionMap, setSectionMap] = useState<any[]>([]);
@@ -343,9 +474,13 @@ const AccountantReportsPage: React.FC = () => {
   const [busData, setBusData] = useState<ReportRow[]>([]);
   const [completeFeeData, setCompleteFeeData] = useState<ReportRow[]>([]);
   const [studentTransactions, setStudentTransactions] = useState<ReportRow[]>([]);
+  const [discountsData, setDiscountsData] = useState<ReportRow[]>([]);
+  const [referralsData, setReferralsData] = useState<ReportRow[]>([]);
+  const [feeTypeData, setFeeTypeData] = useState<ReportRow[]>([]);
   const [mainData, setMainData] = useState<ReportRow[]>([]);
   const [paidListData, setPaidListData] = useState<ReportRow[]>([]);
   const [unpaidListData, setUnpaidListData] = useState<ReportRow[]>([]);
+  const [feeTypesLoaded, setFeeTypesLoaded] = useState(false);
 
   const [mainLoading, setMainLoading] = useState(false);
   const [ledgerLoading, setLedgerLoading] = useState(false);
@@ -357,14 +492,20 @@ const AccountantReportsPage: React.FC = () => {
   const [summaryPreviousDue, setSummaryPreviousDue] = useState(0);
   const [summaryPreviousPaid, setSummaryPreviousPaid] = useState(0);
   const [isAddFeesPopupOpen, setIsAddFeesPopupOpen] = useState(false);
+  const [isStudentManagementPopupOpen, setIsStudentManagementPopupOpen] = useState(false);
   const [addFeePreview, setAddFeePreview] = useState({
     className: "",
     section: "",
     rows: [] as ReportRow[],
   });
+  const studentManagementPopupUrl =
+    typeof window === "undefined"
+      ? ""
+      : `${window.location.origin}${import.meta.env.BASE_URL}StudentManagement`;
 
   const rowsPerPage = 18;
   const studentTransactionsQueryRef = useRef("");
+  const activeFeeTypeKeys = useMemo(() => buildActiveFeeTypeKeySet(feeTypeData), [feeTypeData]);
 
   useEffect(() => {
     const schoolCode = String(localStorage.getItem("schoolCode") || "").trim();
@@ -373,18 +514,73 @@ const AccountantReportsPage: React.FC = () => {
     fetch(`https://cleezoclass.com:4000/api/institute?dbName=${encodeURIComponent(schoolCode)}`)
       .then((res) => res.json().catch(() => ({})))
       .then((data) => {
+        const resolvedInstituteName = resolveInstituteDisplayName({
+          apiInstituteName: data?.institute_name || data?.instituteName || data?.schoolName || data?.name,
+          storedSchoolName: localStorage.getItem("schoolName"),
+          storedInstituteName: localStorage.getItem("instituteName"),
+          schoolCode,
+          fallback: "Institute",
+        });
         setInstituteLogo(data.logo || "/default-logo.png");
-        setInstituteName(data.institute_name || data.schoolName || data.name || schoolCode || "Institute");
+        setInstituteName(resolvedInstituteName);
+        localStorage.setItem("schoolName", resolvedInstituteName);
+        localStorage.setItem("instituteName", resolvedInstituteName);
       })
       .catch(() => {
+        const fallbackInstituteName = resolveInstituteDisplayName({
+          storedSchoolName: localStorage.getItem("schoolName"),
+          storedInstituteName: localStorage.getItem("instituteName"),
+          schoolCode,
+          fallback: "Institute",
+        });
         setInstituteLogo("/default-logo.png");
-        setInstituteName(schoolCode || "Institute");
+        setInstituteName(fallbackInstituteName);
+        localStorage.setItem("schoolName", fallbackInstituteName);
+        localStorage.setItem("instituteName", fallbackInstituteName);
       });
+  }, []);
+
+  useEffect(() => {
+    const schoolCode = String(localStorage.getItem("schoolCode") || "").trim();
+    if (!schoolCode) return;
+
+    let cancelled = false;
+
+    const preloadFeeTypes = async () => {
+      try {
+        const response = await axios.get(`${API_BASE_URL}/api/fee-types`, {
+          params: { schoolCode, _t: Date.now() },
+        });
+
+        if (cancelled) return;
+
+        const rows = Array.isArray(response.data?.data) ? response.data.data : [];
+        setFeeTypeData(
+          rows
+            .map(normalizeFeeTypeRow)
+            .filter((row: ReportRow) => String(row.feeName || "").trim() !== "")
+        );
+      } catch (error) {
+        if (!cancelled) {
+          console.error("Failed to preload fee types:", error);
+        }
+      } finally {
+        if (!cancelled) {
+          setFeeTypesLoaded(true);
+        }
+      }
+    };
+
+    preloadFeeTypes();
+
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   const getFilterDateForRow = useCallback(
     (row: ReportRow) => {
-      if (activeView === "studentTransactions" || activeView === "paid" || activeView === "unpaid") {
+      if (activeView === "studentTransactions" || activeView === "paid" || activeView === "unpaid" || activeView === "discounts") {
         return row?.record_date || row?.paidDate || row?.paid_date || row?.Payment_Date || row?.created_at || "";
       }
       return row?.record_date || row?.paidDate || row?.Payment_Date || row?.Bus_Payment_Date || row?.paid_date || row?.created_at;
@@ -398,7 +594,18 @@ const AccountantReportsPage: React.FC = () => {
   );
 
   const yearOptions = useMemo(() => {
-    const sources = [mainData, ledgerData, previousData, busData, completeFeeData, studentTransactions, paidListData, unpaidListData];
+    const sources = [
+      mainData,
+      ledgerData,
+      previousData,
+      busData,
+      completeFeeData,
+      studentTransactions,
+      paidListData,
+      unpaidListData,
+      discountsData,
+      referralsData,
+    ];
     const years = new Set<string>();
     sources.forEach((list) => {
       list.forEach((row) => {
@@ -410,7 +617,21 @@ const AccountantReportsPage: React.FC = () => {
     years.add(`${currentFyStart - 1}-${currentFyStart}`);
     years.add(`${currentFyStart - 2}-${currentFyStart - 1}`);
     return Array.from(years).sort((a, b) => b.localeCompare(a, undefined, { numeric: true }));
-  }, [busData, completeFeeData, currentFinancialYear, currentFyStart, getRowYear, ledgerData, mainData, paidListData, previousData, studentTransactions, unpaidListData]);
+  }, [
+    busData,
+    completeFeeData,
+    currentFinancialYear,
+    currentFyStart,
+    getRowYear,
+    ledgerData,
+    mainData,
+    paidListData,
+    previousData,
+    referralsData,
+    studentTransactions,
+    unpaidListData,
+    discountsData,
+  ]);
 
   const isPreviousFinancialYearSelected = useMemo(() => {
     const selectedYear = String(filters.year || "").trim();
@@ -540,6 +761,24 @@ const AccountantReportsPage: React.FC = () => {
       const params = new URLSearchParams({ schoolCode, type: "today" });
       const response = await axios.get(`https://cleezoclass.com:4000/api/ledger?${params.toString()}`);
       const rawLedger = Array.isArray(response.data.data) ? response.data.data : [];
+      const hasActiveFeeTypes = feeTypesLoaded && activeFeeTypeKeys.size > 0;
+
+      const isDeletedFeeType = (value: any) => {
+        if (!hasActiveFeeTypes) return false;
+        const feeTypeKeys = getFeeTypeMatchKeys(value);
+        if (!feeTypeKeys.length) return false;
+        return !feeTypeKeys.some((key) => activeFeeTypeKeys.has(key));
+      };
+
+      const getVisibleFeeTypes = (value: any) => {
+        const feeTypes = String(value || "")
+          .split(",")
+          .map((item) => String(item || "").trim())
+          .filter(Boolean);
+
+        if (!hasActiveFeeTypes) return feeTypes;
+        return feeTypes.filter((feeType) => !isDeletedFeeType(feeType));
+      };
 
       const getReceiptNumber = (value: any) => {
         const digits = String(value || "").match(/\d+/g);
@@ -554,20 +793,23 @@ const AccountantReportsPage: React.FC = () => {
 
       const mergedMap = new Map<string, ReportRow>();
       sortedLedger.forEach((row) => {
+        const visibleFeeTypes = getVisibleFeeTypes(row.fee_type);
+        if (hasActiveFeeTypes && !visibleFeeTypes.length) return;
+
         const key = `${row.receiptNumber || ""}__${row.StudentName || ""}__${row.Class_name || ""}__${row.section || ""}__${row.paid_date || row.paidDate || row.created_at || ""}`;
         if (!mergedMap.has(key)) {
           mergedMap.set(key, {
             ...row,
             amount_paid: Number(row.amount_paid || 0),
-            fee_type: row.fee_type ? [row.fee_type] : [],
+            fee_type: visibleFeeTypes,
           });
           return;
         }
         const existing = mergedMap.get(key)!;
         existing.amount_paid = Number(existing.amount_paid || 0) + Number(row.amount_paid || 0);
-        if (row.fee_type) {
-          const feeTypes = new Set(existing.fee_type);
-          feeTypes.add(row.fee_type);
+        if (visibleFeeTypes.length) {
+          const feeTypes = new Set(Array.isArray(existing.fee_type) ? existing.fee_type : []);
+          visibleFeeTypes.forEach((feeType) => feeTypes.add(feeType));
           existing.fee_type = Array.from(feeTypes);
         }
       });
@@ -579,6 +821,7 @@ const AccountantReportsPage: React.FC = () => {
         }))
       );
       setActiveView("ledger");
+      setActiveCardKey("ledger");
     } catch (error) {
       console.error(error);
       alert("Failed to fetch today's ledger");
@@ -609,6 +852,7 @@ const AccountantReportsPage: React.FC = () => {
       const result = Array.isArray(response.data) ? response.data : response.data?.data || [];
       setMainData(result);
       setActiveView("main");
+      setActiveCardKey("main");
     } catch (error) {
       console.error(error);
       alert("Failed to fetch unpaid due report");
@@ -617,6 +861,13 @@ const AccountantReportsPage: React.FC = () => {
       setLoadingCardKey("");
     }
   }, [filters.fromDate, filters.toDate, firstDay, lastDay]);
+
+  useEffect(() => {
+    const schoolCode = String(localStorage.getItem("schoolCode") || "").trim();
+    if (!schoolCode) return;
+    if (mainData.length) return;
+    handleMainDueReport();
+  }, [handleMainDueReport, mainData.length]);
 
   const handlePreviousReport = async () => {
     setLoadingCardKey("previous");
@@ -657,6 +908,7 @@ const AccountantReportsPage: React.FC = () => {
           .filter((row) => row.Due > 0)
       );
       setActiveView("previous");
+      setActiveCardKey("previous");
     } catch (error) {
       console.error(error);
       alert("Failed to fetch previous report");
@@ -678,6 +930,7 @@ const AccountantReportsPage: React.FC = () => {
       const rows = (Array.isArray(response.data) ? response.data : response.data.data || []).map(normalizeCompleteItem);
       setCompleteFeeData(rows);
       setActiveView("complete");
+      setActiveCardKey("complete");
     } catch (error) {
       console.error(error);
       alert("Failed to fetch complete fee report");
@@ -734,6 +987,7 @@ const AccountantReportsPage: React.FC = () => {
         }))
       );
       setActiveView("bus");
+      setActiveCardKey("bus");
     } catch (error) {
       console.error(error);
       alert("Failed to fetch bus report");
@@ -743,10 +997,11 @@ const AccountantReportsPage: React.FC = () => {
     }
   };
 
-  const handleStudentTransactions = useCallback(async () => {
+  const handleStudentTransactions = useCallback(async (sourceCardKey: string = "studentTransactions") => {
     setLoadingCardKey("studentTransactions");
     setStudentTransactionsLoading(true);
     setCurrentPage(1);
+    setActiveCardKey(sourceCardKey);
     try {
       const schoolCode = localStorage.getItem("schoolCode");
       if (!schoolCode) throw new Error("School code missing");
@@ -852,6 +1107,7 @@ const AccountantReportsPage: React.FC = () => {
 
       setStudentTransactions(Array.from(groupedMap.values()));
       setActiveView("studentTransactions");
+      setActiveCardKey(sourceCardKey);
       studentTransactionsQueryRef.current = getStudentTransactionsQueryKey(filters);
     } catch (error) {
       console.error(error);
@@ -862,6 +1118,102 @@ const AccountantReportsPage: React.FC = () => {
       setLoadingCardKey("");
     }
   }, [filters, getStudentTransactionsQueryKey]);
+
+  const handleDiscountsReport = useCallback(async () => {
+    setLoadingCardKey("discounts");
+    setExtraLoading(true);
+    setCurrentPage(1);
+    try {
+      const schoolCode = localStorage.getItem("schoolCode");
+      if (!schoolCode) throw new Error("School code missing");
+
+      const params = new URLSearchParams({
+        schoolCode,
+        className: filters.className || "All",
+        section: filters.section || "All",
+        fromDate: filters.fromDate || "",
+        toDate: filters.toDate || "",
+      });
+
+      const response = await axios.get(`https://cleezoclass.com:4000/api/discounts-report?${params.toString()}`);
+      const result = Array.isArray(response.data) ? response.data : response.data?.data || [];
+      setDiscountsData(result);
+      setActiveView("discounts");
+      setActiveCardKey("discounts");
+    } catch (error) {
+      console.error(error);
+      alert("Failed to fetch discounts report");
+    } finally {
+      setExtraLoading(false);
+      setLoadingCardKey("");
+    }
+  }, [filters.className, filters.fromDate, filters.section, filters.toDate]);
+
+  useEffect(() => {
+    const view = new URLSearchParams(location.search).get("view");
+    if (view === "discounts") {
+      handleDiscountsReport();
+    }
+  }, [handleDiscountsReport, location.search]);
+
+  const handleReferralsReport = useCallback(async () => {
+    setLoadingCardKey("referrals");
+    setExtraLoading(true);
+    setCurrentPage(1);
+    try {
+      const schoolCode = localStorage.getItem("schoolCode");
+      if (!schoolCode) throw new Error("School code missing");
+
+      const params = new URLSearchParams({
+        schoolCode,
+        className: filters.className || "All",
+        section: filters.section || "All",
+        fromDate: filters.fromDate || "",
+        toDate: filters.toDate || "",
+      });
+
+      const response = await axios.get(`https://cleezoclass.com:4000/api/discounts-report?${params.toString()}`);
+      const result = Array.isArray(response.data) ? response.data : response.data?.data || [];
+      setReferralsData(result.filter(isReferralDiscountRow));
+      setActiveView("referrals");
+      setActiveCardKey("referrals");
+    } catch (error) {
+      console.error(error);
+      alert("Failed to fetch referrals report");
+    } finally {
+      setExtraLoading(false);
+      setLoadingCardKey("");
+    }
+  }, [filters.className, filters.fromDate, filters.section, filters.toDate]);
+
+  const handleFeeTypeReport = useCallback(async () => {
+    setLoadingCardKey("feeType");
+    setExtraLoading(true);
+    setCurrentPage(1);
+    try {
+      const schoolCode = String(localStorage.getItem("schoolCode") || "").trim();
+      if (!schoolCode) throw new Error("School code missing");
+
+      const response = await axios.get(`${API_BASE_URL}/api/fee-types`, {
+        params: { schoolCode, _t: Date.now() },
+      });
+
+      const rows = Array.isArray(response.data?.data) ? response.data.data : [];
+      setFeeTypeData(
+        rows
+          .map(normalizeFeeTypeRow)
+          .filter((row: ReportRow) => String(row.feeName || "").trim() !== "")
+      );
+      setActiveView("feeType");
+      setActiveCardKey("feeType");
+    } catch (error) {
+      console.error(error);
+      alert("Failed to fetch fee types");
+    } finally {
+      setExtraLoading(false);
+      setLoadingCardKey("");
+    }
+  }, []);
 
   const handlePaidListReport = useCallback(async () => {
     setLoadingCardKey("paid");
@@ -884,6 +1236,7 @@ const AccountantReportsPage: React.FC = () => {
       const result = Array.isArray(response.data) ? response.data : response.data?.data || [];
       setPaidListData(result);
       setActiveView("paid");
+      setActiveCardKey("paid");
     } catch (error) {
       console.error(error);
       alert("Failed to fetch paid list");
@@ -913,6 +1266,7 @@ const AccountantReportsPage: React.FC = () => {
       const result = Array.isArray(response.data) ? response.data : response.data?.data || [];
       setUnpaidListData(result.map(normalizeUnpaidItem));
       setActiveView("unpaid");
+      setActiveCardKey("main");
     } catch (error) {
       console.error(error);
       alert("Failed to fetch unpaid list");
@@ -928,11 +1282,11 @@ const AccountantReportsPage: React.FC = () => {
     if (studentTransactionsQueryRef.current === nextKey) return;
 
     const timeoutId = window.setTimeout(() => {
-      handleStudentTransactions();
+      handleStudentTransactions(activeCardKey === "FeesSearch" ? "FeesSearch" : "studentTransactions");
     }, 400);
 
     return () => window.clearTimeout(timeoutId);
-  }, [activeView, filters, getStudentTransactionsQueryKey, handleStudentTransactions]);
+  }, [activeCardKey, activeView, filters, getStudentTransactionsQueryKey, handleStudentTransactions]);
 
   const applyFilters = useCallback(
     (rows: ReportRow[]) =>
@@ -976,10 +1330,16 @@ const AccountantReportsPage: React.FC = () => {
         return applyFilters(paidListData);
       case "unpaid":
         return applyFilters(unpaidListData);
+      case "discounts":
+        return applyFilters(discountsData);
+      case "referrals":
+        return applyFilters(referralsData);
+      case "feeType":
+        return feeTypeData;
       default:
         return [];
     }
-  }, [activeView, applyFilters, busData, completeFeeData, ledgerData, mainData, paidListData, previousData, studentTransactions, unpaidListData]);
+  }, [activeView, applyFilters, busData, completeFeeData, discountsData, feeTypeData, ledgerData, mainData, paidListData, previousData, referralsData, studentTransactions, unpaidListData]);
 
   const totalPages = Math.max(1, Math.ceil(activeRows.length / rowsPerPage));
   const paginatedRows = activeRows.slice((currentPage - 1) * rowsPerPage, currentPage * rowsPerPage);
@@ -989,6 +1349,10 @@ const AccountantReportsPage: React.FC = () => {
   );
   const dynamicCompleteFeeBases = useMemo(
     () => (activeView === "complete" ? getDynamicFeeBases(activeRows) : []),
+    [activeRows, activeView]
+  );
+  const dynamicDiscountColumns = useMemo(
+    () => (activeView === "discounts" || activeView === "referrals" ? getDynamicDiscountColumns(activeRows) : []),
     [activeRows, activeView]
   );
   const visibleCompleteStaticColumns = useMemo(() => {
@@ -1048,7 +1412,7 @@ const AccountantReportsPage: React.FC = () => {
   }, [activeRows, activeView]);
 
   const renderedSummaryValue = isPreviousFinancialYearSelected ? summaryPreviousDue : summaryDue;
-  const currentReportCard = activeView === "unpaid" ? "main" : activeView;
+  const currentReportCard = activeCardKey === "FeesSearch" ? "FeesSearch" : activeCardKey === "unpaid" ? "main" : activeCardKey;
 
   const activeReportTitle = useMemo(() => {
     switch (activeView) {
@@ -1064,6 +1428,12 @@ const AccountantReportsPage: React.FC = () => {
         return "Transactions";
       case "paid":
         return "Paid";
+      case "discounts":
+        return "Discounts";
+      case "referrals":
+        return "Referrals";
+      case "feeType":
+        return "Fee Type";
       case "unpaid":
       case "main":
       default:
@@ -1164,6 +1534,72 @@ const AccountantReportsPage: React.FC = () => {
         return cols;
       }
 
+      if (view === "discounts") {
+        const cols = [
+          { key: "StudentName", label: "Student", getValue: (row: ReportRow) => row.StudentName || row.student_name || row.studentName || "-" },
+          { key: "Class_name", label: "Class", getValue: (row: ReportRow) => row.Class_name || row.class_name || row.className || "-" },
+          { key: "section", label: "Section", getValue: (row: ReportRow) => row.section || row.Section || "-" },
+          { key: "fee_type", label: "Fee Type", getValue: (row: ReportRow) => row.fee_type || "-" },
+          { key: "discount_reason", label: "Reason", getValue: (row: ReportRow) => getDiscountReason(row) },
+          { key: "Discount", label: "Total Discount", getValue: (row: ReportRow) => formatMoney(row.Discount) },
+        ];
+
+        dynamicDiscountColumns.forEach((key) => {
+          if (key === "Discount") return;
+          cols.push({
+            key,
+            label: formatHeaderLabel(key),
+            getValue: (row: ReportRow) => formatMoney(row[key]),
+          });
+        });
+
+        cols.push(
+          { key: "record_date", label: "Record Date", getValue: (row: ReportRow) => formatDate(row.record_date || row.created_at || row.updated_at) },
+          { key: "created_at", label: "Created At", getValue: (row: ReportRow) => formatDate(row.created_at) },
+          { key: "updated_at", label: "Updated At", getValue: (row: ReportRow) => formatDate(row.updated_at) }
+        );
+
+        return cols;
+      }
+
+      if (view === "referrals") {
+        const cols = [
+          { key: "StudentName", label: "Student", getValue: (row: ReportRow) => row.StudentName || row.student_name || row.studentName || "-" },
+          { key: "Class_name", label: "Class", getValue: (row: ReportRow) => row.Class_name || row.class_name || row.className || "-" },
+          { key: "section", label: "Section", getValue: (row: ReportRow) => row.section || row.Section || "-" },
+          { key: "fee_type", label: "Fee Type", getValue: (row: ReportRow) => row.fee_type || "-" },
+          { key: "discount_reason", label: "Reason", getValue: (row: ReportRow) => getDiscountReason(row) },
+          { key: "Discount", label: "Total Discount", getValue: (row: ReportRow) => formatMoney(row.Discount) },
+        ];
+
+        dynamicDiscountColumns.forEach((key) => {
+          if (key === "Discount") return;
+          cols.push({
+            key,
+            label: formatHeaderLabel(key),
+            getValue: (row: ReportRow) => formatMoney(row[key]),
+          });
+        });
+
+        cols.push(
+          { key: "record_date", label: "Record Date", getValue: (row: ReportRow) => formatDate(row.record_date || row.created_at || row.updated_at) },
+          { key: "created_at", label: "Created At", getValue: (row: ReportRow) => formatDate(row.created_at) },
+          { key: "updated_at", label: "Updated At", getValue: (row: ReportRow) => formatDate(row.updated_at) }
+        );
+
+        return cols;
+      }
+
+      if (view === "feeType") {
+        return [
+          { key: "feeName", label: "Fee Name", getValue: (row: ReportRow) => row.feeName || row.fee_name || "-" },
+          { key: "feesType", label: "Fees Type", getValue: (row: ReportRow) => row.feesType || row.fees_type || "-" },
+          { key: "scope", label: "Scope", getValue: (row: ReportRow) => row.scope || "-" },
+          { key: "frequency", label: "Frequency", getValue: (row: ReportRow) => row.frequency || "-" },
+          { key: "installments", label: "Installments", getValue: (row: ReportRow) => row.installments || "-" },
+        ];
+      }
+
       if (view === "paid" || view === "main" || view === "unpaid") {
         const headers = rows.length ? Object.keys(rows[0]) : [];
         return headers.map((header) => ({
@@ -1178,6 +1614,7 @@ const AccountantReportsPage: React.FC = () => {
     [
       currentFinancialYear,
       dynamicCompleteFeeBases,
+      dynamicDiscountColumns,
       dynamicTransactionPaidKeys,
       formatMoney,
       getDynamicPaidValue,
@@ -1498,6 +1935,78 @@ const AccountantReportsPage: React.FC = () => {
       );
     }
 
+    if (activeView === "discounts" || activeView === "referrals") {
+      return (
+        <table className="accountant-reports-table">
+          <thead>
+            <tr>
+              <th>Student</th>
+              <th>Class</th>
+              <th>Section</th>
+              <th>Fee Type</th>
+              <th>Reason</th>
+              <th>Total Discount</th>
+              {dynamicDiscountColumns
+                .filter((column) => column !== "Discount")
+                .map((column) => (
+                  <th key={column}>{formatHeaderLabel(column)}</th>
+                ))}
+              <th>Record Date</th>
+              <th>Created At</th>
+              <th>Updated At</th>
+            </tr>
+          </thead>
+          <tbody>
+            {paginatedRows.map((row, index) => (
+              <tr key={`${row.id || row.StudentName || "discount"}-${index}`}>
+                <td>{row.StudentName || row.student_name || row.studentName || "-"}</td>
+                <td>{row.Class_name || row.class_name || row.className || "-"}</td>
+                <td>{row.section || row.Section || "-"}</td>
+                <td>{row.fee_type || "-"}</td>
+                <td>{getDiscountReason(row)}</td>
+                <td>{formatMoney(row.Discount)}</td>
+                {dynamicDiscountColumns
+                  .filter((column) => column !== "Discount")
+                  .map((column) => (
+                    <td key={column}>{formatMoney(row[column])}</td>
+                  ))}
+                <td>{formatDate(row.record_date || row.created_at || row.updated_at)}</td>
+                <td>{formatDate(row.created_at)}</td>
+                <td>{formatDate(row.updated_at)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      );
+    }
+
+    if (activeView === "feeType") {
+      return (
+        <table className="accountant-reports-table">
+          <thead>
+            <tr>
+              <th>Fee Name</th>
+              <th>Fees Type</th>
+              <th>Scope</th>
+              <th>Frequency</th>
+              <th>Installments</th>
+            </tr>
+          </thead>
+          <tbody>
+            {paginatedRows.map((row, index) => (
+              <tr key={`${row.id || row.feeName || "fee-type"}-${index}`}>
+                <td>{row.feeName || row.fee_name || "-"}</td>
+                <td>{row.feesType || row.fees_type || "-"}</td>
+                <td>{row.scope || "-"}</td>
+                <td>{row.frequency || "-"}</td>
+                <td>{row.installments || "-"}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      );
+    }
+
     return (
       <table className="accountant-reports-table">
         <thead>
@@ -1569,7 +2078,12 @@ const AccountantReportsPage: React.FC = () => {
             <span>Add Fees</span>
           </div>
 
-          <div className="accountant-sidebar-item" role="button" tabIndex={0} onClick={() => navigate("/StudentManagement")}>
+          <div
+            className={`accountant-sidebar-item ${isStudentManagementPopupOpen ? "accountant-sidebar-item-active" : ""}`.trim()}
+            role="button"
+            tabIndex={0}
+            onClick={() => setIsStudentManagementPopupOpen(true)}
+          >
             <div className="accountant-sidebar-item-icon">
               <img src={addStudentIcon} alt="" />
             </div>
@@ -1613,10 +2127,11 @@ const AccountantReportsPage: React.FC = () => {
             </nav>
 
             <div className="accountant-topbar-center">
-              <div className="accountant-school-brand">
-                <img src={instituteLogo || logoab} alt={instituteName || "Institute"} className="accountant-school-logo" />
-                <span className="accountant-school-name">{instituteName}</span>
-              </div>
+              <InstituteBrand
+                logoSrc={instituteLogo || logoab}
+                logoAlt={instituteName || "Institute"}
+                instituteName={instituteName}
+              />
             </div>
 
             <div className="accountant-topbar-right">
@@ -1715,9 +2230,25 @@ const AccountantReportsPage: React.FC = () => {
                   disabled = mainLoading;
                   subtitle = loadingCardKey === "main" || loadingCardKey === "unpaid" ? "Loading..." : card.subtitle;
                 } else if (card.key === "studentTransactions") {
-                  onClick = handleStudentTransactions;
+                  onClick = () => handleStudentTransactions("studentTransactions");
                   disabled = studentTransactionsLoading;
                   subtitle = loadingCardKey === "studentTransactions" ? "Loading..." : card.subtitle;
+                } else if (card.key === "FeesSearch") {
+                  onClick = () => handleStudentTransactions("FeesSearch");
+                  disabled = studentTransactionsLoading;
+                  subtitle = loadingCardKey === "studentTransactions" ? "Loading..." : card.subtitle;
+                } else if (card.key === "discounts") {
+                  onClick = handleDiscountsReport;
+                  disabled = extraLoading;
+                  subtitle = loadingCardKey === "discounts" ? "Loading..." : card.subtitle;
+                } else if (card.key === "referrals") {
+                  onClick = handleReferralsReport;
+                  disabled = extraLoading;
+                  subtitle = loadingCardKey === "referrals" ? "Loading..." : card.subtitle;
+                } else if (card.key === "feeType") {
+                  onClick = handleFeeTypeReport;
+                  disabled = extraLoading;
+                  subtitle = loadingCardKey === "feeType" ? "Loading..." : card.subtitle;
                 } else if (card.key === "ledger") {
                   disabled = ledgerLoading;
                   subtitle = loadingCardKey === "ledger" ? "Loading..." : card.subtitle;
@@ -1808,7 +2339,7 @@ const AccountantReportsPage: React.FC = () => {
           <div
             className="globalpopup-content accountant-add-fee-popup"
             onClick={(event) => event.stopPropagation()}
-            style={{ width: "58vw", maxWidth: "760px", height: "64vh", overflow: "auto", marginRight: "22vw" }}
+            style={{ width: "72vw", maxWidth: "980px", height: "74vh", overflow: "auto", marginRight: "0" }}
           >
             <div className="globalpopup-header">
               <div className="accountant-create-fee-popup-heading">
@@ -1830,6 +2361,40 @@ const AccountantReportsPage: React.FC = () => {
               onFeeStructurePreviewChange={setAddFeePreview}
               embeddedInPopup
             />
+          </div>
+        </div>
+      )}
+      {isStudentManagementPopupOpen && (
+        <div
+          className="globalpopup-overlay accountant-student-management-popup-overlay"
+          onClick={() => setIsStudentManagementPopupOpen(false)}
+          style={{ zIndex: 3200 }}
+        >
+          <div
+            className="globalpopup-content accountant-student-management-popup"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div className="globalpopup-header accountant-student-management-popup-header">
+              <div>
+                <div className="Heading">Add Student</div>
+                <div className="normalText">Open the student form inside a popup</div>
+              </div>
+              <button
+                type="button"
+                className="globalpopup-close-btn accountant-student-management-close-btn"
+                onClick={() => setIsStudentManagementPopupOpen(false)}
+                aria-label="Close add student popup"
+              >
+                ×
+              </button>
+            </div>
+            <div className="accountant-student-management-popup-body">
+              <iframe
+                title="Student Management Add Popup"
+                src={studentManagementPopupUrl}
+                className="accountant-student-management-iframe"
+              />
+            </div>
           </div>
         </div>
       )}

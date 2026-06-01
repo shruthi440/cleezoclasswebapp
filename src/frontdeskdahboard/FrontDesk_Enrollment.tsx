@@ -8,6 +8,7 @@ import applicationIcon from '../assets/application.png';
 import "./FrontDesk_Admission.css";
 import html2pdf from "html2pdf.js";
 import ErrorPopup from "../shared/ErrorPopup";
+import { resolveInstituteDisplayName } from "../shared/instituteNameUtils";
 
 // --- Interfaces ---
 interface Lead {
@@ -276,9 +277,28 @@ const AdmissionFeeModal: React.FC<AdmissionFeeModalProps> = ({
     fetch(`https://cleezoclass.com:4000/api/institute?dbName=${schoolCode}`)
       .then((res) => res.json())
       .then((data) => {
-        setSchoolName(data.institute_name || "Unknown School");
+        const resolvedSchoolName = resolveInstituteDisplayName({
+          apiInstituteName: data?.institute_name || data?.instituteName || data?.schoolName || data?.name,
+          storedSchoolName: localStorage.getItem("schoolName"),
+          storedInstituteName: localStorage.getItem("instituteName"),
+          schoolCode,
+          fallback: "Unknown School",
+        });
+        setSchoolName(resolvedSchoolName);
+        localStorage.setItem("schoolName", resolvedSchoolName);
+        localStorage.setItem("instituteName", resolvedSchoolName);
       })
-      .catch(() => setSchoolName("Unknown School"));
+      .catch(() => {
+        const fallbackSchoolName = resolveInstituteDisplayName({
+          storedSchoolName: localStorage.getItem("schoolName"),
+          storedInstituteName: localStorage.getItem("instituteName"),
+          schoolCode,
+          fallback: "Unknown School",
+        });
+        setSchoolName(fallbackSchoolName);
+        localStorage.setItem("schoolName", fallbackSchoolName);
+        localStorage.setItem("instituteName", fallbackSchoolName);
+      });
   }, [isOpen]);
 
   if (!isOpen || !studentData) return null;

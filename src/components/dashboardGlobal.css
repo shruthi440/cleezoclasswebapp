@@ -248,6 +248,7 @@ font-weight: 600;
   justify-content: center;
   align-items: center;
   min-height: 4.5rem;
+  overflow: hidden;
 }
 
 .dashboard-school-brand {
@@ -255,16 +256,17 @@ font-weight: 600;
   align-items: center;
   gap: 0.78rem;
   min-width: 0;
-  height: 4.4rem;
-  max-height: 4.4rem;
+  height: 3.7rem;
+  max-height: 3.7rem;
+  overflow: hidden;
 }
 
 .dashboard-school-logo {
-  width: 4.4rem;
-  height: 4.4rem;
+  width: auto;
+  height: 100%;
   max-width: 4.4rem;
-  min-width: 4.4rem;
-  flex: 0 0 4.4rem;
+  min-width: 3rem;
+  flex: 0 0 auto;
   object-fit: contain;
   object-position: center;
   display: block;
@@ -305,6 +307,16 @@ font-weight: 600;
   line-height: 1;
   white-space: nowrap;
   margin-top: 0.05rem;
+}
+
+.dashboard-school-name-single {
+  display: block;
+  width: auto;
+  max-width: 28rem;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  line-height: 1.05;
 }
 
 .dashboard-topbar-right {
@@ -679,6 +691,69 @@ height: ;
   font-size: 1.12rem;
   font-weight: 700;
   color: var(--dashboard-text);
+}
+
+.dashboard-page .admin-events-livechat,
+.dashboard-page .admin-academics-storepo,
+.dashboard-page .tt-academics-storepo,
+.dashboard-page .admission-livechat-card {
+  text-align: left;
+  align-items: flex-start;
+}
+
+.dashboard-page .admin-events-livechat .accountant-card-header,
+.dashboard-page .admin-events-livechat .admin-events-card-header,
+.dashboard-page .admin-academics-storepo .admin-academics-side-header,
+.dashboard-page .tt-academics-storepo .tt-academics-side-header,
+.dashboard-page .admission-livechat-card .accountant-card-header {
+  align-items: flex-start;
+}
+
+.dashboard-page .admin-events-livechat .accountant-card-filters,
+.dashboard-page .admin-events-livechat .admin-events-chat-meta,
+.dashboard-page .admission-livechat-card .accountant-card-filters {
+  top: 0;
+  align-self: flex-end;
+  justify-content: flex-end;
+}
+
+.dashboard-page .accountant-card-header .accountant-card-filters,
+.dashboard-page .admin-academics-storepo .accountant-card-filters,
+.dashboard-page .admin-events-livechat .accountant-card-filters,
+.dashboard-page .admission-livechat-card .accountant-card-filters {
+  margin-left: auto;
+  justify-content: flex-end;
+}
+
+.dashboard-page .admin-events-livechat .admin-events-chat-meta,
+.dashboard-page .admin-events-chat-count,
+.dashboard-page .admin-academics-storepo .admin-academics-request-count,
+.dashboard-page .tt-academics-storepo .tt-academics-request-count {
+  justify-self: end;
+  margin-left: auto;
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+}
+
+.dashboard-page .admin-events-chat-meta,
+.dashboard-page .admin-events-chat-section,
+.dashboard-page .admin-events-chat-item,
+.dashboard-page .admin-events-assistant-item,
+.dashboard-page .admin-academics-po-list,
+.dashboard-page .admin-academics-po-item,
+.dashboard-page .admin-academics-assistant-item,
+.dashboard-page .tt-academics-po-list,
+.dashboard-page .tt-academics-po-item,
+.dashboard-page .tt-academics-assistant-item {
+  justify-items: flex-start;
+  text-align: left;
+}
+
+.dashboard-page .admin-events-chat-item,
+.dashboard-page .admin-academics-po-item,
+.dashboard-page .tt-academics-po-item {
+  align-items: center;
 }
 
 .dashboard-page .collect-filter,
@@ -2196,6 +2271,7 @@ height: ;
   justify-content: center;
   min-height: 4.5rem;
   align-items: center;
+  overflow: hidden;
 }
 
 .accountant-school-brand {
@@ -2203,12 +2279,15 @@ height: ;
   align-items: center;
   gap: 0.5rem;
   min-width: 0;
+  height: 3.7rem;
+  max-height: 3.7rem;
+  overflow: hidden;
 }
 
 .accountant-school-logo {
   width: auto;
   max-width: 6.2rem;
-  height: 3.6rem;
+  height: 100%;
   object-fit: contain;
 }
 
@@ -4042,7 +4121,9 @@ height: ;
   }
 
   .accountant-dashboard-home-page .accountant-school-logo {
-    width: 6.2rem;
+    width: auto;
+    max-width: 6.2rem;
+    height: 100%;
   }
 
   .accountant-dashboard-home-page .accountant-topbar-tab,

@@ -13,7 +13,9 @@ import ErrorPopup from "./ErrorPopup";
 import TaskOfTheDay from "./TaskOfTheDay.tsx";
 import Extraactivityform from "./Extraactivityform";
 import EditableProfileMenu from "./EditableProfileMenu.jsx";
-import abcLogo from "../assets/abc school.png";
+import CompactTextTabs from "./CompactTextTabs.jsx";
+import InstituteBrand from "./InstituteBrand.jsx";
+import logoab from "../assets/logoab.png";
 import dashboardIcon from "../assets/Dashboard.png";
 import academicsIcon from "../assets/Staff Assign.png";
 import leadProfileIcon from "../assets/Lead Profile.png";
@@ -23,6 +25,7 @@ import reportsIcon from "../assets/Reports .png";
 import timelineIcon from "../assets/Timeline.png";
 import followupIcon from "../assets/Profile.png";
 import assistantIcon from "../assets/Assistant.png";
+import { resolveInstituteDisplayName } from "./instituteNameUtils";
 
 const isLaptop = window.innerWidth > 600 && window.innerWidth <= 1440;
 const MOBILE_BREAKPOINT = 1024;
@@ -58,6 +61,57 @@ const timetableScheduledItems = [
   "Live Chat (T - P) - 24/01/2026, 12:23 - Kushal Gowda to Student, 1A",
   "Live Chat (T - P) - 24/01/2026, 12:12 - Kavya Reddy to Student, 7A",
 ];
+
+const normalizeInstituteLogo = (rawLogo) => {
+  if (!rawLogo) return "";
+
+  let logo = rawLogo;
+
+  if (typeof logo === "object" && logo?.type === "Buffer" && Array.isArray(logo?.data)) {
+    try {
+      logo = new Uint8Array(logo.data);
+    } catch {
+      return "";
+    }
+  }
+
+  if (logo instanceof Uint8Array) {
+    const binary = Array.from(logo, (byte) => String.fromCharCode(byte)).join("");
+    return `data:image/png;base64,${btoa(binary)}`;
+  }
+
+  if (typeof logo !== "string") return "";
+  logo = logo.trim();
+  if (!logo) return "";
+  if (logo.startsWith("data:image")) return logo;
+  if (logo.startsWith("http")) return logo;
+
+  if (logo.startsWith("0x")) {
+    try {
+      const hex = logo.slice(2);
+      let binary = "";
+      for (let i = 0; i < hex.length; i += 2) {
+        binary += String.fromCharCode(parseInt(hex.substring(i, i + 2), 16));
+      }
+      return `data:image/png;base64,${btoa(binary)}`;
+    } catch {
+      return "";
+    }
+  }
+
+  if (logo.startsWith("uploads/")) {
+    return `https://cleezoclass.com:4000/${logo}`;
+  }
+  if (logo.startsWith("/uploads/")) {
+    return `https://cleezoclass.com:4000${logo}`;
+  }
+
+  if (/^[A-Za-z0-9+/=]+$/.test(logo) && logo.length > 100) {
+    return `data:image/png;base64,${logo}`;
+  }
+
+  return "";
+};
 
 const SubstituteAssignmentEmbed = ({ isMobile }) => {
   const [absentTeachers, setAbsentTeachers] = useState([]);
@@ -257,9 +311,10 @@ const TimetableAdmin = ({ academicsStyle = false }) => {
   
   const navigate = useNavigate();
   const location = useLocation();
-  const SCHOOL_NAME = "ABC School, Miyapur, Hyderabad";
   const ADMIN_TITLE = "OPERATIONS — TIMETABLE";
   const [isMobile, setIsMobile] = useState(window.innerWidth < MOBILE_BREAKPOINT);
+  const [schoolName, setSchoolName] = useState("Loading...");
+  const [schoolLogo, setSchoolLogo] = useState("/default-logo.png");
   const [selectedClasses, setSelectedClasses] = useState([]);
   const [sections, setSections] = useState({});
   const [classTeachers, setClassTeachers] = useState({});
@@ -309,6 +364,68 @@ const TimetableAdmin = ({ academicsStyle = false }) => {
       setAfternoonInterval(false);
     }
   }, [dayType]);
+
+  useEffect(() => {
+    const schoolCode = localStorage.getItem("schoolCode");
+    if (!schoolCode) {
+      const fallbackSchoolName = resolveInstituteDisplayName({
+        storedSchoolName: localStorage.getItem("schoolName"),
+        storedInstituteName: localStorage.getItem("instituteName"),
+        fallback: "School",
+      });
+      setSchoolName(fallbackSchoolName);
+      setSchoolLogo("/default-logo.png");
+      return;
+    }
+
+    let isActive = true;
+
+    const loadInstituteDetails = async () => {
+      try {
+        const response = await axios.get(`${BASE_URL}/api/institute`, {
+          params: { dbName: schoolCode },
+        });
+
+        if (!isActive) return;
+
+        const resolvedSchoolName = resolveInstituteDisplayName({
+          apiInstituteName: response?.data?.institute_name || response?.data?.instituteName || response?.data?.schoolName || response?.data?.name,
+          storedSchoolName: localStorage.getItem("schoolName"),
+          storedInstituteName: localStorage.getItem("instituteName"),
+          schoolCode,
+          fallback: "School",
+        });
+        const normalizedLogo = normalizeInstituteLogo(response?.data?.logo) || "/default-logo.png";
+
+        setSchoolName(resolvedSchoolName);
+        setSchoolLogo(normalizedLogo);
+        localStorage.setItem("schoolName", resolvedSchoolName);
+        localStorage.setItem("instituteName", resolvedSchoolName);
+        localStorage.setItem("schoolLogo", normalizedLogo);
+      } catch (error) {
+        console.error("Error loading institute details for timetable:", error);
+        if (!isActive) return;
+
+        const fallbackSchoolName = resolveInstituteDisplayName({
+          storedSchoolName: localStorage.getItem("schoolName"),
+          storedInstituteName: localStorage.getItem("instituteName"),
+          schoolCode,
+          fallback: "School",
+        });
+
+        setSchoolName(fallbackSchoolName);
+        setSchoolLogo("/default-logo.png");
+        localStorage.setItem("schoolName", fallbackSchoolName);
+        localStorage.setItem("instituteName", fallbackSchoolName);
+      }
+    };
+
+    loadInstituteDetails();
+
+    return () => {
+      isActive = false;
+    };
+  }, []);
 useEffect(() => {
   const fetchOptions = async () => {
     const schoolCode = localStorage.getItem("schoolCode");
@@ -1084,8 +1201,11 @@ setPopup({
               </div>
 
               <div className="dashboard-topbar-center accountant-topbar-center">
-                <img src={abcLogo} alt="ABC School" className="accountant-school-logo" />
-                <span style={{ fontWeight: 700, marginLeft: "0.4rem" }}>ABC SCHOOL</span>
+                <InstituteBrand
+                  logoSrc={schoolLogo || logoab}
+                  logoAlt={schoolName || "Institute Logo"}
+                  instituteName={schoolName}
+                />
               </div>
 
             <div className="dashboard-topbar-right accountant-topbar-right">
@@ -1103,51 +1223,14 @@ setPopup({
                   <p>Check Store Inventory,</p>
                   <p>Report Track to Class Teacher</p>
                   <p>Submit Building maintenance</p>
-                  <div
-                    style={{
-                      display: "flex",
-                      alignItems: "center",
-                      gap: "0.5rem",
-                      flexWrap: "wrap",
-                    }}
-                  >
-                    <button
-                      type="button"
-                      style={{
-                        padding: "0.32rem 0.68rem",
-                        borderRadius: "999px",
-                        border: "1px solid #94a3b8",
-                        background: location.pathname === "/AdminGenerations" ? "#0f172a" : "#ffffff",
-                        color: location.pathname === "/AdminGenerations" ? "#fff" : "#334155",
-                        fontWeight: 800,
-                        fontSize: "0.76rem",
-                        cursor: "pointer",
-                        boxShadow: location.pathname === "/AdminGenerations" ? "0 6px 16px rgba(15, 23, 42, 0.15)" : "0 2px 8px rgba(15, 23, 42, 0.08)",
-                        minWidth: "72px",
-                      }}
-                      onClick={() => navigate("/AdminGenerations")}
-                    >
-                      Reports
-                    </button>
-                    <button
-                      type="button"
-                      style={{
-                        padding: "0.32rem 0.68rem",
-                        borderRadius: "999px",
-                        border: "1px solid #94a3b8",
-                        background: location.pathname === "/AdmissionTimetableNew" ? "#0f172a" : "#ffffff",
-                        color: location.pathname === "/AdmissionTimetableNew" ? "#fff" : "#334155",
-                        fontWeight: 800,
-                        fontSize: "0.76rem",
-                        cursor: "pointer",
-                        boxShadow: location.pathname === "/AdmissionTimetableNew" ? "0 6px 16px rgba(15, 23, 42, 0.15)" : "0 2px 8px rgba(15, 23, 42, 0.08)",
-                        minWidth: "72px",
-                      }}
-                      onClick={() => navigate("/AdmissionTimetableNew")}
-                    >
-                      Timetable
-                    </button>
-                  </div>
+                  <CompactTextTabs
+                    activePath={location.pathname}
+                    onNavigate={navigate}
+                    tabs={[
+                      { path: "/AdminGenerations", label: "Reports" },
+                      { path: "/AdmissionTimetableNew", label: "Timetable" },
+                    ]}
+                  />
                 </div>
                 <div className="admin-events-task accountant-card">
                   <div className="admin-events-task-header">
@@ -1305,7 +1388,7 @@ setPopup({
 
         <div className="accountant-footer-brand">
           <span>Powered By:</span>
-          <img src={abcLogo} alt="Cleezo Class" className="accountant-footer-logo" />
+          <img src={logoab} alt="Cleezo Class" className="accountant-footer-logo" />
         </div>
 
         <ErrorPopup

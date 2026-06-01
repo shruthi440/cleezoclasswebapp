@@ -881,6 +881,35 @@ async function ensureColumn(pool, tableName, columnName, ddlDefinition) {
   }
 }
 
+async function dropColumnIfExists(pool, tableName, columnName) {
+  const [rows] = await pool.query(
+    `SELECT 1
+     FROM INFORMATION_SCHEMA.COLUMNS
+     WHERE TABLE_SCHEMA = DATABASE()
+       AND TABLE_NAME = ?
+       AND COLUMN_NAME = ?
+     LIMIT 1`,
+    [tableName, columnName]
+  );
+
+  if (rows.length) {
+    await pool.query(`ALTER TABLE \`${tableName}\` DROP COLUMN \`${columnName}\``);
+    console.log(`🗑️ Dropped column ${tableName}.${columnName}`);
+  }
+}
+
+async function getExistingColumns(pool, tableName) {
+  const [rows] = await pool.query(
+    `SELECT COLUMN_NAME
+     FROM INFORMATION_SCHEMA.COLUMNS
+     WHERE TABLE_SCHEMA = DATABASE()
+       AND TABLE_NAME = ?`,
+    [tableName]
+  );
+
+  return new Set(Array.isArray(rows) ? rows.map((row) => String(row.COLUMN_NAME || "")) : []);
+}
+
 function normalizeFeeColumnBase(feeName) {
   const normalized = String(feeName || "")
     .trim()
@@ -892,6 +921,52 @@ function normalizeFeeColumnBase(feeName) {
 
   if (!normalized) return "";
   return /^[0-9]/.test(normalized) ? `fee_${normalized}` : normalized;
+}
+
+function normalizeFeeTypeDeleteKey(value) {
+  return String(value || "")
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "");
+}
+
+function getFeeTypeDeleteAliases(feeName) {
+  const base = normalizeFeeColumnBase(feeName);
+  const normalized = normalizeFeeTypeDeleteKey(feeName);
+  const aliases = new Set();
+
+  if (normalized) aliases.add(normalized);
+  if (base) aliases.add(normalizeFeeTypeDeleteKey(base));
+
+  if (normalized === "guide" || normalized === "guides" || base === "guide" || base === "guides") {
+    aliases.add("guide");
+    aliases.add("guides");
+  }
+
+  if (normalized === "stationary" || normalized === "stationery" || base === "stationary" || base === "stationery") {
+    aliases.add("stationary");
+    aliases.add("stationery");
+  }
+
+  if (normalized === "belt" || normalized === "beltfee" || base === "belt" || base === "beltfee") {
+    aliases.add("belt");
+    aliases.add("beltfee");
+  }
+
+  if (
+    normalized === "transport" ||
+    normalized === "transportation" ||
+    normalized === "transportfee" ||
+    base === "transport" ||
+    base === "transportation" ||
+    base === "transportfee"
+  ) {
+    aliases.add("transport");
+    aliases.add("transportation");
+    aliases.add("transportfee");
+  }
+
+  return Array.from(aliases).filter(Boolean);
 }
 
 const STATIC_FEE_BASES = new Set([
@@ -1002,6 +1077,7 @@ async function ensureSchoolSchema(schoolCode, pool) {
   await ensureColumn(pool, "FeesDetails", "Saving_Fees", "Saving_Fees DECIMAL(10,2) DEFAULT 0.00");
   await ensureColumn(pool, "FeesDetails", "Saving_paid", "Saving_paid DECIMAL(10,2) DEFAULT 0.00");
   await ensureColumn(pool, "FeesDetails", "Saving_Due", "Saving_Due DECIMAL(10,2) DEFAULT 0.00");
+  await ensureColumn(pool, "FeesDetails", "individualFeeAssignments", "individualFeeAssignments LONGTEXT NULL");
 
   const [feeTypeRows] = await pool.query(
     `SELECT fee_name
@@ -2946,6 +3022,101 @@ app.post("/api/fee-types", createFeeTypeHandler);
 app.post("/api/fee-type", async (req, res) => {
   // Compatibility alias for older frontend code
   return createFeeTypeHandler(req, res);
+});
+
+app.delete("/api/fee-types/:id", async (req, res) => {
+  const schoolCode = String(req.query.schoolCode || req.body?.schoolCode || "").trim();
+  const feeTypeId = Number(req.params.id);
+
+  if (!schoolCode || !Number.isFinite(feeTypeId)) {
+    return res.status(400).json({
+      success: false,
+      message: "schoolCode and a valid fee type id are required",
+    });
+  }
+
+  try {
+    const pool = getDatabaseConnection(schoolCode);
+    await ensureSchoolSchemaOnce(schoolCode, pool);
+
+    const [rows] = await pool.query(
+      `SELECT id, fee_name
+       FROM fee_type_master
+       WHERE id = ? AND schoolCode = ?
+       LIMIT 1`,
+      [feeTypeId, schoolCode]
+    );
+
+    if (!rows.length) {
+      return res.status(404).json({
+        success: false,
+        message: "Fee type not found",
+      });
+    }
+
+    const feeName = rows[0].fee_name;
+    const base = normalizeFeeColumnBase(feeName);
+    const deleteAliases = getFeeTypeDeleteAliases(feeName);
+    const existingColumns = await getExistingColumns(pool, "FeesDetails");
+
+    const zeroParts = [];
+
+    if (base && existingColumns.has(base)) {
+      zeroParts.push(`\`${base}\` = 0`);
+      zeroParts.push(`\`${base}_paid\` = 0`);
+      zeroParts.push(`\`${base}_due\` = 0`);
+      zeroParts.push(`\`${base}_discount\` = 0`);
+    }
+
+    if (zeroParts.length) {
+      await pool.query(`UPDATE FeesDetails SET ${zeroParts.join(", ")}`);
+    }
+
+    if (deleteAliases.length) {
+      const deletePlaceholders = deleteAliases.map(() => "LOWER(TRIM(COALESCE(fee_type, ''))) = ?").join(" OR ");
+      const deleteValues = deleteAliases;
+
+      const fieldsToZero = [];
+      if (existingColumns.has("amount_paid")) fieldsToZero.push("amount_paid = 0");
+      if (existingColumns.has("Discount")) fieldsToZero.push("Discount = 0");
+      if (existingColumns.has("fee_discount")) fieldsToZero.push("fee_discount = 0");
+      if (existingColumns.has("tuition_discount")) fieldsToZero.push("tuition_discount = 0");
+      if (existingColumns.has("bus_discount")) fieldsToZero.push("bus_discount = 0");
+
+      if (fieldsToZero.length) {
+        await pool.query(
+          `UPDATE FeesDetails
+           SET ${fieldsToZero.join(", ")}
+           WHERE ${deletePlaceholders}`,
+          deleteValues
+        );
+      } else if (deletePlaceholders) {
+        await pool.query(
+          `UPDATE FeesDetails
+           SET amount_paid = 0
+           WHERE ${deletePlaceholders}`,
+          deleteValues
+        );
+      }
+    }
+
+    await pool.query(
+      `DELETE FROM fee_type_master
+       WHERE id = ? AND schoolCode = ?`,
+      [feeTypeId, schoolCode]
+    );
+
+    return res.json({
+      success: true,
+      message: "Fee type and related columns deleted successfully",
+    });
+  } catch (error) {
+    console.error("❌ Failed to delete fee type:", error.message);
+    return res.status(500).json({
+      success: false,
+      message: "Failed to delete fee type",
+    });
+  }
 });
 
 const schoolPhotosStorage = multer.diskStorage({
@@ -11028,11 +11199,11 @@ case "TotalDueList":
       s.section,
 
       -- Individual dues
-      GREATEST(0, t.Admission_fees - s.Admission_paid) AS Admission_Due,
-      GREATEST(0, t.Bus_fees - s.bus_paid) AS Bus_Due,
-      GREATEST(0, t.Book_Fees - s.books_paid) AS Book_Due,
-      GREATEST(0, t.Exam_fees - s.exam_paid) AS Exam_Due,
-      GREATEST(0, t.Others - s.others_paid) AS Others_Due,
+      GREATEST(0, t.Admission_fees - IFNULL(s.Admission_paid,0)) AS Admission_Due,
+      GREATEST(0, t.Bus_fees - IFNULL(s.bus_paid,0)) AS Bus_Due,
+      GREATEST(0, t.Book_Fees - IFNULL(s.books_paid,0)) AS Book_Due,
+      GREATEST(0, t.Exam_fees - IFNULL(s.exam_paid,0)) AS Exam_Due,
+      GREATEST(0, t.Others - IFNULL(s.others_paid,0)) AS Others_Due,
 
       -- Tuition due
       GREATEST(
@@ -11055,11 +11226,11 @@ case "TotalDueList":
 
       -- Total Due
       (
-        GREATEST(0, t.Admission_fees - s.Admission_paid) +
-        GREATEST(0, t.Bus_fees - s.bus_paid) +
-        GREATEST(0, t.Book_Fees - s.books_paid) +
-        GREATEST(0, t.Exam_fees - s.exam_paid) +
-        GREATEST(0, t.Others - s.others_paid) +
+        GREATEST(0, t.Admission_fees - IFNULL(s.Admission_paid,0)) +
+        GREATEST(0, t.Bus_fees - IFNULL(s.bus_paid,0)) +
+        GREATEST(0, t.Book_Fees - IFNULL(s.books_paid,0)) +
+        GREATEST(0, t.Exam_fees - IFNULL(s.exam_paid,0)) +
+        GREATEST(0, t.Others - IFNULL(s.others_paid,0)) +
         GREATEST(
           0,
           (t.CompleteFee - (t.Admission_fees + t.Exam_fees + t.Book_Fees + t.Uniform_fees + t.Bus_fees + t.Others)) 
@@ -11086,11 +11257,11 @@ case "TotalDueList":
 
     WHERE s.StudentName IS NOT NULL
       AND (
-        GREATEST(0, t.Admission_fees - s.Admission_paid) +
-        GREATEST(0, t.Bus_fees - s.bus_paid) +
-        GREATEST(0, t.Book_Fees - s.books_paid) +
-        GREATEST(0, t.Exam_fees - s.exam_paid) +
-        GREATEST(0, t.Others - s.others_paid) +
+        GREATEST(0, t.Admission_fees - IFNULL(s.Admission_paid,0)) +
+        GREATEST(0, t.Bus_fees - IFNULL(s.bus_paid,0)) +
+        GREATEST(0, t.Book_Fees - IFNULL(s.books_paid,0)) +
+        GREATEST(0, t.Exam_fees - IFNULL(s.exam_paid,0)) +
+        GREATEST(0, t.Others - IFNULL(s.others_paid,0)) +
         GREATEST(
           0,
           (t.CompleteFee - (t.Admission_fees + t.Exam_fees + t.Book_Fees + t.Uniform_fees + t.Bus_fees + t.Others)) 
@@ -15517,7 +15688,10 @@ app.post("/api/campaigning/send-admission-qr-teachers", async (req, res) => {
         if (!waNumber) {
           throw new Error("Invalid WhatsApp number");
         }
-        await sendTextViaWhatsappBridge(normalizedSchoolCode, waNumber, caption);
+        await sendScheduledWhatsApp(normalizedSchoolCode, waNumber, caption, "", {
+          purpose: "admission-qr-teacher",
+          teacherName,
+        });
         sent += 1;
         console.log("[Campaigning][AdmissionQR] teacher:sent", {
           schoolCode: normalizedSchoolCode,
@@ -15604,7 +15778,12 @@ async function sendStaffInviteToLeadStaff(schoolCode, mobileNumber, leadName, cr
     `Please sign in using the above credentials and keep them secure.`,
   ].join("\n");
 
-  return sendTextViaWhatsappBridge(schoolCode, mobileNumber, caption);
+  // Prefer the local WhatsApp session when it is available; fall back to the bridge.
+  // This keeps staff invites working even if the bridge process is temporarily unavailable.
+  return sendScheduledWhatsApp(schoolCode, mobileNumber, caption, "", {
+    purpose: "staff-invite",
+    leadName: String(leadName || "").trim() || null,
+  });
 }
 
 app.get("/api/lead-staff", async (req, res) => {
@@ -18724,6 +18903,109 @@ connection = await pool.getConnection();
     res.status(500).json({ error: 'Database error during update', details: err.message });
   }
 });
+
+app.get('/api/discounts-report', async (req, res) => {
+  const { className, section, schoolCode, fromDate, toDate } = req.query;
+
+  console.log("🟦 Incoming Request: /api/discounts-report");
+  console.log("👉 Query Params:", { className, section, schoolCode, fromDate, toDate });
+
+  if (!schoolCode) {
+    return res.status(400).json({ error: 'School code is required' });
+  }
+
+  let connection;
+  try {
+    const pool = getDatabaseConnection(schoolCode);
+    connection = await pool.getConnection();
+
+    const candidateDiscountColumns = [
+      "Discount",
+      "tuition_discount",
+      "fee_discount",
+      "bus_discount",
+      "uniform_discount",
+      "exam_discount",
+      "stationary_discount",
+      "sports_discount",
+      "guides_discount",
+      "belt_discount",
+      "tie_discount",
+      "cultural_activities_discount",
+      "anual_discount",
+      "library_discount",
+      "transportation_discount",
+      "xyz_discount",
+      "abc_discount",
+      "Admission_Discount",
+    ];
+    const candidateReasonColumns = [
+      "discount_reason",
+      "reason",
+      "discountReason",
+      "editReason",
+    ];
+
+    const [columnRows] = await connection.query(
+      `
+        SELECT COLUMN_NAME
+        FROM INFORMATION_SCHEMA.COLUMNS
+        WHERE TABLE_SCHEMA = DATABASE()
+          AND TABLE_NAME = 'FeesDetails'
+      `
+    );
+    const existingColumns = new Set(columnRows.map((row) => String(row.COLUMN_NAME || row.column_name || "").trim()));
+    const activeDiscountColumns = candidateDiscountColumns.filter((column) => existingColumns.has(column));
+    const activeReasonColumns = candidateReasonColumns.filter((column) => existingColumns.has(column));
+    const reasonSelectClause = activeReasonColumns.length
+      ? `COALESCE(${activeReasonColumns.map((column) => `\`${column}\``).join(", ")}) AS discount_reason`
+      : `NULL AS discount_reason`;
+
+    let sql = `
+      SELECT
+        *,
+        COALESCE(created_at, updated_at) AS record_date,
+        ${reasonSelectClause}
+      FROM FeesDetails
+      WHERE StudentName IS NOT NULL
+    `;
+    const params = [];
+
+    if (activeDiscountColumns.length) {
+      sql += ` AND (${activeDiscountColumns.map((column) => `COALESCE(\`${column}\`, 0) > 0`).join(" OR ")})`;
+    }
+
+    if (className && className !== 'All') {
+      sql += ' AND Class_name = ?';
+      params.push(className);
+    }
+
+    if (section && section !== 'All') {
+      sql += ' AND section = ?';
+      params.push(section);
+    }
+
+    if (fromDate) {
+      sql += ' AND DATE(COALESCE(created_at, updated_at)) >= ?';
+      params.push(fromDate);
+    }
+
+    if (toDate) {
+      sql += ' AND DATE(COALESCE(created_at, updated_at)) <= ?';
+      params.push(toDate);
+    }
+
+    sql += ' ORDER BY COALESCE(created_at, updated_at) DESC, id DESC';
+
+    const [results] = await connection.query(sql, params);
+    res.json(results);
+  } catch (err) {
+    console.error("🔥 Discounts report error:", err);
+    res.status(500).json({ error: 'Database error', details: err.message });
+  } finally {
+    if (connection) connection.release();
+  }
+});
 app.get('/api/discounted-students', async (req, res) => {
   const { className, section, schoolCode } = req.query;
 
@@ -20038,9 +20320,9 @@ app.get('/api/student-fee-details', async (req, res) => {
       const studentSql = `
         SELECT *
         FROM FeesDetails
-        WHERE Class_name = ?
-          AND section = ?
-          AND StudentName = ?
+        WHERE TRIM(Class_name) = TRIM(?)
+          AND TRIM(section) = TRIM(?)
+          AND LOWER(TRIM(StudentName)) = LOWER(TRIM(?))
         ORDER BY id DESC
         LIMIT 1
       `;
@@ -22998,7 +23280,8 @@ app.put('/income', async (req, res) => {
     admission,
     residential,
     other,
-    feeEntries
+    feeEntries,
+    individualFeeAssignments
   } = req.body;
 
   // Validate required fields
@@ -23050,6 +23333,10 @@ app.put('/income', async (req, res) => {
       }
       console.log('[PUT /income] feeEntries received:', JSON.stringify(feeEntries, null, 2));
       console.log('[PUT /income] feeMap normalized:', feeMap);
+
+      const serializedIndividualFeeAssignments = Array.isArray(individualFeeAssignments)
+        ? JSON.stringify(individualFeeAssignments)
+        : "[]";
 
       const baseFeeTypes = new Set([
         "tuition",
@@ -23232,6 +23519,7 @@ app.put('/income', async (req, res) => {
           ResidentialCompleteFee = ?,
           CompleteFee = ?,
           fee_type = ?,
+          individualFeeAssignments = ?,
           ${customUpdateColumns.length ? `${customUpdateColumns.join(", ")},` : ""}
           updated_at = NOW()
         WHERE id = ?`,
@@ -23245,6 +23533,7 @@ app.put('/income', async (req, res) => {
           fees.residential,
           completeFee,
           'Tuition Fee',
+          serializedIndividualFeeAssignments,
           ...customUpdateValues,
           recordId
         ]
@@ -23260,6 +23549,7 @@ app.put('/income', async (req, res) => {
           ...fees,
           ...customFees,
           completeFee,
+          individualFeeAssignments: Array.isArray(individualFeeAssignments) ? individualFeeAssignments : [],
           id: recordId
         }
       });

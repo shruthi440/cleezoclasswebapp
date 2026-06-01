@@ -551,7 +551,7 @@
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
   gap: 0.8rem;
-  align-items: center;
+  align-items: start;
   min-height: 5rem;
   padding: 0.45rem 1rem;
 }
@@ -561,6 +561,48 @@
   display: flex;
   gap: 1.2rem;
   min-width: 0;
+}
+
+.accountant-feetype-dynamic-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(8.2rem, 1fr));
+  gap: 0.4rem;
+  align-content: start;
+  width: 100%;
+  max-height: 100%;
+  overflow: auto;
+  padding-right: 0.15rem;
+}
+
+.accountant-feetype-dynamic-item {
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+  padding: 0.42rem 0.5rem;
+  border-radius: 0.65rem;
+  background: #fff8f9;
+  border: 1px solid #ffd6dc;
+  min-width: 0;
+}
+
+.accountant-feetype-dynamic-item strong {
+  font-size: 0.78rem;
+  line-height: 1.15;
+  color: #111111;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.accountant-feetype-dynamic-item span,
+.accountant-feetype-dynamic-item p {
+  margin: 0;
+  font-size: 0.64rem;
+  line-height: 1.2;
+  color: #7f7f7f;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .accountant-total-others-left .accountant-total-strip-item strong {

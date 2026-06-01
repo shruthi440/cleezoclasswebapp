@@ -6,6 +6,7 @@ import DiscountsPanel from "./Accounatant_FeesManagement_Discounts.jsx";
 import DashboardLayout from "../components/DashboardLayout.jsx";
 import "./FrontDesk_Tickets.css";
 import "./dashboardGlobal.css"
+import "./PopupStyles.css";
 import { resolveInstituteDisplayName } from "../shared/instituteNameUtils";
 
 import collectFeeIcon from "../assets/collect.png";
@@ -196,6 +197,11 @@ const getStudentCompositeKey = (row) =>
     String(row?.Section || row?.section || row?.sectionName || row?.FeeSection || "").trim().toLowerCase(),
   ].join("|");
 
+const stripClassPrefix = (value) =>
+  String(value || "")
+    .replace(/^Class\s+/i, "")
+    .trim();
+
 
 
 const AccountantDashboard = () => {
@@ -217,15 +223,15 @@ const AccountantDashboard = () => {
   const [unpaidStudents, setUnpaidStudents] = useState([]);
   const [allFeeStatusRows, setAllFeeStatusRows] = useState([]);
   const [studentDirectory, setStudentDirectory] = useState([]);
+  const [classSectionStudents, setClassSectionStudents] = useState([]);
   const [paymentSummaryMap, setPaymentSummaryMap] = useState({});
+  const [selectedStudentFeeDetails, setSelectedStudentFeeDetails] = useState(null);
+  const [selectedClassSectionFeeRows, setSelectedClassSectionFeeRows] = useState([]);
   const [selectedClassFeeStructure, setSelectedClassFeeStructure] = useState(null);
   const [selectedClassFilter, setSelectedClassFilter] = useState("All");
   const [selectedSectionFilter, setSelectedSectionFilter] = useState("All");
   const [isPaymentPopupOpen, setIsPaymentPopupOpen] = useState(false);
-  const [paymentPopupApiRows, setPaymentPopupApiRows] = useState([]);
-  const [paymentPopupLoading, setPaymentPopupLoading] = useState(false);
-  const [paymentPopupError, setPaymentPopupError] = useState("");
-  const [paymentPopupTab, setPaymentPopupTab] = useState("studentData");
+  const [paymentPopupTab, setPaymentPopupTab] = useState("student-data");
   const [userDropdownOpen, setUserDropdownOpen] = useState(false);
   const [schoolLogo, setSchoolLogo] = useState("/default-logo.png");
   const [schoolName, setSchoolName] = useState("Loading...");
@@ -238,6 +244,7 @@ const AccountantDashboard = () => {
   });
   const [profileSaveStatus, setProfileSaveStatus] = useState("");
   const [profileSaving, setProfileSaving] = useState(false);
+  const [isStudentManagementPopupOpen, setIsStudentManagementPopupOpen] = useState(false);
   const [ticketActiveTab, setTicketActiveTab] = useState("staff");
   const [ticketTeachers, setTicketTeachers] = useState([]);
   const [ticketLoadingTeachers, setTicketLoadingTeachers] = useState(false);
@@ -264,6 +271,7 @@ const AccountantDashboard = () => {
     section: "",
     rows: [],
   });
+  const [hoveredInstallmentFeeId, setHoveredInstallmentFeeId] = useState(null);
   const [popupSelection, setPopupSelection] = useState({ className: "", sectionName: "" });
   const [previousYearDue, setPreviousYearDue] = useState(0);
   const [dynamicFeeTypes, setDynamicFeeTypes] = useState([]);
@@ -275,7 +283,6 @@ const AccountantDashboard = () => {
   const [createFeeTypeLoading, setCreateFeeTypeLoading] = useState(false);
   const [createFeeTypeError, setCreateFeeTypeError] = useState("");
   const [newFeeTypeForm, setNewFeeTypeForm] = useState({
-    feeName: "",
     feesType: "",
     scope: "",
     frequency: "",
@@ -304,6 +311,89 @@ const AccountantDashboard = () => {
       return 0;
     },
     [toNumber]
+  );
+
+  const resolveNumberWithSource = useCallback(
+    (row, keys) => {
+      for (const key of keys) {
+        const value = row?.[key];
+        if (value !== undefined && value !== null && String(value).trim() !== "") {
+          return {
+            key,
+            rawValue: value,
+            value: toNumber(value),
+          };
+        }
+      }
+
+      return {
+        key: null,
+        rawValue: null,
+        value: 0,
+      };
+    },
+    [toNumber]
+  );
+
+  const getDiscountTotalForRow = useCallback(
+    (row) => {
+      const explicitDiscount = getAnyNumber(row, [
+        "Discount",
+        "Total_Discount",
+        "Concession",
+        "feeDiscount",
+        "Discount_Amount",
+        "discount_amount",
+        "discount",
+      ]);
+
+      if (explicitDiscount > 0) return explicitDiscount;
+
+      return getDynamicTotalBySuffix(row, "discount", [
+        "discount",
+        "Discount",
+        "Total_Discount",
+        "Concession",
+        "feeDiscount",
+        "Discount_Amount",
+        "discount_amount",
+      ]);
+    },
+    [getAnyNumber]
+  );
+
+  const getFeeTypeDiscountForRow = useCallback(
+    (row, feeType) => {
+      const normalized = String(feeType || "")
+        .trim()
+        .toLowerCase()
+        .replace(/\s+/g, "_");
+
+      const discountKeys = [
+        `${normalized}_discount`,
+        `${normalized}_Discount`,
+        `${normalized}Discount`,
+      ];
+
+      if (normalized === "class_fee" || normalized === "classfee") {
+        return getDiscountTotalForRow(row);
+      }
+
+      if (normalized === "books" || normalized === "book" || normalized === "books_fee" || normalized === "book_fee") {
+        discountKeys.push("fee_discount", "books_discount", "book_discount");
+      }
+
+      if (normalized === "tuition") {
+        discountKeys.push("tuition_discount");
+      }
+
+      if (normalized === "bus") {
+        discountKeys.push("bus_discount");
+      }
+
+      return getAnyNumber(row, discountKeys) || 0;
+    },
+    [getAnyNumber, getDiscountTotalForRow]
   );
 
   const getFeeTotalsForRow = useCallback(
@@ -385,16 +475,18 @@ const AccountantDashboard = () => {
           "others_description_paid",
         ]);
 
+      const discount = getDiscountTotalForRow(row);
       const expected = expectedDirect > 0 ? expectedDirect : expectedFromParts;
+      const effectiveExpected = Math.max(expected - discount, 0);
       const paid = paidDirect > 0 ? paidDirect : paidFromParts;
-      let unpaid = Math.max(expected - paid, 0);
+      let unpaid = Math.max(effectiveExpected - paid, 0);
       const explicitRemaining = getExplicitRemainingAmount(row);
 
-      if (explicitRemaining > 0) {
+      if (discount <= 0 && explicitRemaining > 0) {
         unpaid = explicitRemaining;
       }
 
-      if (expected === 0 && paid === 0) {
+      if (effectiveExpected === 0 && paid === 0) {
         const dueAlt = getAnyNumber(row, [
           "Due_Amount",
           "Total_Due",
@@ -407,9 +499,9 @@ const AccountantDashboard = () => {
         else if (explicitRemaining > 0) unpaid = explicitRemaining;
       }
 
-      return { expected, paid, unpaid };
+      return { expected: effectiveExpected, paid, unpaid };
     },
-    [getAnyNumber, toNumber]
+    [getAnyNumber, getDiscountTotalForRow, toNumber]
   );
 
   const normalizeUserPhoto = (rawPhoto) => {
@@ -479,7 +571,51 @@ const AccountantDashboard = () => {
     []
   );
 
-  const normalizeClassLabel = useCallback((value) => String(value || "").replace(/^Class\s+/i, "").trim(), []);
+  const normalizeClassLabel = useCallback(
+    (value) => String(value || "").replace(/^Class\s+/i, "").trim().toLowerCase(),
+    []
+  );
+  const normalizeSectionLabel = useCallback((value) => String(value || "").trim().toLowerCase(), []);
+  const formatFeeTypeLabel = useCallback((value) => {
+    const normalized = String(value || "").trim();
+    if (!normalized) return "Fee";
+    return normalized
+      .replace(/[_-]+/g, " ")
+      .replace(/\s+/g, " ")
+      .replace(/\b\w/g, (char) => char.toUpperCase());
+  }, []);
+  const allowedCustomFeeKeys = useMemo(() => {
+    const keys = new Set([
+      "sports",
+      "stationary",
+      "stationery",
+      "guides",
+      "belt",
+      "tie",
+      "tie_fee",
+      "library",
+      "books",
+      "book",
+      "transport",
+      "transport_fee",
+      "hostel",
+      "mess",
+      "saving",
+      "savings",
+    ]);
+
+    (dynamicFeeTypes || []).forEach((fee) => {
+      const normalized = String(fee?.feeName || fee?.feesType || "")
+        .trim()
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, "_")
+        .replace(/_+/g, "_")
+        .replace(/^_+|_+$/g, "");
+      if (normalized) keys.add(normalized);
+    });
+
+    return keys;
+  }, [dynamicFeeTypes]);
   const schoolCode = useMemo(() => localStorage.getItem("schoolCode") || "", []);
   const normalizeTicketStudentList = useCallback((payload) => {
     const list = Array.isArray(payload)
@@ -591,8 +727,20 @@ const AccountantDashboard = () => {
       const paidDate = formatDisplayDate(
         row?.paidDate || row?.record_date || row?.payment_date || row?.Receipt_Date || row?.createdAt || row?.date || ""
       );
+      const classFeeLookupSource = selectedClassFeeStructure || {};
+      const resolveClasswiseAmount = (...keys) =>
+        resolveNumberWithSource(classFeeLookupSource, keys).value ||
+        resolveNumberWithSource(row, keys).value ||
+        0;
+      const resolveStudentOnlyAmount = (...keys) => resolveNumberWithSource(row, keys).value || 0;
 
       const feeConfigs = [
+        {
+          feeType: "Class Fee",
+          totalKeys: ["CompleteFee", "complete_fee", "UpdatedCompleteFee", "updatedCompleteFee"],
+          paidKeys: ["Paid_Amount", "paid_amount", "Total_Paid", "totalPaid", "dynamicFeePaidTotal"],
+          dueKeys: ["Remaining_Amount", "remaining_amount", "Total_Due", "Due_Amount"],
+        },
         {
           feeType: "Admission",
           totalKeys: ["admissionFee", "Admission_fees", "Admission_Fees"],
@@ -612,6 +760,24 @@ const AccountantDashboard = () => {
           dueKeys: ["uniformRemaining", "uniform_due", "Uniform_Due"],
         },
         {
+          feeType: "Bus",
+          totalKeys: ["Bus_fees", "Bus_Fees", "busFee", "Transport_Fee"],
+          paidKeys: ["bus_paid", "Bus_paid", "transport_paid"],
+          dueKeys: ["bus_remaining", "Bus_Due", "transport_due", "Transport_Due"],
+        },
+        {
+          feeType: "Exam",
+          totalKeys: ["Exam_fees", "Exam_Fees", "examFee"],
+          paidKeys: ["exam_paid", "Exam_paid"],
+          dueKeys: ["exam_remaining", "Exam_Due", "exam_due"],
+        },
+        {
+          feeType: "Others",
+          totalKeys: ["Others", "otherFee", "Other_Fee"],
+          paidKeys: ["others_paid", "Other_paid"],
+          dueKeys: ["others_remaining", "Others_Due", "other_due"],
+        },
+        {
           feeType: "Tuition",
           totalKeys: ["Tuition_Fee", "TuitionFee", "Calculated_Tuition_Fee"],
           paidKeys: ["TuitionPaid", "paid_amount", "Paid_Amount"],
@@ -619,27 +785,27 @@ const AccountantDashboard = () => {
         },
         {
           feeType: "Sports",
-          totalKeys: ["sports"],
-          paidKeys: ["sports_paid"],
-          dueKeys: ["sports_due"],
+          totalKeys: ["sports", "sport"],
+          paidKeys: ["sports_paid", "sport_paid"],
+          dueKeys: ["sports_due", "sport_due"],
         },
         {
           feeType: "Stationary",
-          totalKeys: ["stationary"],
-          paidKeys: ["stationary_paid"],
-          dueKeys: ["stationary_due"],
+          totalKeys: ["stationary", "stationery"],
+          paidKeys: ["stationary_paid", "stationery_paid"],
+          dueKeys: ["stationary_due", "stationery_due"],
         },
         {
           feeType: "Guides",
-          totalKeys: ["guides"],
-          paidKeys: ["guides_paid"],
-          dueKeys: ["guides_due"],
+          totalKeys: ["guides", "guide"],
+          paidKeys: ["guides_paid", "guide_paid"],
+          dueKeys: ["guides_due", "guide_due"],
         },
         {
           feeType: "Belt",
-          totalKeys: ["belt"],
-          paidKeys: ["belt_paid"],
-          dueKeys: ["belt_due"],
+          totalKeys: ["belt", "belt_fee"],
+          paidKeys: ["belt_paid", "belt_fee_paid"],
+          dueKeys: ["belt_due", "belt_fee_due"],
         },
         {
           feeType: "Tie",
@@ -655,13 +821,33 @@ const AccountantDashboard = () => {
         },
       ];
 
-      return feeConfigs
+      const normalizeFeeKey = (value) =>
+        String(value || "")
+          .trim()
+          .toLowerCase()
+          .replace(/[^a-z0-9]+/g, "_")
+          .replace(/_+/g, "_")
+          .replace(/^_+|_+$/g, "");
+
+      const coveredKeys = new Set(
+        feeConfigs.flatMap((config) => [
+          ...config.totalKeys.map((key) => normalizeFeeKey(key)),
+          ...config.paidKeys.map((key) => normalizeFeeKey(key)),
+          ...config.dueKeys.map((key) => normalizeFeeKey(key)),
+          normalizeFeeKey(config.feeType),
+        ])
+      );
+      const customRows = [];
+
+      const standardRows = feeConfigs
         .map((config, index) => {
-          const totalAmount = getAnyNumber(row, config.totalKeys);
+          const rawTotalAmount = getAnyNumber(row, config.totalKeys);
           const paidAmount = getAnyNumber(row, config.paidKeys);
+          const discountAmount = getFeeTypeDiscountForRow(row, config.feeType);
+          const totalAmount = rawTotalAmount;
           const dueAmount =
             getAnyNumber(row, config.dueKeys) ||
-            (totalAmount > 0 || paidAmount > 0 ? Math.max(totalAmount - paidAmount, 0) : 0);
+            (totalAmount > 0 || paidAmount > 0 ? Math.max(totalAmount - discountAmount - paidAmount, 0) : 0);
           const hasDetailedFeeValues = [...config.totalKeys, ...config.paidKeys].some((key) => {
             const value = row?.[key];
             return value !== undefined && value !== null && String(value).trim() !== "" && Number(value) !== 0;
@@ -676,7 +862,7 @@ const AccountantDashboard = () => {
             className: row?.Class_name || row?.class_name || row?.className || "-",
             section: row?.Section || row?.section || row?.sectionName || "-",
             feeType: config.feeType,
-            discountAmount: 0,
+            discountAmount,
             totalAmount,
             paidAmount,
             dueAmount,
@@ -684,8 +870,241 @@ const AccountantDashboard = () => {
           };
         })
         .filter(Boolean);
+
+      const dynamicRows = (dynamicFeeTypes || [])
+        .map((fee, index) => {
+          const rawFeeName = String(fee?.feeName || fee?.feesType || fee?.label || "").trim();
+          const normalizedKey = normalizeFeeKey(fee?.columnBase || rawFeeName);
+          if (!normalizedKey) return null;
+          if (coveredKeys.has(normalizedKey)) return null;
+          const feeScope = String(fee?.scope || "").trim().toLowerCase();
+
+          const aliases = [
+            `${normalizedKey}Total`,
+            `${normalizedKey}Amount`,
+            `${rawFeeName}Total`,
+            `${rawFeeName}Amount`,
+            normalizedKey,
+            rawFeeName,
+            `${normalizedKey}_total`,
+            `${normalizedKey}_amount`,
+          ].filter(Boolean);
+
+          const totalAmount =
+            feeScope === "individual"
+              ? resolveStudentOnlyAmount(
+                  `${normalizedKey}_total`,
+                  `${normalizedKey}Total`,
+                  `${normalizedKey}_amount`,
+                  `${normalizedKey}Amount`,
+                  ...aliases
+                )
+              : resolveClasswiseAmount(
+                  `${normalizedKey}_total`,
+                  `${normalizedKey}Total`,
+                  `${normalizedKey}_amount`,
+                  `${normalizedKey}Amount`,
+                  ...aliases
+                );
+          const paidAmount = feeScope === "individual"
+            ? resolveStudentOnlyAmount(
+                `${normalizedKey}Paid`,
+                `${normalizedKey}_paid`,
+                `${rawFeeName}Paid`,
+                `${rawFeeName}_paid`
+              )
+            : getAnyNumber(row, [
+                `${normalizedKey}Paid`,
+                `${normalizedKey}_paid`,
+                `${rawFeeName}Paid`,
+                `${rawFeeName}_paid`,
+              ]);
+          const discountAmount = feeScope === "individual"
+            ? resolveStudentOnlyAmount(
+                `${normalizedKey}Discount`,
+                `${normalizedKey}_discount`,
+                `${rawFeeName}Discount`,
+                `${rawFeeName}_discount`
+              )
+            : getAnyNumber(row, [
+                `${normalizedKey}Discount`,
+                `${normalizedKey}_discount`,
+                `${rawFeeName}Discount`,
+                `${rawFeeName}_discount`,
+              ]);
+          const dueAmount = feeScope === "individual"
+            ? resolveStudentOnlyAmount(
+                `${normalizedKey}Due`,
+                `${normalizedKey}_due`,
+                `${rawFeeName}Due`,
+                `${rawFeeName}_due`
+              ) || Math.max(totalAmount - discountAmount - paidAmount, 0)
+            : getAnyNumber(row, [
+                `${normalizedKey}Due`,
+                `${normalizedKey}_due`,
+                `${rawFeeName}Due`,
+                `${rawFeeName}_due`,
+              ]) || Math.max(totalAmount - discountAmount - paidAmount, 0);
+
+          if (normalizedKey === "pg" || String(rawFeeName).trim().toLowerCase() === "pg") {
+            console.log("[Dashboard][buildFeeRowsFromStudentSummary][pg]", {
+              studentName: row?.StudentName || row?.studentName || row?.name || row?.Student_Name || "Student",
+              className: row?.Class_name || row?.class_name || row?.className || "-",
+              section: row?.Section || row?.section || row?.sectionName || "-",
+              feeScope,
+              normalizedKey,
+              rawFeeName,
+              aliases,
+              rowPg: {
+                pg: row?.pg,
+                pgTotal: row?.pgTotal,
+                pgPaid: row?.pgPaid,
+                pgDue: row?.pgDue,
+                pg_paid: row?.pg_paid,
+                pg_due: row?.pg_due,
+              },
+              resolved: {
+                totalAmount,
+                paidAmount,
+                discountAmount,
+                dueAmount,
+              },
+            });
+          }
+
+          if (totalAmount <= 0 && paidAmount <= 0 && discountAmount <= 0 && dueAmount <= 0) {
+            return null;
+          }
+
+          return {
+            id: `${getStudentCompositeKey(row)}-${normalizedKey}-${index}`,
+            studentName: row?.StudentName || row?.studentName || row?.name || row?.Student_Name || "Student",
+            className: row?.Class_name || row?.class_name || row?.className || "-",
+            section: row?.Section || row?.section || row?.sectionName || "-",
+            feeType: formatFeeTypeLabel(rawFeeName || normalizedKey),
+            discountAmount,
+            totalAmount,
+            paidAmount,
+            dueAmount,
+            paymentDate: paidDate,
+          };
+        })
+        .filter(Boolean);
+
+      Object.entries(row || {}).forEach(([rawKey, rawValue]) => {
+        const normalizedKey = normalizeFeeKey(rawKey);
+        if (!normalizedKey) return;
+        if (coveredKeys.has(normalizedKey)) return;
+
+        if (
+          normalizedKey === "id" ||
+          normalizedKey === "student_id" ||
+          normalizedKey === "studentname" ||
+          normalizedKey === "student_name" ||
+          normalizedKey === "name" ||
+          normalizedKey === "class_name" ||
+          normalizedKey === "classname" ||
+          normalizedKey === "section" ||
+          normalizedKey === "section_name" ||
+          normalizedKey === "father_name" ||
+          normalizedKey === "mobile_no" ||
+          normalizedKey === "phone_no" ||
+          normalizedKey === "admission_no" ||
+          normalizedKey === "gender" ||
+          normalizedKey === "email" ||
+          normalizedKey === "discount" ||
+          normalizedKey === "record_date" ||
+          normalizedKey === "payment_date" ||
+          normalizedKey === "created_at" ||
+          normalizedKey === "updated_at" ||
+          normalizedKey === "completefee" ||
+          normalizedKey === "complete_fee" ||
+          normalizedKey.startsWith("total_") ||
+          normalizedKey.startsWith("dynamicfee") ||
+          normalizedKey.endsWith("_paid") ||
+          normalizedKey.endsWith("_due") ||
+          normalizedKey.endsWith("_discount")
+        ) {
+          return;
+        }
+
+        if (!allowedCustomFeeKeys.has(normalizedKey)) return;
+
+        const matchingFeeConfig = (dynamicFeeTypes || []).find((fee) => {
+          const feeKey = normalizeFeeKey(fee?.columnBase || fee?.feeName || fee?.label || "");
+          return feeKey === normalizedKey;
+        });
+        const customFeeScope = String(matchingFeeConfig?.scope || "").trim().toLowerCase();
+        const totalAmount =
+          customFeeScope === "individual"
+            ? resolveStudentOnlyAmount(rawKey, normalizedKey)
+            : resolveClasswiseAmount(rawKey, normalizedKey);
+        if (!Number.isFinite(totalAmount) || totalAmount <= 0) return;
+
+        const paidAmount = getAnyNumber(row, [
+          `${rawKey}_paid`,
+          `${rawKey}_Paid`,
+          `${normalizedKey}_paid`,
+          `${normalizedKey}_Paid`,
+        ]);
+        const discountAmount = getAnyNumber(row, [
+          `${rawKey}_discount`,
+          `${rawKey}_Discount`,
+          `${rawKey}Discount`,
+          `${normalizedKey}_discount`,
+          `${normalizedKey}_Discount`,
+          `${normalizedKey}Discount`,
+        ]);
+        const dueAmount = getAnyNumber(row, [
+          `${rawKey}_due`,
+          `${rawKey}_Due`,
+          `${normalizedKey}_due`,
+          `${normalizedKey}_Due`,
+        ]) || Math.max(totalAmount - discountAmount - paidAmount, 0);
+
+        const label = formatFeeTypeLabel(rawKey);
+        const rowIdKey = `${getStudentCompositeKey(row)}-${normalizedKey}`;
+
+        customRows.push({
+          id: rowIdKey,
+          studentName: row?.StudentName || row?.studentName || row?.name || row?.Student_Name || "Student",
+          className: row?.Class_name || row?.class_name || row?.className || "-",
+          section: row?.Section || row?.section || row?.sectionName || "-",
+          feeType: label,
+          discountAmount,
+          totalAmount,
+          paidAmount,
+          dueAmount,
+          paymentDate: paidDate,
+        });
+      });
+
+      const combinedRows = [...standardRows, ...dynamicRows, ...customRows];
+      const dedupedRows = [];
+      const seenRows = new Set();
+
+      combinedRows.forEach((item) => {
+        const dedupeKey = [
+          String(item?.studentName || "").trim().toLowerCase(),
+          String(item?.className || "").trim().toLowerCase(),
+          String(item?.section || "").trim().toLowerCase(),
+          String(item?.feeType || "").trim().toLowerCase(),
+        ].join("|");
+
+        if (seenRows.has(dedupeKey)) return;
+        seenRows.add(dedupeKey);
+        dedupedRows.push(item);
+      });
+
+      return dedupedRows;
     },
-    [formatDisplayDate, getAnyNumber]
+    [
+      allowedCustomFeeKeys,
+      dynamicFeeTypes,
+      formatDisplayDate,
+      getAnyNumber,
+      getFeeTypeDiscountForRow,
+    ]
   );
 
   const buildTransactionRowFromFeeRecord = useCallback(
@@ -746,22 +1165,15 @@ const AccountantDashboard = () => {
       const paidAmount = feeConfig
         ? getAnyNumber(row, feeConfig.paidKeys)
         : getAnyNumber(row, ["amount_paid", "paid_amount", "Paid_Amount", "Total_Paid", "totalPaid", "dynamicFeePaidTotal"]) || totals.paid;
-      const discountAmount = getAnyNumber(row, [
-        `${normalizedFeeType}_discount`,
-        `${normalizedFeeType}_Discount`,
-        `${normalizedFeeType}Discount`,
-        "discount_amount",
-        "Discount_Amount",
-        "discount",
-        "Discount",
-        "feeDiscount",
-      ]);
-      const dueAmount = feeConfig
-        ? getAnyNumber(row, feeConfig.dueKeys) || Math.max(getAnyNumber(row, feeConfig.totalKeys) - paidAmount, 0)
-        : getExplicitRemainingAmount(row) || Math.max(totals.unpaid || 0, 0);
+      const discountAmount = getFeeTypeDiscountForRow(row, rawFeeType);
       const totalAmount = feeConfig
-        ? getAnyNumber(row, feeConfig.totalKeys) || paidAmount + dueAmount
-        : totals.expected > 0 ? totals.expected : paidAmount + dueAmount;
+        ? getAnyNumber(row, feeConfig.totalKeys)
+        : totals.expected > 0
+          ? totals.expected
+          : Math.max(paidAmount + totals.unpaid, 0);
+      const dueAmount = feeConfig
+        ? ((discountAmount <= 0 && getAnyNumber(row, feeConfig.dueKeys)) || Math.max(totalAmount - discountAmount - paidAmount, 0))
+        : ((discountAmount <= 0 && getExplicitRemainingAmount(row)) || Math.max(totalAmount - discountAmount - paidAmount, 0));
 
       return {
         id: row?.id ?? row?.receiptNumber ?? `${getStudentCompositeKey(row)}-${rawFeeType}-${index}`,
@@ -779,7 +1191,7 @@ const AccountantDashboard = () => {
         ),
       };
     },
-    [formatDisplayDate, getAnyNumber, getFeeTotalsForRow]
+    [formatDisplayDate, getAnyNumber, getFeeTypeDiscountForRow, getFeeTotalsForRow]
   );
 
   const safeSessionSet = useCallback((key, value) => {
@@ -1109,17 +1521,42 @@ const AccountantDashboard = () => {
   useEffect(() => {
     const schoolCode = localStorage.getItem("schoolCode");
     if (!schoolCode || selectedClassFilter === "All" || selectedSectionFilter === "All") {
+      setSelectedClassSectionFeeRows([]);
+      return;
+    }
+
+    let isCancelled = false;
+
+    axios
+      .get("https://cleezoclass.com:4000/api/fee-payment-status", {
+        params: {
+          schoolCode,
+          class_name: selectedClassFilter,
+          section: selectedSectionFilter,
+        },
+      })
+      .then((res) => {
+        if (isCancelled) return;
+        setSelectedClassSectionFeeRows(Array.isArray(res.data) ? res.data : []);
+      })
+      .catch(() => {
+        if (isCancelled) return;
+        setSelectedClassSectionFeeRows([]);
+      });
+
+    return () => {
+      isCancelled = true;
+    };
+  }, [selectedClassFilter, selectedSectionFilter]);
+
+  useEffect(() => {
+    const schoolCode = localStorage.getItem("schoolCode");
+    if (!schoolCode || selectedClassFilter === "All" || selectedSectionFilter === "All") {
       setPaymentSummaryMap({});
       return;
     }
 
-    const studentsForSelectedClass = (studentDirectory || [])
-      .filter((student) => {
-        const className = String(student?.class_name || student?.Class_name || student?.className || "").trim();
-        const section = String(student?.section || student?.Section || student?.sectionName || "").trim();
-        return className === String(selectedClassFilter).trim() && section === String(selectedSectionFilter).trim();
-      })
-      .slice(0, 25);
+    const studentsForSelectedClass = Array.isArray(classSectionStudents) ? classSectionStudents : [];
 
     if (!studentsForSelectedClass.length) {
       setPaymentSummaryMap({});
@@ -1133,7 +1570,7 @@ const AccountantDashboard = () => {
         const studentId = student?.id ?? student?.student_id;
         if (!studentId) return null;
 
-        try {
+      try {
           const res = await axios.get(`https://cleezoclass.com:4000/api/payment/${studentId}`, {
             params: { schoolCode },
           });
@@ -1146,6 +1583,38 @@ const AccountantDashboard = () => {
             Class_name: paymentPayload?.class || paymentPayload?.Class_name || student?.class_name,
             Section: paymentPayload?.section || paymentPayload?.Section || student?.section,
           });
+
+          const studentName = String(
+            paymentPayload?.studentName || paymentPayload?.StudentName || student?.name || ""
+          ).trim();
+          const studentClass = String(
+            paymentPayload?.class || paymentPayload?.Class_name || student?.class_name || ""
+          ).trim();
+          const studentSection = String(
+            paymentPayload?.section || paymentPayload?.Section || student?.section || ""
+          ).trim();
+          console.log("[Dashboard][api/payment]", {
+            studentId,
+            studentName,
+            studentClass,
+            studentSection,
+            rawResponse: res?.data,
+            paymentPayload,
+            dynamicFeeBreakdown: paymentPayload?.dynamicFeeBreakdown,
+            dynamicFeeTotals: paymentPayload?.dynamicFeeTotals,
+            dynamicFeePaidTotals: paymentPayload?.dynamicFeePaidTotals,
+          });
+          if (String(studentName).toLowerCase() === "aliya begum") {
+            console.log("[Dashboard][api/payment][Aliya Begum]", {
+              key,
+              pg: paymentPayload?.pg,
+              pgTotal: paymentPayload?.pgTotal,
+              pgPaid: paymentPayload?.pgPaid,
+              pgDue: paymentPayload?.pgDue,
+              pg_paid: paymentPayload?.pg_paid,
+              pg_due: paymentPayload?.pg_due,
+            });
+          }
 
           return [key, paymentPayload];
         } catch {
@@ -1160,16 +1629,240 @@ const AccountantDashboard = () => {
         const [key, value] = entry;
         if (key) nextMap[key] = value;
       });
+      console.log("[Dashboard][paymentSummaryMap] final", {
+        keys: Object.keys(nextMap),
+        aliyaBegum: nextMap[
+          getStudentCompositeKey({
+            StudentName: "Aliya Begum",
+            Class_name: "7",
+            Section: "A",
+          })
+        ],
+      });
       setPaymentSummaryMap(nextMap);
     });
 
     return () => {
       isCancelled = true;
     };
-  }, [selectedClassFilter, selectedSectionFilter, studentDirectory]);
+  }, [classSectionStudents, selectedClassFilter, selectedSectionFilter]);
+
+  useEffect(() => {
+    const schoolCode = localStorage.getItem("schoolCode");
+    const selectedName = String(popupSelection?.studentName || "").trim();
+    const selectedClass = String(popupSelection?.className || "").trim();
+    const selectedSection = String(popupSelection?.sectionName || "").trim();
+
+    console.log("[Dashboard][student-fee-details] request", {
+      schoolCode,
+      selectedName,
+      selectedClass,
+      selectedSection,
+      selectedStudentId: popupSelection?.studentId || null,
+    });
+
+    if (!schoolCode || !selectedName || !selectedClass || !selectedSection || !isPaymentPopupOpen) {
+      console.log("[Dashboard][student-fee-details] skipped - missing selection", {
+        hasSchoolCode: Boolean(schoolCode),
+        hasSelectedName: Boolean(selectedName),
+        hasSelectedClass: Boolean(selectedClass),
+        hasSelectedSection: Boolean(selectedSection),
+        isPaymentPopupOpen,
+      });
+      setSelectedStudentFeeDetails(null);
+      return;
+    }
+
+    let isCancelled = false;
+
+    const normalizeStudentName = (value) =>
+      String(value || "")
+        .trim()
+        .toLowerCase()
+        .replace(/\s+/g, " ");
+
+    const getStudentFeeScore = (row) => {
+      const scoreFields = [
+        "uniform",
+        "uniformFee",
+        "Uniform_Fee",
+        "uniform_paid",
+        "Uniform_paid",
+        "admission",
+        "Admission_Fee",
+        "exam",
+        "Exam_Fee",
+        "bus",
+        "Bus_Fee",
+        "books",
+        "Book_Fee",
+        "other",
+        "Other_Fee",
+        "residential",
+        "ResidentialCompleteFee",
+      ];
+
+      return scoreFields.reduce((sum, field) => {
+        const value = Number(row?.[field]);
+        return sum + (Number.isFinite(value) && value > 0 ? value : 0);
+      }, 0);
+    };
+
+    const normalizeStudentId = (value) => String(value || "").trim();
+
+    const pickBestStudentFeeRow = (rows) => {
+      const normalizedSelectedName = normalizeStudentName(selectedName);
+      const normalizedSelectedId = normalizeStudentId(popupSelection?.studentId);
+      const matchedRows = rows.filter((row) => {
+        const rowName = normalizeStudentName(row?.StudentName || row?.studentName || row?.name || "");
+        const rowId = normalizeStudentId(row?.id || row?.studentId || row?.StudentId || row?.student_id);
+        const nameMatches = rowName === normalizedSelectedName;
+        const idMatches = normalizedSelectedId && rowId && rowId === normalizedSelectedId;
+
+        return nameMatches || idMatches;
+      });
+
+      if (!matchedRows.length) return null;
+
+      return (
+        matchedRows.slice().sort((a, b) => getStudentFeeScore(b) - getStudentFeeScore(a))[0] || null
+      );
+    };
+
+    axios
+      .get("https://cleezoclass.com:4000/api/student-fee-details", {
+        params: {
+          schoolCode,
+          class: selectedClass,
+          section: selectedSection,
+          name: selectedName,
+        },
+      })
+      .then((res) => {
+        if (isCancelled) return;
+
+        const payload = res?.data;
+        console.log("[Dashboard][student-fee-details] raw response", {
+          isArray: Array.isArray(payload),
+          topLevelKeys: payload && !Array.isArray(payload) ? Object.keys(payload) : [],
+        });
+
+        const normalizedSelectedName = normalizeStudentName(selectedName);
+        const resolvedDetails = Array.isArray(payload)
+          ? pickBestStudentFeeRow(payload)
+          : (() => {
+              const candidate =
+                payload?.studentDetails ||
+                payload?.FeesDetails ||
+                payload?.feeDetails ||
+                payload ||
+                null;
+              const candidateName = normalizeStudentName(
+                candidate?.StudentName || candidate?.studentName || candidate?.name || ""
+              );
+              return candidateName === normalizedSelectedName ? candidate : null;
+            })();
+
+        console.log("[Dashboard][student-fee-details] resolved", {
+          normalizedSelectedName,
+          normalizedSelectedId: normalizeStudentId(popupSelection?.studentId),
+          hasMatch: Boolean(resolvedDetails),
+          resolvedKeys: resolvedDetails ? Object.keys(resolvedDetails) : [],
+          resolvedStudentName:
+            resolvedDetails?.StudentName || resolvedDetails?.studentName || resolvedDetails?.name || null,
+          resolvedStudentId:
+            resolvedDetails?.id ||
+            resolvedDetails?.studentId ||
+            resolvedDetails?.StudentId ||
+            resolvedDetails?.student_id ||
+            null,
+          score: resolvedDetails ? getStudentFeeScore(resolvedDetails) : 0,
+          pg:
+            resolvedDetails?.pg ??
+            resolvedDetails?.pgTotal ??
+            resolvedDetails?.pgPaid ??
+            resolvedDetails?.pgDue ??
+            null,
+        });
+
+        setSelectedStudentFeeDetails(resolvedDetails);
+      })
+      .catch((error) => {
+        console.error(
+          "[Dashboard][student-fee-details] fetch failed",
+          error?.response?.data || error?.message || error
+        );
+        if (!isCancelled) setSelectedStudentFeeDetails(null);
+      });
+
+    return () => {
+      isCancelled = true;
+    };
+  }, [
+    isPaymentPopupOpen,
+    popupSelection?.className,
+    popupSelection?.sectionName,
+    popupSelection?.studentId,
+    popupSelection?.studentName,
+  ]);
+
+  useEffect(() => {
+    const schoolCode = localStorage.getItem("schoolCode");
+    const resolvedClassName = stripClassPrefix(selectedClassFilter || "");
+    const alternateClassName = String(selectedClassFilter || "").trim();
+    const classCandidates = Array.from(
+      new Set([resolvedClassName, alternateClassName].map((value) => stripClassPrefix(value || "")).filter(Boolean))
+    );
+
+    if (!schoolCode || selectedClassFilter === "All" || selectedSectionFilter === "All" || !classCandidates.length) {
+      setClassSectionStudents([]);
+      return;
+    }
+
+    let isCancelled = false;
+
+    Promise.all(
+      classCandidates.map((className) =>
+        axios
+          .get(`https://cleezoclass.com:4000/api/studentsNameAccountant/${encodeURIComponent(className)}`, {
+            params: {
+              schoolCode,
+              section: selectedSectionFilter,
+            },
+          })
+          .then((res) => (Array.isArray(res.data?.students) ? res.data.students : []))
+          .catch(() => [])
+      )
+    ).then((results) => {
+      if (isCancelled) return;
+
+      const mergedByKey = new Map();
+      results.flat().forEach((student) => {
+        const key = [
+          String(student?.id ?? student?.student_id ?? "").trim(),
+          String(student?.name || student?.StudentName || student?.studentName || "").trim().toLowerCase(),
+          String(student?.class_name || student?.Class_name || student?.className || "").trim().toLowerCase(),
+          String(student?.section || student?.Section || student?.sectionName || "").trim().toLowerCase(),
+        ].join("|");
+        if (!key.replace(/\|/g, "").trim() || mergedByKey.has(key)) return;
+        mergedByKey.set(key, student);
+      });
+
+      setClassSectionStudents(Array.from(mergedByKey.values()));
+    });
+
+    return () => {
+      isCancelled = true;
+    };
+  }, [selectedClassFilter, selectedSectionFilter]);
 
   const normalizedOutstandingStudents = useMemo(() => {
-    const masterList = (studentDirectory || []).map((student, index) => ({
+    const sourceStudents =
+      selectedClassFilter !== "All" && selectedSectionFilter !== "All" && classSectionStudents.length
+        ? classSectionStudents
+        : studentDirectory;
+
+    const masterList = (sourceStudents || []).map((student, index) => ({
       id: student?.id ?? student?.student_id ?? `student-${index}`,
       name:
         student?.name ||
@@ -1186,6 +1879,10 @@ const AccountantDashboard = () => {
       className: student?.class_name || student?.Class_name || student?.className || "",
       section: student?.section || student?.Section || student?.sectionName || "",
     }));
+
+    if (masterList.length > 0) {
+      return masterList;
+    }
 
     const fallbackFromUnpaid = (unpaidStudents || []).map((student, index) => ({
       id:
@@ -1220,245 +1917,8 @@ const AccountantDashboard = () => {
         "",
     }));
 
-    const merged = [...masterList];
-    const seen = new Set(
-      masterList.map((student) =>
-        [
-          String(student.name || "").trim().toLowerCase(),
-          String(student.className || "").trim().toLowerCase(),
-          String(student.section || "").trim().toLowerCase(),
-        ].join("|")
-      )
-    );
-
-    fallbackFromUnpaid.forEach((student) => {
-      const key = [
-        String(student.name || "").trim().toLowerCase(),
-        String(student.className || "").trim().toLowerCase(),
-        String(student.section || "").trim().toLowerCase(),
-      ].join("|");
-      if (!key.replace(/\|/g, "").trim() || seen.has(key)) return;
-      seen.add(key);
-      merged.push(student);
-    });
-
-    return merged;
-  }, [studentDirectory, unpaidStudents]);
-
-  const paymentPopupTransactionRows = useMemo(() => {
-    if (!isPaymentPopupOpen) return [];
-
-    if (paymentPopupApiRows.length > 0) {
-      return paymentPopupApiRows
-        .map((row, index) => buildTransactionRowFromFeeRecord(row, index, popupSelection))
-        .sort((a, b) => {
-          if (a.studentName !== b.studentName) return a.studentName.localeCompare(b.studentName);
-          if (a.feeType !== b.feeType) return a.feeType.localeCompare(b.feeType);
-          return a.paymentDate.localeCompare(b.paymentDate);
-        });
-    }
-
-    const selectedStudentKey = [
-      String(popupSelection?.studentName || "").trim().toLowerCase(),
-      String(popupSelection?.className || "").trim().toLowerCase(),
-      String(popupSelection?.sectionName || "").trim().toLowerCase(),
-    ].join("|");
-
-    const matchesPopupSelection = (row) => {
-      const sameClass =
-        String(row?.Class_name || row?.class_name || row?.className || "").trim().toLowerCase() ===
-        String(popupSelection?.className || "").trim().toLowerCase();
-      const sameSection =
-        String(row?.Section || row?.section || row?.sectionName || "").trim().toLowerCase() ===
-        String(popupSelection?.sectionName || "").trim().toLowerCase();
-      if (!sameClass || !sameSection) return false;
-      if (!popupSelection?.studentName) return true;
-      return getStudentCompositeKey(row) === selectedStudentKey;
-    };
-
-    const scopedRows = (allFeeStatusRows || []).filter(matchesPopupSelection);
-    const fallbackRows = (unpaidStudents || []).filter(matchesPopupSelection);
-
-    if (scopedRows.length > 0) {
-      return scopedRows
-        .map((row, index) => buildTransactionRowFromFeeRecord(row, index, popupSelection))
-        .sort((a, b) => {
-          if (a.studentName !== b.studentName) return a.studentName.localeCompare(b.studentName);
-          if (a.feeType !== b.feeType) return a.feeType.localeCompare(b.feeType);
-          return a.paymentDate.localeCompare(b.paymentDate);
-        });
-    }
-
-    const summaryRows = fallbackRows.flatMap((row) => buildFeeRowsFromStudentSummary(row));
-
-    if (summaryRows.length > 0) {
-      return summaryRows.sort((a, b) => {
-        if (a.studentName !== b.studentName) return a.studentName.localeCompare(b.studentName);
-        return a.feeType.localeCompare(b.feeType);
-      });
-    }
-
-    const rowsToRender = fallbackRows;
-
-    return rowsToRender
-      .map((row, index) => buildTransactionRowFromFeeRecord(row, index, popupSelection))
-      .sort((a, b) => a.studentName.localeCompare(b.studentName));
-  }, [
-    allFeeStatusRows,
-    buildTransactionRowFromFeeRecord,
-    buildFeeRowsFromStudentSummary,
-    isPaymentPopupOpen,
-    paymentPopupApiRows,
-    popupSelection,
-    unpaidStudents,
-  ]);
-
-  useEffect(() => {
-    if (!isPaymentPopupOpen) {
-      setPaymentPopupApiRows([]);
-      setPaymentPopupLoading(false);
-      setPaymentPopupError("");
-      setPaymentPopupTab("studentData");
-      return;
-    }
-
-    const schoolCode = localStorage.getItem("schoolCode");
-    if (!schoolCode) {
-      setPaymentPopupApiRows([]);
-      setPaymentPopupError("School code missing.");
-      return;
-    }
-
-    setPaymentPopupLoading(true);
-    setPaymentPopupError("");
-
-    axios
-      .get("https://cleezoclass.com:4000/api/student-transactions-dynamic", {
-        params: {
-          schoolCode,
-          studentName: popupSelection?.studentName || "",
-          className: popupSelection?.className || "",
-          section: popupSelection?.sectionName || "",
-        },
-      })
-      .then((res) => {
-        setPaymentPopupApiRows(Array.isArray(res.data) ? res.data : []);
-      })
-      .catch((error) => {
-        console.error("Failed to load popup transactions:", error);
-        setPaymentPopupApiRows([]);
-        setPaymentPopupError("Failed to load transaction details.");
-      })
-      .finally(() => {
-        setPaymentPopupLoading(false);
-      });
-  }, [isPaymentPopupOpen, popupSelection]);
-
-  const paymentPopupSummary = useMemo(() => {
-    const title = popupSelection?.studentName
-      ? `${popupSelection.studentName} Fee Transactions`
-      : `${popupSelection?.className || ""} ${popupSelection?.sectionName || ""} Student Transactions`.trim();
-
-    return {
-      title: title || "Student Transactions",
-      studentCount: new Set(paymentPopupTransactionRows.map((row) => row.studentName)).size,
-      totalAmount: paymentPopupTransactionRows.reduce((sum, row) => sum + row.totalAmount, 0),
-      paidAmount: paymentPopupTransactionRows.reduce((sum, row) => sum + row.paidAmount, 0),
-      dueAmount: paymentPopupTransactionRows.reduce((sum, row) => sum + row.dueAmount, 0),
-    };
-  }, [paymentPopupTransactionRows, popupSelection]);
-
-  const paymentPopupGroupedRows = useMemo(() => {
-    const grouped = new Map();
-
-    paymentPopupTransactionRows.forEach((row) => {
-      const key = [row.studentName, row.className, row.section, row.feeType].join("|");
-      const currentTotal = Number(row.totalAmount || 0);
-      const currentPaid = Number(row.paidAmount || 0);
-      const currentDiscount = Number(row.discountAmount || 0);
-      const currentDue = Number(row.dueAmount || 0);
-
-      if (!grouped.has(key)) {
-        grouped.set(key, {
-          ...row,
-          totalAmount: currentTotal,
-          paidAmount: currentPaid,
-          discountAmount: currentDiscount,
-          dueAmount: currentDue,
-        });
-        return;
-      }
-
-      const existing = grouped.get(key);
-      existing.totalAmount = Math.max(existing.totalAmount, currentTotal);
-      existing.discountAmount = Math.max(existing.discountAmount, currentDiscount);
-      existing.paidAmount += currentPaid;
-      existing.paymentDate = row.paymentDate || existing.paymentDate;
-      existing.dueAmount = Math.max(
-        existing.totalAmount - existing.discountAmount - existing.paidAmount,
-        0
-      );
-    });
-
-    return Array.from(grouped.values()).sort((a, b) => {
-      if (a.studentName !== b.studentName) return a.studentName.localeCompare(b.studentName);
-      return a.feeType.localeCompare(b.feeType);
-    });
-  }, [paymentPopupTransactionRows]);
-
-  const paymentPopupStudentDataRows = useMemo(
-    () => paymentPopupGroupedRows,
-    [paymentPopupGroupedRows]
-  );
-
-  const paymentPopupStudentProfile = useMemo(() => {
-    const apiRow = paymentPopupApiRows[0] || null;
-    const selectedKey = [
-      String(popupSelection?.studentName || "").trim().toLowerCase(),
-      String(popupSelection?.className || "").trim().toLowerCase(),
-      String(popupSelection?.sectionName || "").trim().toLowerCase(),
-    ].join("|");
-
-    const directoryMatch = (studentDirectory || []).find((student) => {
-      const key = [
-        String(student?.name || student?.StudentName || student?.studentName || "").trim().toLowerCase(),
-        String(student?.class_name || student?.Class_name || student?.className || "").trim().toLowerCase(),
-        String(student?.section || student?.Section || student?.sectionName || "").trim().toLowerCase(),
-      ].join("|");
-      return key === selectedKey;
-    });
-
-    return {
-      studentName:
-        apiRow?.StudentName ||
-        popupSelection?.studentName ||
-        directoryMatch?.name ||
-        "Student",
-      fatherName:
-        apiRow?.father_name ||
-        directoryMatch?.father_name ||
-        directoryMatch?.fatherName ||
-        "-",
-      mobile:
-        apiRow?.phone_no ||
-        directoryMatch?.phone_no ||
-        directoryMatch?.phoneNumber ||
-        "-",
-      admissionNo:
-        apiRow?.admission_no ||
-        directoryMatch?.admission_no ||
-        directoryMatch?.Admission_Number ||
-        "-",
-      gender:
-        apiRow?.gender ||
-        directoryMatch?.gender ||
-        "-",
-      email:
-        apiRow?.email ||
-        directoryMatch?.email ||
-        "-",
-    };
-  }, [paymentPopupApiRows, popupSelection, studentDirectory]);
+    return fallbackFromUnpaid;
+  }, [classSectionStudents, selectedClassFilter, selectedSectionFilter, studentDirectory, unpaidStudents]);
 
   const outstandingDueMap = useMemo(() => {
     const transactionDueMap = new Map();
@@ -1553,7 +2013,7 @@ const AccountantDashboard = () => {
     const groups = new Map();
 
     normalizedOutstandingStudents.forEach((student, index) => {
-      const key = [
+      const key = String(student.id || "").trim() || [
         String(student.name || "").trim().toLowerCase(),
         String(student.className || "").trim().toLowerCase(),
         String(student.section || "").trim().toLowerCase(),
@@ -1575,12 +2035,241 @@ const AccountantDashboard = () => {
 
   const selectedClassDefaultDue = useMemo(() => {
     if (!selectedClassFeeStructure) return 0;
-    return (
-      Number(selectedClassFeeStructure?.CompleteFee) ||
-      Number(selectedClassFeeStructure?.complete_fee) ||
-      0
+    const rawCompleteFee = resolveNumberWithSource(selectedClassFeeStructure, [
+      "CompleteFee",
+      "completeFee",
+      "complete_fee",
+      "UpdatedCompleteFee",
+      "updatedCompleteFee",
+    ]).value;
+    return Math.max(rawCompleteFee - getDiscountTotalForRow(selectedClassFeeStructure), 0);
+  }, [getDiscountTotalForRow, resolveNumberWithSource, selectedClassFeeStructure]);
+
+  const paymentPopupStudentRecord = useMemo(() => {
+    const targetName = String(popupSelection?.studentName || "").trim().toLowerCase();
+    const targetClass = normalizeClassLabel(popupSelection?.className || "");
+    const targetSection = normalizeSectionLabel(popupSelection?.sectionName || "");
+    const sources = [studentDirectory, normalizedOutstandingStudents, unpaidStudents];
+
+    for (const source of sources) {
+      const found = (source || []).find((student) => {
+        const studentName = String(
+          student?.name || student?.StudentName || student?.studentName || student?.Student_Name || ""
+        )
+          .trim()
+          .toLowerCase();
+        const studentClass = normalizeClassLabel(
+          student?.class_name || student?.Class_name || student?.className || student?.FeeClass || ""
+        );
+        const studentSection = normalizeSectionLabel(
+          student?.section || student?.Section || student?.sectionName || student?.FeeSection || ""
+        );
+
+        const nameMatches = !targetName || studentName === targetName;
+        const classMatches = !targetClass || studentClass === targetClass;
+        const sectionMatches = !targetSection || studentSection === targetSection;
+        return nameMatches && classMatches && sectionMatches;
+      });
+
+      if (found) return found;
+    }
+
+    return null;
+  }, [
+    normalizeClassLabel,
+    normalizeSectionLabel,
+    popupSelection,
+    studentDirectory,
+    normalizedOutstandingStudents,
+    unpaidStudents,
+  ]);
+
+  const paymentPopupStudentPaymentRows = useMemo(() => {
+    const targetName = String(popupSelection?.studentName || "").trim().toLowerCase();
+    const targetClass = normalizeClassLabel(popupSelection?.className || "");
+    const targetSection = normalizeSectionLabel(popupSelection?.sectionName || "");
+    const popupStudentKey = [
+      targetName,
+      targetClass,
+      targetSection,
+    ].join("|");
+    const popupStudentPaymentSummary = paymentSummaryMap[popupStudentKey] || null;
+    const classSourceRows = [
+      ...(selectedClassFeeStructure ? [selectedClassFeeStructure] : []),
+      ...(selectedClassSectionFeeRows || []),
+    ];
+    const studentSourceRows = selectedClassSectionFeeRows.length ? selectedClassSectionFeeRows : [];
+    const normalizeFeeLabel = (value) =>
+      String(value || "")
+        .trim()
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, "_")
+        .replace(/_+/g, "_")
+        .replace(/^_+|_+$/g, "");
+    const individualFeeTypes = new Set(
+      (dynamicFeeTypes || [])
+        .filter((fee) => String(fee?.scope || "").trim().toLowerCase() === "individual")
+        .map((fee) => normalizeFeeLabel(fee?.columnBase || fee?.feeName || fee?.feesType || fee?.label || ""))
+        .filter(Boolean)
     );
-  }, [selectedClassFeeStructure]);
+
+    const matchingRows = studentSourceRows.filter((row) => {
+      const rowName = String(row?.StudentName || row?.studentName || row?.name || row?.Student_Name || "")
+        .trim()
+        .toLowerCase();
+      const rowClass = normalizeClassLabel(row?.Class_name || row?.class_name || row?.className || row?.FeeClass || "");
+      const rowSection = normalizeSectionLabel(row?.Section || row?.section || row?.sectionName || row?.FeeSection || "");
+
+      const nameMatches = !targetName || rowName === targetName;
+      const classMatches = !targetClass || rowClass === targetClass;
+      const sectionMatches = !targetSection || rowSection === targetSection;
+      return nameMatches && classMatches && sectionMatches;
+    });
+
+    const rowsToRender = [];
+    const renderedKeys = new Set();
+    const buildPopupRows = (rows, sourceTag) =>
+      rows.flatMap((row, index) =>
+        buildFeeRowsFromStudentSummary({
+          ...row,
+          ...(selectedStudentFeeDetails || {}),
+          ...(selectedStudentFeeDetails?.studentDetails || {}),
+          ...(selectedStudentFeeDetails?.feeStructure || {}),
+          ...(popupStudentPaymentSummary || {}),
+          StudentName: row?.StudentName || popupSelection?.studentName || "",
+          Class_name: row?.Class_name || popupSelection?.className || "",
+          Section: row?.Section || popupSelection?.sectionName || "",
+        }).map((feeRow) => ({
+          ...feeRow,
+          id: `${feeRow.id || "popup-row"}-${sourceTag}-${index}`,
+        }))
+      );
+
+    if (popupStudentPaymentSummary) {
+      console.log("[Dashboard][paymentPopupStudentPaymentRows]", {
+        popupSelection,
+        popupStudentKey,
+        popupStudentPaymentSummary,
+        selectedStudentFeeDetails,
+        popupStudentPaymentSummaryPg: {
+          pg: popupStudentPaymentSummary?.pg,
+          pgTotal: popupStudentPaymentSummary?.pgTotal,
+          pgPaid: popupStudentPaymentSummary?.pgPaid,
+          pgDue: popupStudentPaymentSummary?.pgDue,
+          pg_paid: popupStudentPaymentSummary?.pg_paid,
+          pg_due: popupStudentPaymentSummary?.pg_due,
+          dynamicFeeBreakdown: popupStudentPaymentSummary?.dynamicFeeBreakdown,
+        },
+        classSourceRows: classSourceRows.map((row) => ({
+          StudentName: row?.StudentName || row?.studentName || row?.name || row?.Student_Name || "",
+          Class_name: row?.Class_name || row?.class_name || row?.className || "",
+          Section: row?.Section || row?.section || row?.sectionName || "",
+          pg: row?.pg,
+          pgTotal: row?.pgTotal,
+          pgPaid: row?.pgPaid,
+          pgDue: row?.pgDue,
+        })),
+        matchingRows: matchingRows.map((row) => ({
+          StudentName: row?.StudentName || row?.studentName || row?.name || row?.Student_Name || "",
+          Class_name: row?.Class_name || row?.class_name || row?.className || "",
+          Section: row?.Section || row?.section || row?.sectionName || "",
+          pg: row?.pg,
+          pgTotal: row?.pgTotal,
+          pgPaid: row?.pgPaid,
+          pgDue: row?.pgDue,
+        })),
+      });
+    }
+
+    const classRows = buildPopupRows(classSourceRows, "class");
+    const studentRows = buildPopupRows(matchingRows, "student");
+
+    if (matchingRows.length > 0) {
+      console.log("[Dashboard][studentRows][source]", {
+        popupSelection,
+        popupStudentKey,
+        matchingRows,
+        selectedStudentFeeDetails,
+      });
+    }
+
+    if (studentRows.length > 0) {
+      console.log("[Dashboard][studentRows][rendered]", {
+        popupSelection,
+        popupStudentKey,
+        studentRows,
+        selectedStudentFeeDetails,
+      });
+    }
+
+    classRows.forEach((row) => {
+      const key = normalizeFeeLabel(row?.feeType || "");
+      if (!key || key === "class fee") return;
+      renderedKeys.add(key);
+      rowsToRender.push(row);
+    });
+
+    studentRows.forEach((row) => {
+      const key = normalizeFeeLabel(row?.feeType || "");
+      if (!key || key === "class fee") return;
+      if (!individualFeeTypes.has(key) && renderedKeys.has(key)) {
+        return;
+      }
+      if (!individualFeeTypes.has(key)) {
+        return;
+      }
+      const existingIndex = rowsToRender.findIndex((item) => normalizeFeeLabel(item?.feeType || "") === key);
+      if (existingIndex >= 0) {
+        rowsToRender[existingIndex] = row;
+        return;
+      }
+      rowsToRender.push(row);
+    });
+
+    if (!rowsToRender.length) {
+      buildPopupRows(studentSourceRows, "fallback").forEach((row) => {
+        const key = normalizeFeeLabel(row?.feeType || "");
+        if (!key || key === "class fee") return;
+        if (renderedKeys.has(key)) return;
+        renderedKeys.add(key);
+        rowsToRender.push(row);
+      });
+    }
+
+    return rowsToRender.filter((feeRow) => String(feeRow?.feeType || "").trim().toLowerCase() !== "class fee");
+  }, [
+    buildFeeRowsFromStudentSummary,
+    dynamicFeeTypes,
+    paymentSummaryMap,
+    normalizeClassLabel,
+    normalizeSectionLabel,
+    popupSelection?.className,
+    popupSelection?.sectionName,
+    popupSelection?.studentName,
+    selectedClassFeeStructure,
+    selectedClassSectionFeeRows,
+  ]);
+
+  useEffect(() => {
+    if (!selectedClassFeeStructure) return;
+
+    const resolvedClassFee = resolveNumberWithSource(selectedClassFeeStructure, [
+      "CompleteFee",
+      "completeFee",
+      "complete_fee",
+      "UpdatedCompleteFee",
+      "updatedCompleteFee",
+    ]);
+
+    console.log("[AccountantDashboard] class fee source resolved", {
+      className: selectedClassFilter,
+      section: selectedSectionFilter,
+      sourceKey: resolvedClassFee.key,
+      rawValue: resolvedClassFee.rawValue,
+      resolvedValue: resolvedClassFee.value,
+      fullRow: selectedClassFeeStructure,
+    });
+  }, [resolveNumberWithSource, selectedClassFeeStructure, selectedClassFilter, selectedSectionFilter]);
 
   const selectedClassPaidTotalsMap = useMemo(() => {
     const transactionMap = new Map();
@@ -1628,7 +2317,103 @@ const AccountantDashboard = () => {
     });
 
     return merged;
-  }, [allFeeStatusRows, getAnyNumber, unpaidStudents]);
+  }, [allFeeStatusRows, classSectionStudents, getAnyNumber, unpaidStudents, selectedClassFilter, selectedSectionFilter, studentDirectory]);
+
+  const selectedClassSectionOutstandingStudents = useMemo(() => {
+    const classFee = selectedClassDefaultDue || 0;
+    const baseStudents = (classSectionStudents.length ? classSectionStudents : studentDirectory || [])
+      .filter((student) => {
+        const className = normalizeClassLabel(student?.class_name || student?.Class_name || student?.className || "");
+        const section = normalizeSectionLabel(student?.section || student?.Section || student?.sectionName || "");
+        return className === normalizeClassLabel(selectedClassFilter) && section === normalizeSectionLabel(selectedSectionFilter);
+      })
+      .map((student, index) => {
+        const name = student?.name || student?.StudentName || student?.studentName || `Student ${index + 1}`;
+        const className = student?.class_name || student?.Class_name || student?.className || selectedClassFilter || "";
+        const section = student?.section || student?.Section || student?.sectionName || selectedSectionFilter || "";
+        const key = [
+          String(name || "").trim().toLowerCase(),
+          String(className || "").trim().toLowerCase(),
+          String(section || "").trim().toLowerCase(),
+        ].join("|");
+
+        const paymentSummary = paymentSummaryMap[key] || null;
+        const summaryDue = unpaidSummaryDueMap.get(key) || 0;
+        const totalPaidForStudent = selectedClassPaidTotalsMap.get(key) || 0;
+        const transactionPaid = getExplicitRemainingAmount(paymentSummary) > 0
+          ? getAnyNumber(paymentSummary, ["Paid_Amount", "Total_Paid", "totalPaid", "dynamicFeePaidTotal"])
+          : totalPaidForStudent;
+        const dueFromTransactions =
+          getExplicitRemainingAmount(paymentSummary) > 0
+            ? getExplicitRemainingAmount(paymentSummary)
+            : summaryDue > 0
+              ? summaryDue
+              : Math.max(classFee - transactionPaid, 0);
+
+        return {
+          id: student?.id ?? student?.student_id ?? `selected-fee-${index}`,
+          name,
+          className,
+          section,
+          totalAmount: classFee,
+          paidAmount: transactionPaid,
+          dueAmount: classFee > 0 ? Math.max(classFee - transactionPaid, 0) : dueFromTransactions,
+          feeBreakdown: [
+            ["Class Fee", classFee],
+          ].filter(([, value]) => Number(value) > 0),
+        };
+      });
+
+    if (baseStudents.length > 0) {
+      return baseStudents.sort((a, b) => String(a.name).localeCompare(String(b.name)));
+    }
+
+    return (selectedClassSectionFeeRows || [])
+      .map((row, index) => {
+        const name =
+          row?.StudentName ||
+          row?.studentName ||
+          row?.name ||
+          row?.Student_Name ||
+          `Student ${index + 1}`;
+        const className = row?.Class_name || row?.class_name || row?.className || selectedClassFilter || "";
+        const section = row?.section || row?.Section || row?.sectionName || selectedSectionFilter || "";
+        const totalAmount = Number(row?.CompleteFee || row?.complete_fee || classFee || 0);
+        const paidAmount = Number(row?.Paid_Amount || row?.paid_amount || row?.Total_Paid || 0);
+        const dueAmount = Number(
+          row?.Remaining_Amount ||
+          row?.Total_Installments_Remaining ||
+          row?.Total_Due ||
+          row?.Due_Amount ||
+          Math.max(totalAmount - paidAmount, 0)
+        );
+
+        return {
+          id: row?.student_id || row?.id || `selected-fee-${index}`,
+          name,
+          className,
+          section,
+          totalAmount: Number.isFinite(totalAmount) ? totalAmount : 0,
+          paidAmount: Number.isFinite(paidAmount) ? paidAmount : 0,
+          dueAmount: Number.isFinite(dueAmount) ? dueAmount : 0,
+          feeBreakdown: [["Class Fee", totalAmount]].filter(([, value]) => Number(value) > 0),
+        };
+      })
+      .sort((a, b) => String(a.name).localeCompare(String(b.name)));
+  }, [
+    getAnyNumber,
+    getExplicitRemainingAmount,
+    paymentSummaryMap,
+    unpaidSummaryDueMap,
+    selectedClassDefaultDue,
+    selectedClassFilter,
+    selectedClassPaidTotalsMap,
+    selectedClassSectionFeeRows,
+    selectedSectionFilter,
+    studentDirectory,
+    normalizeClassLabel,
+    normalizeSectionLabel,
+  ]);
 
   const classOptions = useMemo(
     () => ["All", ...sortClassLabels([...new Set(normalizedOutstandingStudents.map((s) => s.className).filter(Boolean))])],
@@ -1639,9 +2424,11 @@ const AccountantDashboard = () => {
     const source =
       selectedClassFilter === "All"
         ? normalizedOutstandingStudents
-        : normalizedOutstandingStudents.filter((s) => s.className === selectedClassFilter);
+        : normalizedOutstandingStudents.filter(
+            (s) => normalizeClassLabel(s.className) === normalizeClassLabel(selectedClassFilter)
+          );
     return ["All", ...sortSectionLabels([...new Set(source.map((s) => s.section).filter(Boolean))])];
-  }, [normalizedOutstandingStudents, selectedClassFilter]);
+  }, [normalizedOutstandingStudents, selectedClassFilter, normalizeClassLabel]);
 
   const filteredOutstandingStudents = useMemo(() => {
     const list = groupedOutstandingStudents
@@ -1682,8 +2469,12 @@ const AccountantDashboard = () => {
       };
     })
     .filter((student) => {
-      const classMatch = selectedClassFilter === "All" || student.className === selectedClassFilter;
-      const sectionMatch = selectedSectionFilter === "All" || student.section === selectedSectionFilter;
+      const classMatch =
+        selectedClassFilter === "All" ||
+        normalizeClassLabel(student.className) === normalizeClassLabel(selectedClassFilter);
+      const sectionMatch =
+        selectedSectionFilter === "All" ||
+        normalizeSectionLabel(student.section) === normalizeSectionLabel(selectedSectionFilter);
       return classMatch && sectionMatch;
     });
     return list.sort((a, b) => a.name.localeCompare(b.name));
@@ -1696,6 +2487,13 @@ const AccountantDashboard = () => {
     selectedClassPaidTotalsMap,
     selectedSectionFilter,
   ]);
+
+  const visibleOutstandingStudents =
+    selectedClassFilter !== "All" &&
+    selectedSectionFilter !== "All" &&
+    selectedClassSectionOutstandingStudents.length
+      ? selectedClassSectionOutstandingStudents
+      : filteredOutstandingStudents;
 
   const filteredDiscountStudents = useMemo(() => {
     const activeClass = isAddFeesPopupOpen
@@ -1710,7 +2508,7 @@ const AccountantDashboard = () => {
         const classMatch =
           !activeClass || normalizeClassLabel(getStudentClassName(student)) === activeClass;
         const sectionMatch =
-          !activeSection || getStudentSectionName(student) === activeSection;
+          !activeSection || normalizeSectionLabel(getStudentSectionName(student)) === normalizeSectionLabel(activeSection);
         return classMatch && sectionMatch;
       })
       .sort((a, b) => getStudentName(a).localeCompare(getStudentName(b)));
@@ -1974,8 +2772,8 @@ const AccountantDashboard = () => {
         const classTotal =
           selectedClassFilter !== "All" &&
           selectedSectionFilter !== "All" &&
-          String(student?.className || "").trim() === String(selectedClassFilter).trim() &&
-          String(student?.section || "").trim() === String(selectedSectionFilter).trim() &&
+          normalizeClassLabel(student?.className || "") === normalizeClassLabel(selectedClassFilter) &&
+          normalizeSectionLabel(student?.section || "") === normalizeSectionLabel(selectedSectionFilter) &&
           selectedClassDefaultDue > 0
             ? selectedClassDefaultDue
             : expectedAmount;
@@ -2042,12 +2840,8 @@ const AccountantDashboard = () => {
         const sameName =
           String(entry?.name || "").trim().toLowerCase() ===
           String(student?.name || "").trim().toLowerCase();
-        const sameClass =
-          String(entry?.className || "").trim().toLowerCase() ===
-          String(className).trim().toLowerCase();
-        const sameSection =
-          String(entry?.section || "").trim().toLowerCase() ===
-          String(sectionName).trim().toLowerCase();
+        const sameClass = normalizeClassLabel(entry?.className) === normalizeClassLabel(className);
+        const sameSection = normalizeSectionLabel(entry?.section) === normalizeSectionLabel(sectionName);
         return sameName && sameClass && sameSection;
       });
 
@@ -2075,9 +2869,16 @@ const AccountantDashboard = () => {
         studentId: resolvedStudentId,
         studentName: student?.name || "",
       });
+      setPaymentPopupTab("student-data");
       setIsPaymentPopupOpen(true);
     },
-    [normalizedOutstandingStudents, selectedClassFilter, selectedSectionFilter]
+    [
+      normalizedOutstandingStudents,
+      selectedClassFilter,
+      selectedSectionFilter,
+      normalizeClassLabel,
+      normalizeSectionLabel,
+    ]
   );
 
   const handleCreateFeeType = useCallback(
@@ -2089,7 +2890,7 @@ const AccountantDashboard = () => {
         return;
       }
 
-      const feeName = newFeeTypeForm.feeName.trim();
+      const feeName = String(newFeeTypeForm.feesType || "").trim();
       if (!feeName) {
         setCreateFeeTypeError("Fee name is required.");
         return;
@@ -2107,58 +2908,43 @@ const AccountantDashboard = () => {
       setCreateFeeTypeLoading(true);
       setCreateFeeTypeError("");
 
-      const feeTypePayload = {
-        schoolCode,
-        id: `custom-${normalizedName.replace(/\s+/g, "-")}`,
+      const nextFeeType = {
         feeName,
-        feesType: newFeeTypeForm.feesType || "",
-        scope: newFeeTypeForm.scope || "",
-        frequency: newFeeTypeForm.frequency || "",
+        feesType: feeName,
+        priority: dynamicFeeTypes.length + 1,
+        scope: newFeeTypeForm.scope || "All",
+        frequency: newFeeTypeForm.frequency || "One time",
         installments:
-          newFeeTypeForm.frequency === "Term wise"
-            ? Math.max(1, Number(newFeeTypeForm.installments) || 0)
-            : "",
+          (newFeeTypeForm.frequency || "One time") === "Term wise"
+            ? Math.max(1, Number(newFeeTypeForm.installments) || 1)
+            : 1,
       };
 
       try {
-        let saved = false;
-        const candidateEndpoints = [
-          "https://cleezoclass.com:4000/api/fee-types",
-          "https://cleezoclass.com:4000/api/fee-type",
-        ];
-
-        for (const endpoint of candidateEndpoints) {
-          try {
-            const res = await axios.post(endpoint, feeTypePayload);
-            if (res?.status >= 200 && res?.status < 300) {
-              saved = true;
-              break;
-            }
-          } catch {
-            // try next endpoint
-          }
-        }
-
-        if (!saved) {
-          throw new Error("Backend fee type save API is not available.");
-        }
+        const payload = {
+          schoolCode,
+          ...nextFeeType,
+        };
+        await axios.post("https://cleezoclass.com:4000/api/fee-types", payload);
+        setDynamicFeeTypes((prev) => [
+          ...prev,
+          { id: `${Date.now()}`, ...nextFeeType },
+        ]);
 
         setNewFeeTypeForm({
-          feeName: "",
           feesType: "",
           scope: "",
           frequency: "",
           installments: "",
         });
         setIsCreateFeeTypePopupOpen(false);
-        fetchDashboardData();
       } catch (error) {
-        setCreateFeeTypeError(error?.message || "Failed to save fee type.");
+        setCreateFeeTypeError(error?.response?.data?.message || "Failed to save fee type.");
       } finally {
         setCreateFeeTypeLoading(false);
       }
     },
-    [dynamicFeeTypes, fetchDashboardData, newFeeTypeForm]
+    [dynamicFeeTypes.length, newFeeTypeForm]
   );
 
 const openCreateFeeTypePopup = useCallback(() => {
@@ -2334,11 +3120,22 @@ const openCreateFeeTypePopup = useCallback(() => {
     window.location.replace(import.meta.env.BASE_URL || "/");
   };
 
+  const studentManagementPopupUrl = useMemo(() => {
+    if (typeof window === "undefined") return "";
+    return `${window.location.origin}${import.meta.env.BASE_URL}StudentManagement`;
+  }, []);
+
     const sidebarItems = [
     { key: "home", label: "Dashboard", icon: dashboardIcon, iconAlt: "Dashboard", active: true },
     { key: "collect-fee", label: "Fees", icon: collectFeeIcon ,onClick: () => navigate("/AccountantFees") },
     { key: "add-fee", label: "Add Fees", icon: addFeeIcon ,onClick: openAddFeesPopup },
-    { key: "add-student", label: "Add Student", icon: addStudentIcon,onClick: () => navigate("/StudentManagement") },
+    {
+      key: "add-student",
+      label: "Add Student",
+      icon: addStudentIcon,
+      onClick: () => setIsStudentManagementPopupOpen(true),
+      className: isStudentManagementPopupOpen ? "accountant-sidebar-item-active" : "",
+    },
     {
       key: "add-expense",
       label: "Expense",
@@ -2668,8 +3465,8 @@ return (
     </div>
 
     <div className="accountant-student-list">
-      {filteredOutstandingStudents.length ? (
-        filteredOutstandingStudents.map((student, index) => (
+      {visibleOutstandingStudents.length ? (
+        visibleOutstandingStudents.map((student, index) => (
           <div
             key={student.id}
             className={`accountant-student-mini ${index === 0 ? "is-active" : ""}`}
@@ -2688,6 +3485,26 @@ return (
             <p>
             Due: {formatINR(student.dueAmount)}
             </p>
+            {Array.isArray(student.feeBreakdown) && student.feeBreakdown.length ? (
+              <div style={{ display: "flex", flexWrap: "wrap", gap: "4px 8px", justifyContent: "center", marginTop: "4px" }}>
+                {student.feeBreakdown.map(([label, amount]) => (
+                  <span
+                    key={`${student.id}-${label}`}
+                    style={{
+                      fontSize: "10px",
+                      padding: "2px 6px",
+                      borderRadius: "999px",
+                      background: "#f7f7f7",
+                      border: "1px solid #e7e7e7",
+                      color: "#444",
+                      whiteSpace: "nowrap",
+                    }}
+                  >
+                    {label}: {formatINR(amount)}
+                  </span>
+                ))}
+              </div>
+            ) : null}
           </div>
         ))
       ) : normalizedOutstandingStudents.length ? (
@@ -2739,7 +3556,7 @@ return (
       <div className="Heading"> 
         {isAddFeesPopupOpen
           ? addFeesPanelTab === "discount"
-            ? "Discount"
+            ? "Discounts"
             : "Selected Class Fees"
           : isAssistantPopupOpen
             ? "Assistant"
@@ -2823,7 +3640,7 @@ return (
               border: "1px solid #f2c9cf",
             }}
           >
-            Discount
+            Discounts
           </button>
         </div>
       ) : null}
@@ -2956,7 +3773,7 @@ return (
                 <th>Fee Name</th>
                 <th>Fees Type</th>
                 <th>Priority</th>
-                <th>For All / Class wise</th>
+                <th>Scope</th>
                 <th>One time / Term fees</th>
                 <th>Installment</th>
               </tr>
@@ -2965,16 +3782,84 @@ return (
           <tbody>
             {isAddFeesPopupOpen ? (
               addFeePreview.rows.length ? (
-                addFeePreview.rows.map((fee) => (
-                  <tr key={fee.id}>
-                    <td>{fee.feeName}</td>
-                    <td>{fee.feesType}</td>
-                    <td>{fee.className || addFeePreview.className || "-"}</td>
-                    <td>{fee.section || addFeePreview.section || "-"}</td>
-                    <td>{formatINR(fee.amount)}</td>
+              addFeePreview.rows.map((fee) => (
+                <tr key={fee.id}>
+                  <td>{fee.feeName}</td>
+                  <td>{fee.feesType}</td>
+                  <td>{fee.className || addFeePreview.className || "-"}</td>
+                  <td>{fee.section || addFeePreview.section || "-"}</td>
+                    <td>
+                      <div
+                        style={{ position: "relative", display: "inline-flex", width: "100%", justifyContent: "center" }}
+                        onMouseEnter={() => setHoveredInstallmentFeeId(fee.id)}
+                        onMouseLeave={() => setHoveredInstallmentFeeId(null)}
+                        title={
+                          Array.isArray(fee.installmentDetails) && fee.installmentDetails.length
+                            ? fee.installmentDetails
+                                .map((inst) => {
+                                  const deadline = inst.deadlineDate || "-";
+                                  const amount = formatINR(inst.amount);
+                                  return `Inst ${inst.installmentNo || "-"}: ${amount} | Due: ${deadline}`;
+                                })
+                                .join("\n")
+                            : ""
+                        }
+                      >
+                        <span style={{ cursor: "help", textDecoration: "underline dotted" }}>
+                          {formatINR(fee.amount)}
+                        </span>
+                        {hoveredInstallmentFeeId === fee.id &&
+                        Array.isArray(fee.installmentDetails) &&
+                        fee.installmentDetails.length > 0 ? (
+                          <div
+                            style={{
+                              position: "absolute",
+                              top: "calc(100% + 8px)",
+                              left: "50%",
+                              transform: "translateX(-50%)",
+                              background: "#fff",
+                              border: "1px solid #e5e7eb",
+                              boxShadow: "0 10px 28px rgba(0,0,0,0.14)",
+                              borderRadius: "10px",
+                              padding: "10px 12px",
+                              minWidth: "220px",
+                              zIndex: 20,
+                              textAlign: "left",
+                              fontSize: "11px",
+                              color: "#111827",
+                              pointerEvents: "none",
+                            }}
+                          >
+                            <div style={{ fontWeight: 700, marginBottom: "8px", color: "#c44755" }}>
+                              Installment Split
+                            </div>
+                            <div style={{ display: "grid", gap: "6px" }}>
+                              {fee.installmentDetails
+                                .slice()
+                                .sort((a, b) => Number(a.installmentNo || 0) - Number(b.installmentNo || 0))
+                                .map((inst) => (
+                                  <div
+                                    key={`${fee.id}-${inst.installmentNo}`}
+                                    style={{
+                                      display: "flex",
+                                      justifyContent: "space-between",
+                                      gap: "12px",
+                                    }}
+                                  >
+                                    <span>Inst {inst.installmentNo || "-"}</span>
+                                    <span style={{ whiteSpace: "nowrap" }}>
+                                      {formatINR(inst.amount)} {inst.deadlineDate ? `• ${inst.deadlineDate}` : ""}
+                                    </span>
+                                  </div>
+                                ))}
+                            </div>
+                          </div>
+                        ) : null}
+                      </div>
+                    </td>
                     <td>{fee.installments}</td>
-                  </tr>
-                ))
+                </tr>
+              ))
               ) : (
                 <tr>
                   <td colSpan={6}>
@@ -3278,123 +4163,172 @@ return (
 
     </DashboardLayout>
 
-
-
-  {isPaymentPopupOpen && (
+  {isStudentManagementPopupOpen && (
     <div
-      className="globalpopup-overlay"
-      onClick={() => setIsPaymentPopupOpen(false)}
-      style={{ zIndex: 3100 }}
+      className="globalpopup-overlay accountant-student-management-popup-overlay"
+      onClick={() => setIsStudentManagementPopupOpen(false)}
+      style={{ zIndex: 3200 }}
     >
       <div
-        className="globalpopup-content accountant-outgoing-students-popup"
+        className="globalpopup-content accountant-student-management-popup"
         onClick={(event) => event.stopPropagation()}
       >
-        <div className="globalpopup-header accountant-create-fee-popup-header">
-          <div className="accountant-create-fee-popup-heading">
-            
-            {paymentPopupError ? <p className="accountant-create-fee-error">{paymentPopupError}</p> : null}
+        <div className="globalpopup-header accountant-student-management-popup-header">
+          <div>
+            <div className="Heading">Add Student</div>
+            <div className="normalText">Open the student form inside a popup</div>
           </div>
           <button
             type="button"
-            className="globalpopup-close-btn"
-            onClick={() => setIsPaymentPopupOpen(false)}
+            className="globalpopup-close-btn accountant-student-management-close-btn"
+            onClick={() => setIsStudentManagementPopupOpen(false)}
+            aria-label="Close add student popup"
           >
             ×
           </button>
         </div>
+        <div className="accountant-student-management-popup-body">
+          <iframe
+            title="Student Management Add Popup"
+            src={studentManagementPopupUrl}
+            className="accountant-student-management-iframe"
+          />
+        </div>
+      </div>
+    </div>
+  )}
 
-        <div
-          style={{
-            display: "flex",
-            gap: "10px",
-            padding: "0 24px 12px",
-            flexWrap: "wrap",
+  {isPaymentPopupOpen && (
+    <div
+      className="globalpopup-overlay accountant-payment-popup-overlay"
+      onClick={() => {
+        setIsPaymentPopupOpen(false);
+        setPaymentPopupTab("student-data");
+      }}
+      style={{ zIndex: 3200 }}
+    >
+      <div
+        className="globalpopup-content accountant-payment-popup"
+        onClick={(event) => event.stopPropagation()}
+      >
+        <button
+          type="button"
+          className="globalpopup-close-btn accountant-payment-popup-close-btn"
+          onClick={() => {
+            setIsPaymentPopupOpen(false);
+            setPaymentPopupTab("student-data");
           }}
+          aria-label="Close fee popup"
         >
+          ×
+        </button>
+
+        <div className="accountant-payment-popup-tabs">
           <button
             type="button"
-            onClick={() => setPaymentPopupTab("studentData")}
-            style={{
-              border: "1px solid #f2c9cf",
-              background: paymentPopupTab === "studentData" ? "#fdecef" : "#ffffff",
-              color: "#c44755",
-              borderRadius: "999px",
-              padding: "8px 14px",
-              fontSize: "12px",
-              fontWeight: 700,
-              cursor: "pointer",
-            }}
+            className={`accountant-payment-popup-tab ${paymentPopupTab === "student-data" ? "active" : ""}`}
+            onClick={() => setPaymentPopupTab("student-data")}
           >
             Student Data
           </button>
           <button
             type="button"
-            onClick={() => setPaymentPopupTab("transactions")}
-            style={{
-              border: "1px solid #f2c9cf",
-              background: paymentPopupTab === "transactions" ? "#fdecef" : "#ffffff",
-              color: "#c44755",
-              borderRadius: "999px",
-              padding: "8px 14px",
-              fontSize: "12px",
-              fontWeight: 700,
-              cursor: "pointer",
-            }}
+            className={`accountant-payment-popup-tab ${paymentPopupTab === "student-transactions" ? "active" : ""}`}
+            onClick={() => setPaymentPopupTab("student-transactions")}
           >
             Student Transactions
           </button>
         </div>
 
-        <div className="accountant-outgoing-students-summary">
-          <div className="accountant-outgoing-students-pill">
-            <span>Student</span>
-            <strong>{paymentPopupStudentProfile.studentName}</strong>
-          </div>
-          <div className="accountant-outgoing-students-pill">
-            <span>Father Name</span>
-            <strong>{paymentPopupStudentProfile.fatherName}</strong>
-          </div>
-          <div className="accountant-outgoing-students-pill">
-            <span>Mobile Number</span>
-            <strong>{paymentPopupStudentProfile.mobile}</strong>
-          </div>
-          <div className="accountant-outgoing-students-pill">
-            <span>Admission No</span>
-            <strong>{paymentPopupStudentProfile.admissionNo}</strong>
-          </div>
-          <div className="accountant-outgoing-students-pill">
-            <span>Gender</span>
-            <strong>{paymentPopupStudentProfile.gender}</strong>
-          </div>
-          <div className="accountant-outgoing-students-pill">
-            <span>Email</span>
-            <strong>{paymentPopupStudentProfile.email}</strong>
-          </div>
-        </div>
+        {paymentPopupTab === "student-data" ? (
+          <>
+            <div className="accountant-payment-popup-student-grid">
+              {[
+                {
+                  label: "Student",
+                  value: paymentPopupStudentRecord?.name || popupSelection?.studentName || "-",
+                },
+                {
+                  label: "Father Name",
+                  value:
+                    paymentPopupStudentRecord?.father_name ||
+                    paymentPopupStudentRecord?.fatherName ||
+                    paymentPopupStudentRecord?.father ||
+                    "-",
+                },
+                {
+                  label: "Mobile Number",
+                  value:
+                    paymentPopupStudentRecord?.mobile_no ||
+                    paymentPopupStudentRecord?.mobileNo ||
+                    paymentPopupStudentRecord?.phone_no ||
+                    paymentPopupStudentRecord?.phone ||
+                    "-",
+                },
+                {
+                  label: "Admission No",
+                  value:
+                    paymentPopupStudentRecord?.admission_no ||
+                    paymentPopupStudentRecord?.admissionNo ||
+                    paymentPopupStudentRecord?.admission_number ||
+                    "-",
+                },
+                {
+                  label: "Gender",
+                  value: paymentPopupStudentRecord?.gender || "-",
+                },
+                {
+                  label: "Email",
+                  value: paymentPopupStudentRecord?.email || "-",
+                },
+              ].map((item) => (
+                <div key={item.label} className="accountant-payment-popup-info-card">
+                  <span className="accountant-payment-popup-info-label">{item.label}</span>
+                  <span className="accountant-payment-popup-info-value">{item.value}</span>
+                </div>
+              ))}
+            </div>
 
-
-        <div className="accountant-outgoing-students-table-wrap">
-          <table className="accountant-outgoing-students-table">
-            <thead>
-              {paymentPopupTab === "transactions" ? (
+            <div className="accountant-payment-popup-table-wrap">
+              <table className="accountant-payment-popup-table">
+                <thead>
+                  <tr>
+                    <th>Student</th>
+                    <th>Class</th>
+                    <th>Section</th>
+                    <th>Fee Type</th>
+                    <th>Discount</th>
+                    <th>Total Amount</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {paymentPopupStudentPaymentRows.length > 0 ? (
+                    paymentPopupStudentPaymentRows.map((row) => (
+                      <tr key={row.id}>
+                        <td>{row.studentName || "-"}</td>
+                        <td>{row.className || "-"}</td>
+                        <td>{row.section || "-"}</td>
+                        <td>{row.feeType || "-"}</td>
+                        <td>{formatINR(row.discountAmount || 0)}</td>
+                        <td>{formatINR(row.totalAmount || 0)}</td>
+                      </tr>
+                    ))
+                  ) : (
+                    <tr>
+                      <td colSpan={6} className="accountant-payment-popup-empty">
+                        No fee details found for this selection.
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </>
+        ) : (
+          <div className="accountant-payment-popup-table-wrap">
+            <table className="accountant-payment-popup-table">
+              <thead>
                 <tr>
-                  <th>Student</th>
-                  <th>Class</th>
-                  <th>Section</th>
-                  <th>Receipt No.</th>
-                  <th>Fee Type</th>
-                  <th>Discount</th>
-                  <th>Total Fee</th>
-                  <th>Paid</th>
-                  <th>Due</th>
-                  <th>Date</th>
-                </tr>
-              ) : (
-                <tr>
-                  <th>Student</th>
-                  <th>Class</th>
-                  <th>Section</th>
                   <th>Fee Type</th>
                   <th>Discount</th>
                   <th>Total Amount</th>
@@ -3402,52 +4336,30 @@ return (
                   <th>Due</th>
                   <th>Date</th>
                 </tr>
-              )}
-            </thead>
-            <tbody>
-              {paymentPopupLoading ? (
-                <tr>
-                  <td colSpan={paymentPopupTab === "transactions" ? 12 : 9}>Loading transaction details...</td>
-                </tr>
-              ) : paymentPopupTab === "transactions" && paymentPopupTransactionRows.length ? (
-                paymentPopupTransactionRows.map((row, index) => (
-                  <tr key={`${row.id}-${row.paymentDate}-${row.paidAmount}-${index}`}>
-                    <td>{row.studentName}</td>
-                    <td>{row.className}</td>
-                    <td>{row.section}</td>
-                    <td>{row.receiptNumber || "-"}</td>
-                    <td>{row.feeType}</td>
-                    <td>{formatINR(row.discountAmount)}</td>
-                    <td>{formatINR(row.totalAmount)}</td>
-                    <td>{formatINR(row.paidAmount)}</td>
-                    <td>{formatINR(row.dueAmount)}</td>
-                    <td>{row.paymentDate}</td>
+              </thead>
+              <tbody>
+                {paymentPopupStudentPaymentRows.length > 0 ? (
+                  paymentPopupStudentPaymentRows.map((row) => (
+                    <tr key={row.id}>
+                      <td>{row.feeType || "-"}</td>
+                      <td>{formatINR(row.discountAmount || 0)}</td>
+                      <td>{formatINR(row.totalAmount || 0)}</td>
+                      <td>{formatINR(row.paidAmount || 0)}</td>
+                      <td>{formatINR(row.dueAmount || 0)}</td>
+                      <td>{row.paymentDate || "-"}</td>
+                    </tr>
+                  ))
+                ) : (
+                  <tr>
+                    <td colSpan={6} className="accountant-payment-popup-empty">
+                      No fee details found for this selection.
+                    </td>
                   </tr>
-                ))
-              ) : paymentPopupTab === "studentData" && paymentPopupStudentDataRows.length ? (
-                paymentPopupStudentDataRows.map((row) => (
-                  <tr key={`${row.id}-student-data`}>
-                    <td>{row.studentName}</td>
-                    <td>{row.className}</td>
-                    <td>{row.section}</td>
-                    <td>{row.feeType}</td>
-                    <td>{formatINR(row.discountAmount)}</td>
-                    <td>{formatINR(row.totalAmount)}</td>
-                    <td>{formatINR(row.paidAmount)}</td>
-                    <td>{formatINR(row.dueAmount)}</td>
-                    <td>{row.paymentDate}</td>
-                  </tr>
-                ))
-              ) : (
-                <tr>
-                  <td colSpan={paymentPopupTab === "transactions" ? 12 : 9}>
-                    No transaction details found for this selection.
-                  </td>
-                </tr>
-              )}
-            </tbody>
-          </table>
-        </div>
+                )}
+              </tbody>
+            </table>
+          </div>
+        )}
       </div>
     </div>
   )}
@@ -3482,18 +4394,7 @@ return (
           </p>
         </div>
         <form className="accountant-create-fee-form" onSubmit={handleCreateFeeType}>
-          <label className="accountant-create-fee-label accountant-create-fee-label-full">
-            Fee Name
-            <input
-              type="text"
-              value={newFeeTypeForm.feeName}
-              onChange={(event) =>
-                setNewFeeTypeForm((prev) => ({ ...prev, feeName: event.target.value }))
-              }
-              placeholder="Ex: Sports Fee"
-              className="accountant-create-fee-input"
-            />
-          </label>
+          
 
           <div className="accountant-create-fee-row">
             <label className="accountant-create-fee-label">
@@ -3504,13 +4405,13 @@ return (
                 onChange={(event) =>
                   setNewFeeTypeForm((prev) => ({ ...prev, feesType: event.target.value }))
                 }
-                placeholder="Ex: Activity"
+                placeholder="Ex: Books Fee"
                 className="accountant-create-fee-input"
               />
             </label>
 
             <label className="accountant-create-fee-label">
-              For All / Class wise
+              Scope
               <select
                 value={newFeeTypeForm.scope || ""}
                 onChange={(event) =>
@@ -3523,6 +4424,7 @@ return (
                 </option>
                 <option value="All">All</option>
                 <option value="Class wise">Class wise</option>
+                <option value="Individual">Individual</option>
               </select>
             </label>
           </div>
@@ -3564,6 +4466,7 @@ return (
                 }
                 disabled={newFeeTypeForm.frequency !== "Term wise"}
                 className="accountant-create-fee-input"
+                placeholder="Enter number of installments"
               />
             </label>
           </div>
@@ -3734,7 +4637,7 @@ return (
               border: "1px solid #f2c9cf",
             }}
           >
-            Discount
+            Discounts
           </button>
         </div>
         {addFeesPanelTab === "discount" ? (

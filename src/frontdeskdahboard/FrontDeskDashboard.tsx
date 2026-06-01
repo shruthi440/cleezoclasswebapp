@@ -194,7 +194,7 @@ const [qualityPdfOpen, setQualityPdfOpen] = useState(false);
 const [qualityPdfLoading, setQualityPdfLoading] = useState(false);
 const [qualityPdfError, setQualityPdfError] = useState("");
 const [qualityPdfStatus, setQualityPdfStatus] = useState("");
-const [qualityPdfMeta, setQualityPdfMeta] = useState<{
+  const [qualityPdfMeta, setQualityPdfMeta] = useState<{
   id: number;
   title: string;
   file_name: string;
@@ -202,6 +202,18 @@ const [qualityPdfMeta, setQualityPdfMeta] = useState<{
   file_url: string;
   uploaded_at: string;
 } | null>(null);
+
+  const formatBranchName = (schoolCodeValue: string) => {
+    if (!schoolCodeValue) return "";
+    return schoolCodeValue
+      .replace(/_/g, " ")
+      .replace(/\w\S*/g, (txt) => txt.charAt(0).toUpperCase() + txt.substr(1).toLowerCase());
+  };
+
+  const isLikelyDbCode = (value: string) => {
+    const text = String(value || "").trim();
+    return Boolean(text) && /^[A-Z0-9_]+$/.test(text) && text.includes("_") && !text.includes(" ");
+  };
 
   const [activeSidebar, setActiveSidebar] = useState<"home" | "users" | "staff" | "analytics" | "settings" | "reports">("home");
     const [activeNav, setActiveNav] = useState<"dashboard" | "campaigning" | "admissions" | "reports" | "images">("dashboard");
@@ -2007,8 +2019,8 @@ const CommunicationAssignSection: React.FC<{
   }
 
   const campaigningStaffLeads = useMemo<Lead[]>(
-    () =>
-      [...leadStaff, ...teachers].map((entry: any, index) => ({
+    () => {
+      const merged = [...leadStaff, ...teachers].map((entry: any, index) => ({
         id: entry.id ?? entry.teacher_id ?? `campaign-${index}`,
         full_name: entry.full_name || entry.teacher_name || entry.name || "Staff",
         mobile_number: entry.mobile_number || entry.phone_no || "",
@@ -2023,7 +2035,39 @@ const CommunicationAssignSection: React.FC<{
         assign_time: entry.assign_time || "",
         sourceType: entry.sourceType || (entry.mobile_number ? "campaign" : "teacher"),
         sourceLabel: entry.sourceLabel || (entry.mobile_number ? "Campaign Staff" : "Teacher"),
-      })),
+      }));
+
+      const normalizedKey = (lead: Lead) => {
+        const mobile = String(lead.mobile_number || "").trim();
+        const email = String(lead.email_id || "").trim().toLowerCase();
+        const name = String(lead.full_name || "").trim().toLowerCase();
+        return mobile || email || name || String(lead.id ?? "");
+      };
+
+      const deduped = new Map<string, Lead>();
+      merged.forEach((lead) => {
+        const key = normalizedKey(lead);
+        const existing = deduped.get(key);
+        if (!existing) {
+          deduped.set(key, lead);
+          return;
+        }
+
+        const existingIsCampaign = existing.sourceType === "campaign";
+        const currentIsCampaign = lead.sourceType === "campaign";
+
+        if (!existingIsCampaign && currentIsCampaign) {
+          deduped.set(key, lead);
+          return;
+        }
+
+        if (!existing.mobile_number && lead.mobile_number) {
+          deduped.set(key, { ...existing, mobile_number: lead.mobile_number });
+        }
+      });
+
+      return Array.from(deduped.values());
+    },
     [leadStaff, teachers]
   );
 
@@ -2098,7 +2142,21 @@ useEffect(() => {
       }
 
       console.log("📂 Institute data received:", data);
-      setSchoolName(data.institute_name || currentDbName);
+      const storedSchoolName = String(localStorage.getItem("schoolName") || "").trim();
+      const storedInstituteName = String(localStorage.getItem("instituteName") || "").trim();
+      const apiInstituteName = String(data.institute_name || "").trim();
+      const resolvedApiInstituteName = apiInstituteName && !isLikelyDbCode(apiInstituteName) ? apiInstituteName : "";
+      const resolvedInstituteName = String(
+        resolvedApiInstituteName ||
+          storedSchoolName ||
+          storedInstituteName ||
+          formatBranchName(currentDbName) ||
+          currentDbName ||
+          "Unknown School"
+      ).trim();
+      setSchoolName(resolvedInstituteName);
+      localStorage.setItem("instituteName", resolvedInstituteName);
+      localStorage.setItem("schoolName", resolvedInstituteName);
       setLogo(data.logo || "/default-logo.png");
       setInstituteAddress(data.address || "Address not available");
     } catch (err) {
@@ -2106,7 +2164,14 @@ useEffect(() => {
       if (retriesLeft > 0) {
         return fetchInstituteInfo(retriesLeft - 1);
       }
-      setSchoolName(currentDbName || "Unknown School");
+      const fallbackInstituteName =
+        String(localStorage.getItem("schoolName") || localStorage.getItem("instituteName") || "").trim() ||
+        formatBranchName(currentDbName) ||
+        currentDbName ||
+        "Unknown School";
+      setSchoolName(fallbackInstituteName);
+      localStorage.setItem("instituteName", fallbackInstituteName);
+      localStorage.setItem("schoolName", fallbackInstituteName);
       setLogo("/default-logo.png");
       setInstituteAddress("Address not available");
     }
@@ -2548,6 +2613,14 @@ useEffect(() => {
   pageClassName="frontdesk-dashboard-page accountant-dashboard-page accountant-dashboard-home-page dashboard-home-page"
   lockViewport={false}
   sidebarItems={sidebarItems}
+  sidebarTopAction={
+    String(localStorage.getItem("userRole") || "").toLowerCase() === "superadmin"
+      ? {
+          label: "Chief Dashboard",
+          onClick: () => navigate("/ChiefDashboard"),
+        }
+      : null
+  }
 
       topbarTabs={topbarTabs}
       logoSrc={schoolLogo}
@@ -2789,13 +2862,49 @@ Campaign Status    </div>
                         <div className="leadTime">{lead.lead_time}</div>
                       </div>
 
-                      <div className="leadAvatar">
-                        <FaUser size={16} color="#404040" />
+                      <div className="leadAvatar" style={{ display: "flex", alignItems: "center", justifyContent: "center" }}>
+                        {(() => {
+                          const entryType = String(lead.entry_type || "").toLowerCase();
+                          const isMail =
+                            entryType.includes("mail") ||
+                            entryType.includes("gmail") ||
+                            entryType.includes("email");
+                          return (
+                            <span
+                              className={`frontdesk-channel-badge ${isMail ? "is-mail" : "is-whatsapp"}`}
+                              aria-label={isMail ? "Mail" : "WhatsApp"}
+                              title={isMail ? "Mail" : "WhatsApp"}
+                              style={{ margin: 0 }}
+                            >
+                              {isMail ? "G" : "W"}
+                            </span>
+                          );
+                        })()}
                       </div>
 
                       <div className="leadInfo">
                         <span className="blockText">{lead.full_name}</span> <span className="normalText">showing interest via{" "}</span>
-                        <b>{lead.entry_type?.toUpperCase()}</b>
+                        {(() => {
+                          const entryType = String(lead.entry_type || "").toLowerCase();
+                          const isMail =
+                            entryType.includes("mail") ||
+                            entryType.includes("gmail") ||
+                            entryType.includes("email");
+                          const badge = isMail ? "G" : "W";
+                          const label = isMail ? "Mail" : "WhatsApp";
+                          return (
+                            <>
+                              <span
+                                className={`frontdesk-channel-badge ${isMail ? "is-mail" : "is-whatsapp"}`}
+                                aria-label={label}
+                                title={label}
+                              >
+                                {badge}
+                              </span>{" "}
+                              <span className="normalText">via {label}</span>
+                            </>
+                          );
+                        })()}
                         <br />
                       <span className="normalText">Contact: <span className="blockText">{lead.mobile_number}</span> / <span className="blockText">{lead.email_id}</span></span>
                       </div>

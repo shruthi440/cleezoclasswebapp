@@ -17,6 +17,7 @@ const Header = () => {
   const [logo, setLogo] = useState("/default-logo.png");
   const [userInfo, setUserInfo] = useState(null);
   const [profileEditOpen, setProfileEditOpen] = useState(false);
+  const [instituteAuthorizedPerson, setInstituteAuthorizedPerson] = useState(null);
   const [profileForm, setProfileForm] = useState({
     gender: "",
     phone_no: "",
@@ -164,6 +165,10 @@ useEffect(() => {
       setInstituteAddress(data.address || "Address not available");
       localStorage.setItem("schoolAddress", String(data.address || "Address not available"));
       console.log("[Header] Address set:", data.address || "Address not available");
+
+      const authorizedPerson = String(data.institute_authorized_person || "").trim();
+      console.log("[Header] institute_authorized_person resolved as:", authorizedPerson || "(empty)");
+      setInstituteAuthorizedPerson(authorizedPerson);
     })
     .catch(err => {
       console.error("[Header] Error fetching institute info:", err);
@@ -171,6 +176,7 @@ useEffect(() => {
       setSchoolName("Unknown School");
       setLogo("/default-logo.png");
       setInstituteAddress("Address not available");
+      setInstituteAuthorizedPerson("");
       localStorage.setItem("schoolName", "Unknown School");
       localStorage.setItem("schoolLogo", "/default-logo.png");
       localStorage.setItem("schoolAddress", "Address not available");
@@ -180,12 +186,46 @@ useEffect(() => {
 
   // Fetch branches for superadmin
   useEffect(() => {
-    if (!prefix || userRole !== "superadmin") return;
-    fetch(`https://cleezoclass.com:4000/api/branches?prefix=${prefix}`)
+    if (!prefix || userRole !== "superadmin" || instituteAuthorizedPerson === null) return;
+
+    const params = new URLSearchParams({ prefix });
+    if (instituteAuthorizedPerson) {
+      params.set("institute_authorized_person", instituteAuthorizedPerson);
+    }
+
+    console.log("[Header] Fetching branches with params:", params.toString());
+    fetch(`https://cleezoclass.com:4000/api/branches?${params.toString()}`)
       .then(res => res.json())
-      .then(data => setBranches(data))
-      .catch(err => console.error(err));
-  }, [prefix, userRole]);
+      .then(data => {
+        console.log("[Header] Branches API response:", data);
+        const branchList = Array.isArray(data)
+          ? data
+          : Array.isArray(data?.branches)
+            ? data.branches
+            : [];
+        console.log("[Header] Raw branch count:", branchList.length);
+
+        const filteredBranches = instituteAuthorizedPerson
+          ? branchList.filter(branch => {
+              const branchAuthorizedPerson = String(
+                branch?.institute_authorized_person || branch?.authorized_person || ""
+              ).trim();
+              const expectedAuthorizedPerson = String(instituteAuthorizedPerson).trim();
+              console.log("[Header] Branch filter check:", {
+                dbName: branch?.dbName,
+                institute_name: branch?.institute_name,
+                branchAuthorizedPerson,
+                expected: expectedAuthorizedPerson,
+              });
+              return branchAuthorizedPerson === expectedAuthorizedPerson;
+            })
+          : branchList;
+
+        console.log("[Header] Filtered branch count:", filteredBranches.length);
+        setBranches(filteredBranches);
+      })
+      .catch(err => console.error("[Header] Error fetching branches:", err));
+  }, [prefix, userRole, instituteAuthorizedPerson]);
 
   // Fetch user info
   useEffect(() => {

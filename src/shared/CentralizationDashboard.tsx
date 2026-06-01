@@ -1,12 +1,16 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import axios from 'axios';
 import * as XLSX from 'xlsx';
 import { useNavigate } from 'react-router-dom';
+import { Pencil, Trash2 } from 'lucide-react';
+import StudentEditingPopup from './StudentEditingPopup.jsx';
 
 type UploadAsset = File | string | null;
 type TabName = 'Details' | 'Management' | 'Staff' | 'Student' | 'Uploads';
 type StepTitle = 'Details' | 'Management' | 'Staff' | 'Students' | 'Uploaded Files';
 type UserType = 'student' | 'teacher' | 'management';
+type RoleTab = 'Management' | 'Staff' | 'Student';
+type UploadPreviewCategory = 'Student' | 'Staff' | 'Management';
 type FileFieldKey =
     | 'authorized_logo'
     | 'school_photo'
@@ -79,6 +83,7 @@ interface UploadedRecord extends Record<string, unknown> {
 interface UploadResponse {
     insertedRecords: UploadedRecord[];
     duplicates: UploadedRecord[];
+    replacedRecords?: UploadedRecord[];
     skippedRows?: number;
 }
 
@@ -109,6 +114,7 @@ interface AddUserFormState {
     school_name: string;
     address: string;
     dob: string;
+    photo: string;
     admission_no: string;
     cbse_reg_no: string;
     curriculum: string;
@@ -153,6 +159,7 @@ const createAddUserForm = (
     school_name: '',
     address: '',
     dob: '',
+    photo: '',
     admission_no: '',
     cbse_reg_no: '',
     curriculum: '',
@@ -226,6 +233,109 @@ const clickHiddenInput = (id: string) => {
     document.getElementById(id)?.click();
 };
 
+const normalizePhotoUrl = (rawPhoto: any) => {
+    if (!rawPhoto) return '';
+
+    let photoPath = rawPhoto;
+
+    if (typeof photoPath === 'object' && photoPath.type === 'Buffer' && Array.isArray(photoPath.data)) {
+        try {
+            photoPath = new TextDecoder().decode(new Uint8Array(photoPath.data));
+        } catch {
+            return '';
+        }
+    }
+
+    if (typeof photoPath !== 'string') return '';
+    photoPath = photoPath.trim();
+    if (!photoPath) return '';
+
+    if (photoPath.startsWith('data:image') || photoPath.startsWith('http')) {
+        return photoPath;
+    }
+
+    if (photoPath.startsWith('0x')) {
+        try {
+            const hex = photoPath.slice(2);
+            let decoded = '';
+            for (let i = 0; i < hex.length; i += 2) {
+                decoded += String.fromCharCode(parseInt(hex.substring(i, i + 2), 16));
+            }
+            photoPath = decoded.trim();
+        } catch {
+            return '';
+        }
+    }
+
+    if (photoPath.startsWith('/public/uploads/')) {
+        photoPath = photoPath.replace('/public', '');
+    }
+
+    if (photoPath.startsWith('uploads/')) {
+        photoPath = `/${photoPath}`;
+    }
+
+    if (!photoPath.startsWith('/uploads/')) {
+        photoPath = `/uploads/${photoPath.replace(/^\/+/, '')}`;
+    }
+
+    return `https://cleezoclass.com:4000${photoPath}`;
+};
+
+const roleTabConfig: Record<RoleTab, {
+    title: string;
+    detailsTitle: string;
+    addButtonLabel: string;
+    userType: UserType;
+    templateCategory: string;
+    columns: Array<{ key: string; label: string }>;
+}> = {
+    Management: {
+        title: 'Management Bulk Upload',
+        detailsTitle: 'Management Details',
+        addButtonLabel: 'Add Management',
+        userType: 'management',
+        templateCategory: 'Management',
+        columns: [
+            { key: 'id', label: 'ID' },
+            { key: 'name', label: 'Name' },
+            { key: 'username', label: 'Username' },
+            { key: 'phone', label: 'Phone' },
+            { key: 'designation', label: 'Designation' },
+        ],
+    },
+    Staff: {
+        title: 'Teacher Bulk Upload',
+        detailsTitle: 'Teacher Details',
+        addButtonLabel: 'Add Staff',
+        userType: 'teacher',
+        templateCategory: 'Staff',
+        columns: [
+            { key: 'id', label: 'ID' },
+            { key: 'name', label: 'Name' },
+            { key: 'username', label: 'Username' },
+            { key: 'phone', label: 'Phone' },
+            { key: 'designation', label: 'Designation' },
+        ],
+    },
+    Student: {
+        title: 'Student Bulk Upload',
+        detailsTitle: 'Student Details',
+        addButtonLabel: 'Add Student',
+        userType: 'student',
+        templateCategory: 'Student',
+        columns: [
+            { key: 'id', label: 'ID' },
+            { key: 'name', label: 'Name' },
+            { key: 'username', label: 'Username' },
+            { key: 'phone', label: 'Phone' },
+            { key: 'class_name', label: 'Class' },
+            { key: 'section', label: 'Section' },
+            { key: 'class_teacher', label: 'Class Teacher' },
+        ],
+    },
+};
+
 const CentralizationDashboard: React.FC = () => {
     const navigate = useNavigate();
     const [activeTab, setActiveTab] = useState<TabName>('Details');
@@ -234,15 +344,26 @@ const CentralizationDashboard: React.FC = () => {
     const [excelFile, setExcelFile] = useState<File | null>(null);
     const [uploadedData, setUploadedData] = useState<UploadedRecord[]>([]);
     const [previewData, setPreviewData] = useState<any[]>([]);
-const [showPreview, setShowPreview] = useState(false);
+    const [isExcelPreviewOpen, setIsExcelPreviewOpen] = useState(false);
+    const [previewCategory, setPreviewCategory] = useState<UploadPreviewCategory>('Student');
     const [trackingStats, setTrackingStats] = useState<TrackingStats>({
         teacher: 0,
         student: 0,
         management: 0,
     });
+    const [roleUsers, setRoleUsers] = useState<any[]>([]);
+    const [roleLoading, setRoleLoading] = useState(false);
+    const [studentClassFilter, setStudentClassFilter] = useState('');
+    const [studentSectionFilter, setStudentSectionFilter] = useState('');
+    const [studentNameFilter, setStudentNameFilter] = useState('');
     const [isAddUserOpen, setIsAddUserOpen] = useState(false);
     const [isAddUserSubmitting, setIsAddUserSubmitting] = useState(false);
     const [createdCredentials, setCreatedCredentials] = useState<CreatedCredentials | null>(null);
+    const [editingUserId, setEditingUserId] = useState<string | number | null>(null);
+    const [userModalMode, setUserModalMode] = useState<'add' | 'edit'>('add');
+    const [studentPhotoPreview, setStudentPhotoPreview] = useState('');
+    const [studentPhotoFile, setStudentPhotoFile] = useState<File | null>(null);
+    const studentPhotoInputRef = useRef<HTMLInputElement | null>(null);
     const [addUserForm, setAddUserForm] = useState<AddUserFormState>(
         createAddUserForm('student')
     );
@@ -331,6 +452,36 @@ const [showPreview, setShowPreview] = useState(false);
         loadSchoolDetails();
     }, []);
 
+    const activeRoleTab: RoleTab | null =
+        activeTab === 'Management' || activeTab === 'Staff' || activeTab === 'Student'
+            ? activeTab
+            : null;
+
+    useEffect(() => {
+        const loadRoleUsers = async () => {
+            if (!activeRoleTab) return;
+
+            const schoolCode = formData.school_code || localStorage.getItem('schoolCode');
+            if (!schoolCode) return;
+
+            try {
+                setRoleLoading(true);
+                const response = await axios.post('https://cleezoclass.com:4000/api/users', {
+                    schoolCode,
+                    user_type: roleTabConfig[activeRoleTab].userType,
+                });
+                setRoleUsers(Array.isArray(response.data) ? response.data : []);
+            } catch (error) {
+                console.error(`Failed to fetch ${activeRoleTab.toLowerCase()} users:`, error);
+                setRoleUsers([]);
+            } finally {
+                setRoleLoading(false);
+            }
+        };
+
+        loadRoleUsers();
+    }, [activeRoleTab, formData.school_code]);
+
     
 
     const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
@@ -343,8 +494,66 @@ const [showPreview, setShowPreview] = useState(false);
         setFormData((prev) => ({ ...prev, [key]: file }));
     };
 
+    const triggerStudentPhotoInput = () => {
+        studentPhotoInputRef.current?.click();
+    };
+
+    const handleStudentPhotoChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+        const file = e.target.files?.[0] ?? null;
+        if (file) {
+            setStudentPhotoFile(file);
+            setStudentPhotoPreview(URL.createObjectURL(file));
+        }
+    };
+
+    const uploadStudentPhoto = async () => {
+        if (!studentPhotoFile) return addUserForm.photo || '';
+
+        const schoolCode = formData.school_code || localStorage.getItem('schoolCode');
+        const uploadData = new FormData();
+        uploadData.append('photo', studentPhotoFile);
+
+        console.log('[CentralizationDashboard] uploadStudentPhoto start', {
+            userModalMode,
+            editingUserId,
+            schoolCode,
+            fileName: studentPhotoFile.name,
+            fileSize: studentPhotoFile.size,
+        });
+
+        const response = await axios.post(
+            'https://cleezoclass.com:4000/api/upload-photo',
+            uploadData,
+            {
+                headers: { 'Content-Type': 'multipart/form-data' },
+                params: { schoolCode },
+            }
+        );
+
+        console.log('[CentralizationDashboard] uploadStudentPhoto response', response.data);
+        return response.data?.photoPath || addUserForm.photo || '';
+    };
+
+    const getStudentSectionsForClass = (className: string) =>
+        Array.from(
+            new Set(
+                roleUsers
+                    .filter((user) => String(user?.class_name || '').trim() === String(className).trim())
+                    .map((user) => String(user?.section || '').trim())
+                    .filter(Boolean)
+            )
+        ).sort((a, b) => a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' }));
+
     const openAddUserModal = (userType: UserType) => {
+        console.log('[CentralizationDashboard] openAddUserModal', {
+            activeRoleTab,
+            userType,
+        });
+        setUserModalMode('add');
+        setEditingUserId(null);
         setCreatedCredentials(null);
+        setStudentPhotoFile(null);
+        setStudentPhotoPreview('');
         setAddUserForm(
             createAddUserForm(userType, {
                 school_name: formData.school_name || localStorage.getItem('instituteName') || '',
@@ -358,6 +567,151 @@ const [showPreview, setShowPreview] = useState(false);
     const closeAddUserModal = () => {
         setIsAddUserOpen(false);
         setCreatedCredentials(null);
+        setEditingUserId(null);
+        setUserModalMode('add');
+        setStudentPhotoFile(null);
+        setStudentPhotoPreview('');
+    };
+
+    const buildUserFormFromRecord = (userType: UserType, user: any): AddUserFormState =>
+        createAddUserForm(userType, {
+            name: String(user?.name || ''),
+            username: String(user?.username || ''),
+            password: String(user?.password || ''),
+            gender: String(user?.gender || ''),
+            phone_no: String(user?.phone_no || user?.phone || ''),
+            father_phone_no: String(user?.father_phone_no || ''),
+            aadhar_no: String(user?.aadhar_no || ''),
+            father_name: String(user?.father_name || ''),
+            class_name: String(user?.class_name || ''),
+            section: String(user?.section || ''),
+            class_teacher: String(user?.class_teacher || ''),
+            school_name: String(user?.school_name || formData.school_name || ''),
+            address: String(user?.address || formData.address || ''),
+            dob: String(user?.dob || ''),
+            photo: normalizePhotoUrl(user?.photo) || String(user?.photo || ''),
+            admission_no: String(user?.admission_no || ''),
+            cbse_reg_no: String(user?.cbse_reg_no || ''),
+            curriculum: String(user?.curriculum || formData.curriculum || ''),
+            designation: String(user?.designation || ''),
+            teaches_to_1: String(user?.teaches_to_1 || ''),
+            teaches_to_2: String(user?.teaches_to_2 || ''),
+            teaches_to_3: String(user?.teaches_to_3 || ''),
+            teaches_to_4: String(user?.teaches_to_4 || ''),
+            teaches_to_5: String(user?.teaches_to_5 || ''),
+            teaches_to_6: String(user?.teaches_to_6 || ''),
+            teaches_to_7: String(user?.teaches_to_7 || ''),
+            teaches_to_8: String(user?.teaches_to_8 || ''),
+            teaches_to_9: String(user?.teaches_to_9 || ''),
+            teaches_to_10: String(user?.teaches_to_10 || ''),
+            teaches_to_11: String(user?.teaches_to_11 || ''),
+            teaches_to_12: String(user?.teaches_to_12 || ''),
+        });
+
+    const openEditUserModal = (user: any) => {
+        const userType =
+            (user?.user_type ||
+                (activeRoleTab === 'Staff'
+                    ? 'teacher'
+                    : activeRoleTab === 'Student'
+                        ? 'student'
+                        : 'management')) as UserType;
+        const resolvedId =
+            user?.id ??
+            user?.ID ??
+            user?.Id ??
+            user?.user_id ??
+            user?.userId ??
+            user?.staff_id ??
+            user?.management_id ??
+            null;
+
+        if (resolvedId == null || resolvedId === '') {
+            alert('This record does not have a valid id, so it cannot be edited from this screen.');
+            return;
+        }
+
+        console.log('[CentralizationDashboard] openEditUserModal', {
+            activeRoleTab,
+            resolvedId,
+            userType,
+            user,
+        });
+
+        setUserModalMode('edit');
+        setEditingUserId(resolvedId);
+        setCreatedCredentials(null);
+        setAddUserForm(buildUserFormFromRecord(userType, user));
+        setStudentPhotoFile(null);
+        setStudentPhotoPreview(normalizePhotoUrl(user?.photo));
+        setIsAddUserOpen(true);
+    };
+
+    const buildUserSubmitPayload = (form: AddUserFormState, schoolCode: string) => {
+        const basePayload: Record<string, unknown> = {
+            user_type: form.user_type,
+            category: form.user_type,
+            name: form.name,
+            username: form.username,
+            password: form.password,
+            gender: form.gender,
+            phone_no: form.user_type === 'student' ? form.father_phone_no || form.phone_no : form.phone_no,
+            aadhar_no: form.aadhar_no,
+            father_name: form.father_name,
+            school_name: form.school_name || formData.school_name || localStorage.getItem('instituteName') || '',
+            address: form.address || formData.address || '',
+            dob: form.dob,
+            photo: typeof form.photo === 'string' ? form.photo : '',
+            schoolCode,
+            curriculum: form.curriculum || formData.curriculum || '',
+            Curriculum: form.curriculum || formData.curriculum || '',
+            designation: form.designation || '',
+        };
+
+        if (form.user_type === 'student') {
+            return {
+                ...basePayload,
+                father_phone_no: form.father_phone_no,
+                class_name: form.class_name,
+                section: form.section,
+                class_teacher: form.class_teacher,
+                admission_no: form.admission_no,
+                cbse_reg_no: form.cbse_reg_no,
+            };
+        }
+
+        if (form.user_type === 'teacher') {
+            return {
+                ...basePayload,
+                teaches_to_1: form.teaches_to_1,
+                teaches_to_2: form.teaches_to_2,
+                teaches_to_3: form.teaches_to_3,
+                teaches_to_4: form.teaches_to_4,
+                teaches_to_5: form.teaches_to_5,
+                teaches_to_6: form.teaches_to_6,
+                teaches_to_7: form.teaches_to_7,
+                teaches_to_8: form.teaches_to_8,
+                teaches_to_9: form.teaches_to_9,
+                teaches_to_10: form.teaches_to_10,
+                teaches_to_11: form.teaches_to_11,
+                teaches_to_12: form.teaches_to_12,
+            };
+        }
+
+        return basePayload;
+    };
+
+    const reloadRoleUsers = async () => {
+        if (!activeRoleTab) return;
+
+        const schoolCode = formData.school_code || localStorage.getItem('schoolCode');
+        if (!schoolCode) return;
+
+        const response = await axios.post('https://cleezoclass.com:4000/api/users', {
+            schoolCode,
+            user_type: roleTabConfig[activeRoleTab].userType,
+        });
+        setRoleUsers(Array.isArray(response.data) ? response.data : []);
     };
 
     const handleAddUserChange = (
@@ -378,47 +732,88 @@ const [showPreview, setShowPreview] = useState(false);
         }
 
         const userType = addUserForm.user_type;
-        const payload = {
-            ...addUserForm,
+
+        console.log('[CentralizationDashboard] handleAddUserSubmit start', {
+            userModalMode,
+            editingUserId,
+            userType,
             schoolCode,
-            category: userType,
-            school_name:
-                addUserForm.school_name || formData.school_name || localStorage.getItem('instituteName') || '',
-            address: addUserForm.address || formData.address || '',
-            curriculum: addUserForm.curriculum || formData.curriculum || '',
-            Curriculum: addUserForm.curriculum || formData.curriculum || '',
-            phone_no:
-                userType === 'student'
-                    ? addUserForm.father_phone_no || addUserForm.phone_no
-                    : addUserForm.phone_no,
-        };
+            addUserForm,
+            hasPhotoFile: Boolean(studentPhotoFile),
+        });
 
         try {
             setIsAddUserSubmitting(true);
-            const response = await axios.post(
-                'https://cleezoclass.com:4000/api/submit-studentData',
-                payload,
-                {
-                    params: { schoolCode },
-                    headers: { 'Content-Type': 'application/json' },
-                }
-            );
+            if (userModalMode === 'edit' && editingUserId != null) {
+                const photoPath = studentPhotoFile ? await uploadStudentPhoto() : addUserForm.photo || '';
+                const normalizedPhotoPath = typeof photoPath === 'string' ? photoPath : '';
+                const editPayload = {
+                    ...addUserForm,
+                    photo: normalizedPhotoPath,
+                };
+                console.log('[CentralizationDashboard] edit payload', editPayload);
+                const response = await axios.put(
+                    `https://cleezoclass.com:4000/api/users/${editingUserId}`,
+                    editPayload,
+                    { params: { schoolCode }, headers: { 'Content-Type': 'application/json' } }
+                );
+                console.log('[CentralizationDashboard] edit response', response.data);
+                alert(response.data?.message || `${userType} updated successfully`);
+            } else {
+                const photoPath = studentPhotoFile ? await uploadStudentPhoto() : '';
+                const normalizedPhotoPath = typeof photoPath === 'string' ? photoPath : '';
+                const addPayload = {
+                    ...addUserForm,
+                    photo: normalizedPhotoPath,
+                    schoolCode,
+                    category: userType,
+                };
+                console.log('[CentralizationDashboard] add payload', addPayload);
+                const response = await axios.post(
+                    'https://cleezoclass.com:4000/api/submit-studentData',
+                    addPayload,
+                    {
+                        params: { schoolCode },
+                        headers: { 'Content-Type': 'application/json' },
+                    }
+                );
+                console.log('[CentralizationDashboard] add response', response.data);
 
-            const responseData = response.data?.data || {};
-            setCreatedCredentials({
-                name: String(responseData.name || addUserForm.name || ''),
-                username: String(responseData.username || addUserForm.username || ''),
-                password: String(responseData.password || addUserForm.password || ''),
-                user_type: userType,
-            });
+                const responseData = response.data?.data || {};
+                setCreatedCredentials({
+                    name: String(responseData.name || addUserForm.name || ''),
+                    username: String(responseData.username || addUserForm.username || ''),
+                    password: String(responseData.password || addUserForm.password || ''),
+                    user_type: userType,
+                });
 
-            alert(response.data?.message || `${userType} added successfully`);
+                alert(response.data?.message || `${userType} added successfully`);
+            }
+
+            try {
+                await reloadRoleUsers();
+                console.log('[CentralizationDashboard] reloadRoleUsers completed');
+            } catch (reloadError) {
+                console.error('Failed to refresh role users after save:', reloadError);
+            }
+
             setAddUserForm(createAddUserForm(userType));
+            setEditingUserId(null);
+            if (userModalMode === 'edit') {
+                setIsAddUserOpen(false);
+            } else {
+                setUserModalMode('add');
+            }
         } catch (error: any) {
-            console.error('Error adding user:', error?.response?.data || error?.message || error);
-            alert(error?.response?.data?.message || 'Failed to add user');
+            console.error('[CentralizationDashboard] Error saving user:', error?.response?.data || error?.message || error);
+            alert(error?.response?.data?.message || (userModalMode === 'edit' ? 'Failed to update user' : 'Failed to add user'));
         } finally {
             setIsAddUserSubmitting(false);
+            console.log('[CentralizationDashboard] handleAddUserSubmit finished', {
+                userModalMode,
+                editingUserId,
+                userType,
+            });
         }
     };
 
@@ -474,6 +869,7 @@ const [showPreview, setShowPreview] = useState(false);
 
         try {
             setUploading(true);
+            setPreviewCategory(getUploadPreviewCategory(activeRoleTab));
 
             const apiCategory = category.toLowerCase() === 'staff' ? 'teacher' : category.toLowerCase();
 
@@ -486,11 +882,18 @@ const [showPreview, setShowPreview] = useState(false);
                 }
             );
 
-            const { insertedRecords, duplicates, skippedRows = 0 } = response.data;
+            const {
+                insertedRecords,
+                duplicates,
+                replacedRecords = [],
+                skippedRows = 0,
+            } = response.data;
             setUploadedData(insertedRecords);
+            setPreviewData(insertedRecords);
+            setIsExcelPreviewOpen(true);
 
             alert(
-                `Upload Successful!\nInserted: ${insertedRecords.length}\nDuplicates: ${duplicates.length}\nSkipped: ${skippedRows}`
+                `Upload Successful!\nInserted: ${insertedRecords.length}\nReplaced: ${replacedRecords.length || duplicates.length}\nSkipped: ${skippedRows}`
             );
 
             setExcelFile(null);
@@ -501,7 +904,68 @@ const [showPreview, setShowPreview] = useState(false);
             setUploading(false);
         }
     };
-    const getValue = (row: any, keys: string[]) => {
+
+    const getExcelTemplateHeaders = (category: string) => {
+        const baseHeaders = [
+            'name',
+            'gender',
+            'dob',
+            'phone_no',
+            'aadhar_no',
+            'father_name',
+            'address',
+        ];
+
+        const studentHeaders = [
+            ...baseHeaders,
+            'class_name',
+            'section',
+            'class_teacher',
+            'admission_no',
+            'curriculum',
+            'cbse_reg_no',
+        ];
+
+        const teacherHeaders = [
+            ...baseHeaders,
+            'designation',
+            'teaches_to_1',
+            'teaches_to_2',
+            'teaches_to_3',
+            'teaches_to_4',
+            'teaches_to_5',
+            'teaches_to_6',
+            'teaches_to_7',
+            'teaches_to_8',
+            'teaches_to_9',
+            'teaches_to_10',
+            'teaches_to_11',
+            'teaches_to_12',
+        ];
+
+        const managementHeaders = [
+            ...baseHeaders,
+            'designation',
+        ];
+
+        if (category === 'Staff') return teacherHeaders;
+        if (category === 'Management') return managementHeaders;
+        return studentHeaders;
+    };
+
+    const downloadExcelTemplate = (category: string) => {
+        const headers = getExcelTemplateHeaders(category);
+        const workbook = XLSX.utils.book_new();
+        const worksheet = XLSX.utils.aoa_to_sheet([headers]);
+        const sheetName = category === 'Staff' ? 'TeacherTemplate' : `${category}Template`;
+        XLSX.utils.book_append_sheet(workbook, worksheet, sheetName);
+        XLSX.writeFile(
+            workbook,
+            `${category === 'Staff' ? 'teacher' : category.toLowerCase()}_template.xlsx`
+        );
+    };
+
+const getValue = (row: any, keys: string[]) => {
   for (const key of keys) {
     const foundKey = Object.keys(row).find(
       (col) => col.toLowerCase().replace(/\s+/g, "_") === key.toLowerCase()
@@ -513,7 +977,146 @@ const [showPreview, setShowPreview] = useState(false);
   }
   return "";
 };
-    const handlePreview = (file: File) => {
+const formatPreviewDob = (value: any) => {
+  if (value === undefined || value === null || String(value).trim() === "") {
+    return "";
+  }
+
+  if (value instanceof Date && !Number.isNaN(value.getTime())) {
+    return value.toISOString().slice(0, 10);
+  }
+
+  const numericValue = Number(value);
+  if (Number.isFinite(numericValue) && XLSX.SSF?.parse_date_code) {
+    const parsed = XLSX.SSF.parse_date_code(numericValue);
+    if (parsed?.y && parsed?.m && parsed?.d) {
+      const month = String(parsed.m).padStart(2, "0");
+      const day = String(parsed.d).padStart(2, "0");
+      return `${parsed.y}-${month}-${day}`;
+    }
+  }
+
+  const parsedDate = new Date(String(value).trim());
+  if (!Number.isNaN(parsedDate.getTime())) {
+    return parsedDate.toISOString().slice(0, 10);
+  }
+
+  return String(value).trim();
+};
+
+const formatExcelColumnLabel = (key: string) =>
+  key.replace(/_/g, ' ').replace(/\b\w/g, (char) => char.toUpperCase());
+
+const formatExcelCellValue = (value: unknown) => {
+  if (value === null || value === undefined) return '-';
+  if (typeof value === 'string') {
+    const trimmed = value.trim();
+    return trimmed || '-';
+  }
+  if (typeof value === 'number' || typeof value === 'boolean') {
+    return String(value);
+  }
+  if (value instanceof Date && !Number.isNaN(value.getTime())) {
+    return value.toISOString().slice(0, 10);
+  }
+  if (typeof value === 'object') {
+    try {
+      return JSON.stringify(value);
+    } catch {
+      return '-';
+    }
+  }
+  return String(value);
+};
+
+const getUploadPreviewCategory = (roleTab: RoleTab): UploadPreviewCategory =>
+  roleTab === 'Staff' ? 'Staff' : roleTab === 'Management' ? 'Management' : 'Student';
+
+const buildPreviewRows = (rawData: any[], category: UploadPreviewCategory) => {
+  if (category === 'Staff') {
+    return rawData.map((row: any) => ({
+      name: getValue(row, ['name', 'teacher_name', 'teacher', 'staff_name'])
+        .toString()
+        .toUpperCase() || '',
+      gender: getValue(row, ['gender', 'sex']),
+      phone_no: getValue(row, ['phone_no', 'phone number', 'phone', 'mobile']),
+      aadhar_no: getValue(row, ['aadhar_no', 'aadhar number', 'aadhar', 'aadhaar']),
+      dob: formatPreviewDob(getValue(row, ['dob', 'date_of_birth', 'date of birth', 'birth_date'])),
+      father_name: getValue(row, ['father_name', 'father name']).toString().toUpperCase() || '',
+      address: getValue(row, ['address', 'staff_address']),
+      designation: getValue(row, ['designation', 'subject', 'role']),
+      teaches_to_1: getValue(row, ['teaches_to_1', 'class 1']),
+      teaches_to_2: getValue(row, ['teaches_to_2', 'class 2']),
+      teaches_to_3: getValue(row, ['teaches_to_3', 'class 3']),
+      teaches_to_4: getValue(row, ['teaches_to_4', 'class 4']),
+      teaches_to_5: getValue(row, ['teaches_to_5', 'class 5']),
+      teaches_to_6: getValue(row, ['teaches_to_6', 'class 6']),
+      teaches_to_7: getValue(row, ['teaches_to_7', 'class 7']),
+      teaches_to_8: getValue(row, ['teaches_to_8', 'class 8']),
+      teaches_to_9: getValue(row, ['teaches_to_9', 'class 9']),
+      teaches_to_10: getValue(row, ['teaches_to_10', 'class 10']),
+      teaches_to_11: getValue(row, ['teaches_to_11', 'class 11']),
+      teaches_to_12: getValue(row, ['teaches_to_12', 'class 12']),
+    }));
+  }
+
+  if (category === 'Management') {
+    return rawData.map((row: any) => ({
+      name: getValue(row, ['name', 'manager_name', 'staff_name'])
+        .toString()
+        .toUpperCase() || '',
+      gender: getValue(row, ['gender', 'sex']),
+      phone_no: getValue(row, ['phone_no', 'phone number', 'phone', 'mobile']),
+      aadhar_no: getValue(row, ['aadhar_no', 'aadhar number', 'aadhar', 'aadhaar']),
+      dob: formatPreviewDob(getValue(row, ['dob', 'date_of_birth', 'date of birth', 'birth_date'])),
+      father_name: getValue(row, ['father_name', 'father name']).toString().toUpperCase() || '',
+      address: getValue(row, ['address', 'management_address']),
+      designation: getValue(row, ['designation', 'role']),
+    }));
+  }
+
+  return rawData.map((row: any) => ({
+    student_name: getValue(row, [
+      'student_name',
+      'student name',
+      'name',
+      'student',
+    ]).toString().toUpperCase() || '',
+    gender: getValue(row, ['gender', 'sex']),
+    phone_number: getValue(row, [
+      'phone_number',
+      'phone number',
+      'phone',
+      'mobile',
+      'father_phone',
+      'father_mobile',
+    ]),
+    aadhar_number: getValue(row, [
+      'aadhar_number',
+      'aadhar number',
+      'aadhar',
+      'aadhaar',
+    ]),
+    dob: formatPreviewDob(getValue(row, ['dob', 'date_of_birth', 'date of birth', 'birth_date'])),
+    father_name: getValue(row, [
+      'father_name',
+      'father name',
+      'dad_name',
+      'dad',
+      'father',
+    ]).toString().toUpperCase() || '',
+    class: getValue(row, ['class', 'class_name', 'grade']),
+    section: getValue(row, ['section', 'sec']),
+    class_teacher: getValue(row, [
+      'class_teacher',
+      'teacher',
+      'teacher_name',
+    ]).toString().toUpperCase() || '',
+    address: getValue(row, ['address', 'student_address']),
+  }));
+};
+
+    const handlePreview = (file: File, category: UploadPreviewCategory) => {
     const reader = new FileReader();
 
     reader.onload = (e) => {
@@ -524,55 +1127,11 @@ const [showPreview, setShowPreview] = useState(false);
         const worksheet = workbook.Sheets[sheetName];
 
         const rawData = XLSX.utils.sheet_to_json(worksheet);
-const formattedData = rawData.map((row: any) => ({
-  student_name: getValue(row, [
-    "student_name",
-    "student name",
-    "name",
-    "student",
-  ]).toString().toUpperCase() || "",
-
-  gender: getValue(row, ["gender", "sex"]),
-
-  phone_number: getValue(row, [
-    "phone_number",
-    "phone number",
-    "phone",
-    "mobile",
-    "father_phone",
-    "father_mobile",
-  ]),
-
-  aadhar_number: getValue(row, [
-    "aadhar_number",
-    "aadhar number",
-    "aadhar",
-    "aadhaar",
-  ]),
-
-  father_name: getValue(row, [
-    "father_name",
-    "father name",
-    "dad_name",
-    "dad",
-    "father",
-  ]).toString().toUpperCase() || "",
-
-  class: getValue(row, ["class", "class_name", "grade"]),
-
-  section: getValue(row, ["section", "sec"]),
-
-  class_teacher: getValue(row, [
-    "class_teacher",
-    "teacher",
-    "teacher_name",
-  ]).toString().toUpperCase() || "",
-
-  address: getValue(row, ["address", "student_address"]),
-}));
+        const formattedData = buildPreviewRows(rawData, category);
 
         setPreviewData(formattedData);
-        setShowPreview(true);
+        setPreviewCategory(category);
+        setIsExcelPreviewOpen(true);
     };
 
     reader.readAsBinaryString(file);
@@ -608,6 +1167,70 @@ useEffect(() => {
     };
 
     const stepColors = ['#3182ce', '#c05621', '#ecc94b', '#3182ce', '#48bb78'];
+
+    const filteredRoleUsers =
+        activeRoleTab === 'Student'
+            ? roleUsers.filter((user) => {
+                  const classMatch = studentClassFilter
+                      ? String(user?.class_name || '').trim().toLowerCase() ===
+                        String(studentClassFilter).trim().toLowerCase()
+                      : true;
+                  const sectionMatch = studentSectionFilter
+                      ? String(user?.section || '').trim().toLowerCase() ===
+                        String(studentSectionFilter).trim().toLowerCase()
+                      : true;
+                  const nameMatch = studentNameFilter
+                      ? String(user?.name || '')
+                            .trim()
+                            .toLowerCase()
+                            .includes(String(studentNameFilter).trim().toLowerCase())
+                      : true;
+                  return classMatch && sectionMatch && nameMatch;
+              })
+            : roleUsers;
+
+    const studentClassOptions = Array.from(
+        new Set(
+            roleUsers
+                .map((user) => String(user?.class_name || '').trim())
+                .filter(Boolean)
+        )
+    ).sort((a, b) => a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' }));
+
+    const studentSectionOptions = Array.from(
+        new Set(
+            roleUsers
+                .filter((user) =>
+                    studentClassFilter
+                        ? String(user?.class_name || '').trim().toLowerCase() ===
+                          String(studentClassFilter).trim().toLowerCase()
+                        : true
+                )
+                .map((user) => String(user?.section || '').trim())
+                .filter(Boolean)
+        )
+    ).sort((a, b) => a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' }));
+
+    const deleteUser = async (user: any) => {
+        const schoolCode = formData.school_code || localStorage.getItem('schoolCode');
+        if (!schoolCode || !user?.id) return;
+        const confirmDelete = window.confirm(`Delete ${user?.name || 'this user'}?`);
+        if (!confirmDelete) return;
+        try {
+            setRoleLoading(true);
+            await axios.delete(`https://cleezoclass.com:4000/api/users/${user.id}`, {
+                params: { schoolCode },
+                data: { schoolCode },
+            });
+            await reloadRoleUsers();
+            alert('Deleted successfully');
+        } catch (error) {
+            console.error('Delete failed:', error);
+            alert('Delete failed');
+        } finally {
+            setRoleLoading(false);
+        }
+    };
 
     useEffect(() => {
         const schoolCode = formData.school_code || localStorage.getItem('schoolCode');
@@ -662,6 +1285,17 @@ useEffect(() => {
         navigate('/', { replace: true });
     };
 
+    const addUserTypeLabel =
+        addUserForm.user_type === 'management'
+            ? 'Management'
+            : addUserForm.user_type === 'teacher'
+              ? 'Teacher'
+              : 'Student';
+    const addUserSubmitLabel = `Add ${addUserTypeLabel.toLowerCase()}`;
+    const isAddStudent = addUserForm.user_type === 'student';
+    const isAddTeacher = addUserForm.user_type === 'teacher';
+    const isAddManagement = addUserForm.user_type === 'management';
+
     return (
         <div style={styles.container}>
             {/* HEADER */}
@@ -711,8 +1345,19 @@ useEffect(() => {
 
 </div>
             {/* NAV BAR */}
-            <div style={styles.navBar}>
+            {/* <div style={styles.navBar}>
                 {(['Details', 'Management', 'Staff', 'Student', 'Uploads'] as TabName[]).map((tab) => (
+                    <div
+                        key={tab}
+                        style={{ ...styles.navTab, ...(activeTab === tab ? styles.activeTab : {}) }}
+                        onClick={() => setActiveTab(tab)}
+                    >
+                        {tab}
+                    </div>
+                ))}
+            </div> */}
+         <div style={styles.navBar}>
+                {(['Details', 'Management', 'Staff', 'Student'] as TabName[]).map((tab) => (
                     <div
                         key={tab}
                         style={{ ...styles.navTab, ...(activeTab === tab ? styles.activeTab : {}) }}
@@ -724,8 +1369,211 @@ useEffect(() => {
             </div>
 
             {/* MAIN CONTENT AREA */}
-            <div style={activeTab === 'Uploads' ? styles.uploadsMainContent : styles.mainContent}>
-                
+            <div
+                style={
+                    activeTab === 'Uploads'
+                        ? styles.uploadsMainContent
+                        : styles.mainContent
+                }
+            >
+                {activeRoleTab && (
+                    <div style={styles.managementContainer}>
+                        <div style={styles.tabActionHeader}>
+                            <h3 style={styles.sectionHeading}>{roleTabConfig[activeRoleTab].title}</h3>
+                            <button
+                                type="button"
+                                style={styles.addUserBtn}
+                                onClick={() => openAddUserModal(roleTabConfig[activeRoleTab].userType)}
+                            >
+                                {roleTabConfig[activeRoleTab].addButtonLabel}
+                            </button>
+                        </div>
+
+                        <div style={styles.uploadCenterWrap}>
+                            <div style={styles.uploadFieldsRow}>
+                                <input
+                                    type="text"
+                                    placeholder="File Name"
+                                    value={excelFile ? excelFile.name : ''}
+                                    readOnly
+                                    style={{ ...styles.input, ...styles.uploadFieldInput }}
+                                />
+                                <input
+                                    type="text"
+                                    placeholder="File Type"
+                                    value={
+                                        excelFile
+                                            ? excelFile.name.split('.').pop()?.toUpperCase() ?? ''
+                                            : ''
+                                    }
+                                    readOnly
+                                    style={{ ...styles.input, ...styles.uploadFieldInput }}
+                                />
+                            </div>
+
+                            <div style={styles.uploadButtonsRow}>
+                                <button
+                                    type="button"
+                                    style={{
+                                        ...styles.submitBtn,
+                                        flex: '0 0 auto',
+                                        minWidth: '150px',
+                                        backgroundColor: '#404040',
+                                    }}
+                                    onClick={() => {
+                                        setPreviewCategory(getUploadPreviewCategory(activeRoleTab));
+                                        setIsExcelPreviewOpen(true);
+                                    }}
+                                >
+                                    Open Excel Upload
+                                </button>
+                            </div>
+                        </div>
+
+                    </div>
+                )}
+
+                {isExcelPreviewOpen && (() => {
+                    const rows = uploadedData.length > 0 ? uploadedData : previewData;
+                    const columns = rows.length > 0 ? Object.keys(rows[0]) : [];
+
+                    return (
+                        <div style={styles.excelPreviewOverlay} onClick={() => setIsExcelPreviewOpen(false)}>
+                            <div
+                                style={styles.excelPreviewModal}
+                                onClick={(e) => e.stopPropagation()}
+                            >
+                                <div style={styles.excelPreviewHeader}>
+                                    <div>
+                                        <h4 style={styles.excelPreviewTitle}>
+                                            {previewCategory === 'Staff'
+                                                ? uploadedData.length > 0
+                                                    ? 'Uploaded Staff Details'
+                                                    : 'Staff Excel Preview'
+                                                : previewCategory === 'Management'
+                                                  ? uploadedData.length > 0
+                                                      ? 'Uploaded Management Details'
+                                                      : 'Management Excel Preview'
+                                                  : uploadedData.length > 0
+                                                    ? 'Uploaded Student Details'
+                                                    : 'Student Excel Preview'}
+                                        </h4>
+                                        <p style={styles.excelPreviewSubtitle}>
+                                            {rows.length} record{rows.length === 1 ? '' : 's'} ready for review
+                                        </p>
+                                    </div>
+                                    <div style={styles.excelPreviewActions}>
+                                        <label style={styles.excelPreviewPickBtn}>
+                                            Choose Excel File
+                                            <input
+                                                type="file"
+                                                accept=".xlsx,.xls"
+                                                hidden
+                                                onChange={(e) => {
+                                            const file = e.target.files?.[0] ?? null;
+                                            setExcelFile(file);
+                                            if (file) {
+                                                setUploadedData([]);
+                                                handlePreview(file, getUploadPreviewCategory(activeRoleTab));
+                                            } else {
+                                                setPreviewData([]);
+                                                setIsExcelPreviewOpen(false);
+                                            }
+                                        }}
+                                            />
+                                        </label>
+                                        <button
+                                            type="button"
+                                            onClick={() =>
+                                                downloadExcelTemplate(
+                                                    roleTabConfig[activeRoleTab].templateCategory
+                                                )
+                                            }
+                                            style={styles.excelPreviewTemplateBtn}
+                                        >
+                                            Download Template
+                                        </button>
+                                        <button
+                                            type="button"
+                                            onClick={() =>
+                                                handleFileUpload(
+                                                    roleTabConfig[activeRoleTab].templateCategory
+                                                )
+                                            }
+                                            disabled={!excelFile || uploading}
+                                            style={{
+                                                ...styles.excelPreviewSubmitBtn,
+                                                backgroundColor: excelFile ? '#404040' : '#999',
+                                            }}
+                                        >
+                                            {uploading ? 'Uploading...' : 'Submit Excel'}
+                                        </button>
+                                        {uploadedData.length > 0 && (
+                                            <button
+                                                type="button"
+                                                onClick={downloadExcel}
+                                                style={styles.uploadPreviewDownloadBtn}
+                                            >
+                                                Uploaded Data
+                                            </button>
+                                        )}
+                                        <button
+                                            type="button"
+                                            onClick={() => setIsExcelPreviewOpen(false)}
+                                            style={styles.excelPreviewCloseBtn}
+                                        >
+                                            Close
+                                        </button>
+                                    </div>
+                                </div>
+
+                                <div style={styles.excelPreviewSummary}>
+                                    <span>
+                                        Selected file: {excelFile ? excelFile.name : 'No file selected'}
+                                    </span>
+                                </div>
+
+                                {rows.length > 0 ? (
+                                    <div style={styles.uploadPreviewTableWrap}>
+                                        <table style={styles.uploadPreviewTable}>
+                                            <thead>
+                                                <tr>
+                                                    {columns.map((column) => (
+                                                        <th key={column} style={styles.uploadPreviewTh}>
+                                                            {formatExcelColumnLabel(column)}
+                                                        </th>
+                                                    ))}
+                                                </tr>
+                                            </thead>
+                                            <tbody>
+                                                {rows.map((row, rowIndex) => (
+                                                    <tr
+                                                        key={rowIndex}
+                                                        style={{
+                                                            backgroundColor:
+                                                                rowIndex % 2 === 0 ? '#ffffff' : '#f8fafc',
+                                                        }}
+                                                    >
+                                                        {columns.map((column) => (
+                                                            <td key={column} style={styles.uploadPreviewTd}>
+                                                                {formatExcelCellValue(row[column])}
+                                                            </td>
+                                                        ))}
+                                                    </tr>
+                                                ))}
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                ) : (
+                                    <div style={styles.excelPreviewEmptyState}>
+                                        Choose an Excel file to preview the rows here.
+                                    </div>
+                                )}
+                            </div>
+                        </div>
+                    );
+                })()}
+
                 {/* --- DETAILS TAB VIEW --- */}
                 {activeTab === 'Details' && (
                     <>
@@ -1151,120 +1999,39 @@ useEffect(() => {
                     </>
                 )}
             </div>
-{(['Management', 'Staff', 'Student'] as TabName[]).includes(activeTab) && (
-  <div style={styles.managementContainer}>
-    <div style={styles.tabActionHeader}>
-      <h3 style={styles.sectionHeading}>
-        {activeTab === "Staff" ? "Teacher" : activeTab} Bulk Upload
-      </h3>
-      <button
-        type="button"
-        style={styles.addUserBtn}
-        onClick={() =>
-          openAddUserModal(
-            activeTab === 'Staff'
-              ? 'teacher'
-              : activeTab === 'Management'
-              ? 'management'
-              : 'student'
-          )
-        }
-      >
-        Add {activeTab === 'Staff' ? 'Teacher' : activeTab}
-      </button>
-    </div>
-
-    <div style={{ maxWidth: "520px" }}>
-
-      {/* ROW 1: File name + File type */}
-      <div style={{ display: "flex", gap: "12px", marginBottom: "12px" }}>
-        <input
-          type="text"
-          placeholder="File Name"
-          value={excelFile ? excelFile.name : ""}
-          readOnly
-          style={{ ...styles.input, flex: 1 }}
-        />
-
-        <input
-          type="text"
-          placeholder="File Type"
-          value={
-            excelFile
-              ? excelFile.name.split(".").pop()?.toUpperCase() ?? ""
-              : ""
-          }
-          readOnly
-          style={{ ...styles.input, flex: 1 }}
-        />
-      </div>
-
-      {/* ROW 2: Choose + Submit */}
-      <div style={{ display: "flex", gap: "12px" }}>
-        <label
-          style={{
-            ...styles.uploadBtn,
-            flex: 1,
-            textAlign: "center",
-          }}
-        >
-          Choose Excel File
-          <input
-            type="file"
-            accept=".xlsx,.xls"
-            hidden
-            onChange={(e) => {
-    const file = e.target.files?.[0] ?? null;
-    setExcelFile(file);
-
-    if (file) {
-        handlePreview(file);
-    }
-}}
-          />
-        </label>
-
-        <button
-          style={{
-            ...styles.submitBtn,
-            flex: 1,
-            backgroundColor: excelFile ? "#404040" : "#999",
-          }}
-          disabled={!excelFile || uploading}
-          onClick={() => handleFileUpload(activeTab)}
-        >
-          {uploading ? "Uploading..." : "Submit Excel"}
-        </button>
-          {uploadedData.length > 0 && (
-  <button
-    style={{
-      marginTop: "12px",
-      padding: "8px 16px",
-      backgroundColor: "#2f855a",
-      color: "#fff",
-      border: "none",
-      borderRadius: "4px",
-      cursor: "pointer",
+{isAddUserOpen && userModalMode === 'edit' && (
+  <StudentEditingPopup
+    isOpen={isAddUserOpen}
+    editingId={editingUserId}
+    userType={addUserForm.user_type}
+    formData={addUserForm}
+    onFieldChange={(field, value) => {
+      setAddUserForm((prev) => ({ ...prev, [field]: value }));
     }}
-    onClick={downloadExcel}
-  >
-    Download Uploaded Data
-  </button>
+    onClassChange={(className) => {
+      setAddUserForm((prev) => ({ ...prev, class_name: className, section: '' }));
+    }}
+    classOptions={studentClassOptions}
+    getSectionsForClass={getStudentSectionsForClass}
+    photoPreview={studentPhotoPreview}
+    photoFile={studentPhotoFile}
+    onPhotoChange={handleStudentPhotoChange}
+    onRemovePhoto={() => {
+      setStudentPhotoFile(null);
+      setStudentPhotoPreview(normalizePhotoUrl(addUserForm.photo));
+    }}
+    onCancel={closeAddUserModal}
+    onSubmit={handleAddUserSubmit}
+    isLoading={isAddUserSubmitting}
+  />
 )}
-
-
-      </div>
-
-    </div>
-  </div>
-)}
-{isAddUserOpen && (
+{isAddUserOpen && userModalMode === 'add' && (
   <div style={styles.modalOverlay}>
     <div style={styles.modalCard}>
       <div style={styles.modalHeader}>
         <div>
-          <h3 style={styles.modalTitle}>Add {addUserForm.user_type}</h3>
-          <p style={styles.modalSubtitle}>Create a new {addUserForm.user_type} account for this school.</p>
+          <h3 style={styles.modalTitle}>{`Add ${addUserTypeLabel}`}</h3>
+          <p style={styles.modalSubtitle}>{`Create a new ${addUserForm.user_type} account for this school.`}</p>
         </div>
         <button type="button" onClick={closeAddUserModal} style={styles.modalCloseBtn}>
           ×
@@ -1323,248 +2090,274 @@ useEffect(() => {
       )}
 
       <form onSubmit={handleAddUserSubmit} style={styles.modalForm}>
-        <div style={styles.modalGrid}>
-          <div style={styles.inputGroup}>
-            <label style={styles.label}>Full Name *</label>
-            <input
-              name="name"
-              value={addUserForm.name}
-              onChange={handleAddUserChange}
-              style={styles.input}
-              placeholder="Enter full name"
-            />
-          </div>
+        <div style={styles.modalSection}>
+          <h4 style={styles.modalSectionTitle}>Personal Information</h4>
+          <div style={{ ...styles.modalGrid, gridTemplateColumns: 'repeat(auto-fit, minmax(210px, 1fr))' }}>
+            <div style={styles.inputGroup}>
+              <label style={styles.label}>Full Name *</label>
+              <input
+                name="name"
+                value={addUserForm.name}
+                onChange={handleAddUserChange}
+                style={{ ...styles.input, textTransform: 'uppercase' }}
+                placeholder="Enter full name"
+              />
+            </div>
 
-          <div style={styles.inputGroup}>
-            <label style={styles.label}>Username</label>
-            <input
-              name="username"
-              value={addUserForm.username}
-              onChange={handleAddUserChange}
-              style={styles.input}
-              placeholder="Optional"
-            />
-          </div>
+            <div style={styles.inputGroup}>
+              <label style={styles.label}>Username</label>
+              <input
+                name="username"
+                value={addUserForm.username}
+                onChange={handleAddUserChange}
+                style={styles.input}
+                placeholder="Optional"
+              />
+            </div>
 
-          <div style={styles.inputGroup}>
-            <label style={styles.label}>Password</label>
-            <input
-              name="password"
-              value={addUserForm.password}
-              onChange={handleAddUserChange}
-              style={styles.input}
-              placeholder="Optional"
-            />
-          </div>
+            <div style={styles.inputGroup}>
+              <label style={styles.label}>Password</label>
+              <input
+                name="password"
+                value={addUserForm.password}
+                onChange={handleAddUserChange}
+                style={styles.input}
+                placeholder="Optional"
+              />
+            </div>
 
-          <div style={styles.inputGroup}>
-            <label style={styles.label}>Gender</label>
-            <select
-              name="gender"
-              value={addUserForm.gender}
-              onChange={handleAddUserChange}
-              style={styles.input}
-            >
-              <option value="">Select Gender</option>
-              <option value="Male">Male</option>
-              <option value="Female">Female</option>
-              <option value="Other">Other</option>
-            </select>
-          </div>
+            <div style={styles.inputGroup}>
+              <label style={styles.label}>Gender</label>
+              <select
+                name="gender"
+                value={addUserForm.gender}
+                onChange={handleAddUserChange}
+                style={styles.input}
+              >
+                <option value="">Select Gender</option>
+                <option value="Male">Male</option>
+                <option value="Female">Female</option>
+                <option value="Other">Other</option>
+              </select>
+            </div>
 
-          <div style={styles.inputGroup}>
-            <label style={styles.label}>
-              {addUserForm.user_type === 'student' ? "Father's Phone Number" : 'Phone Number'}
-            </label>
-            <input
-              name={addUserForm.user_type === 'student' ? 'father_phone_no' : 'phone_no'}
-              value={
-                addUserForm.user_type === 'student'
-                  ? addUserForm.father_phone_no
-                  : addUserForm.phone_no
-              }
-              onChange={handleAddUserChange}
-              style={styles.input}
-              placeholder="Enter phone number"
-            />
-          </div>
-
-          <div style={styles.inputGroup}>
-            <label style={styles.label}>Aadhar Number</label>
-            <input
-              name="aadhar_no"
-              value={addUserForm.aadhar_no}
-              onChange={handleAddUserChange}
-              style={styles.input}
-              placeholder="Enter Aadhar number"
-            />
-          </div>
-
-          <div style={styles.inputGroup}>
-            <label style={styles.label}>Father Name</label>
-            <input
-              name="father_name"
-              value={addUserForm.father_name}
-              onChange={handleAddUserChange}
-              style={styles.input}
-              placeholder="Enter father name"
-            />
-          </div>
-
-          <div style={styles.inputGroup}>
-            <label style={styles.label}>Date of Birth</label>
-            <input
-              type="date"
-              name="dob"
-              value={addUserForm.dob}
-              onChange={handleAddUserChange}
-              style={styles.input}
-            />
-          </div>
-
-          <div style={styles.inputGroup}>
-            <label style={styles.label}>School Name</label>
-            <input
-              name="school_name"
-              value={addUserForm.school_name}
-              onChange={handleAddUserChange}
-              style={styles.input}
-              placeholder="School name"
-            />
-          </div>
-
-          <div style={styles.inputGroup}>
-            <label style={styles.label}>Address</label>
-            <textarea
-              name="address"
-              value={addUserForm.address}
-              onChange={handleAddUserChange}
-              style={{ ...styles.input, minHeight: '84px', resize: 'vertical' }}
-              placeholder="Enter address"
-            />
+            <div style={styles.inputGroup}>
+              <label style={styles.label}>Date of Birth</label>
+              <input
+                type="date"
+                name="dob"
+                value={addUserForm.dob}
+                onChange={handleAddUserChange}
+                style={styles.input}
+              />
+            </div>
           </div>
         </div>
 
-        {addUserForm.user_type === 'student' && (
-          <div style={styles.modalSection}>
-            <h4 style={styles.modalSectionTitle}>Student Details</h4>
-            <div style={styles.modalGrid}>
-              <div style={styles.inputGroup}>
-                <label style={styles.label}>Class</label>
-                <input
-                  name="class_name"
-                  value={addUserForm.class_name}
-                  onChange={handleAddUserChange}
-                  style={styles.input}
-                  placeholder="Enter class"
-                />
-              </div>
-              <div style={styles.inputGroup}>
-                <label style={styles.label}>Section</label>
-                <input
-                  name="section"
-                  value={addUserForm.section}
-                  onChange={handleAddUserChange}
-                  style={styles.input}
-                  placeholder="Enter section"
-                />
-              </div>
-              <div style={styles.inputGroup}>
-                <label style={styles.label}>Class Teacher</label>
-                <input
-                  name="class_teacher"
-                  value={addUserForm.class_teacher}
-                  onChange={handleAddUserChange}
-                  style={styles.input}
-                  placeholder="Enter class teacher"
-                />
-              </div>
-              <div style={styles.inputGroup}>
-                <label style={styles.label}>Admission No.</label>
-                <input
-                  name="admission_no"
-                  value={addUserForm.admission_no}
-                  onChange={handleAddUserChange}
-                  style={styles.input}
-                  placeholder="Enter admission number"
-                />
-              </div>
-              <div style={styles.inputGroup}>
-                <label style={styles.label}>Curriculum</label>
-                <input
-                  name="curriculum"
-                  value={addUserForm.curriculum}
-                  onChange={handleAddUserChange}
-                  style={styles.input}
-                  placeholder="CBSE / ICSE / State"
-                />
-              </div>
-              <div style={styles.inputGroup}>
-                <label style={styles.label}>CBSE Reg No.</label>
-                <input
-                  name="cbse_reg_no"
-                  value={addUserForm.cbse_reg_no}
-                  onChange={handleAddUserChange}
-                  style={styles.input}
-                  placeholder="Enter CBSE reg no."
-                />
-              </div>
+        <div style={styles.modalSection}>
+          <h4 style={styles.modalSectionTitle}>Contact Information</h4>
+          <div style={{ ...styles.modalGrid, gridTemplateColumns: 'repeat(auto-fit, minmax(210px, 1fr))' }}>
+            <div style={styles.inputGroup}>
+              <label style={styles.label}>
+                {isAddStudent ? "Father's Phone Number" : 'Phone Number'}
+              </label>
+              <input
+                name={isAddStudent ? 'father_phone_no' : 'phone_no'}
+                value={isAddStudent ? addUserForm.father_phone_no : addUserForm.phone_no}
+                onChange={handleAddUserChange}
+                style={styles.input}
+                placeholder="Enter phone number"
+              />
+            </div>
+
+            <div style={styles.inputGroup}>
+              <label style={styles.label}>Aadhar Number</label>
+              <input
+                name="aadhar_no"
+                value={addUserForm.aadhar_no}
+                onChange={handleAddUserChange}
+                style={styles.input}
+                placeholder="Enter Aadhar number"
+              />
+            </div>
+
+            <div style={styles.inputGroup}>
+              <label style={styles.label}>Father Name</label>
+              <input
+                name="father_name"
+                value={addUserForm.father_name}
+                onChange={handleAddUserChange}
+                style={styles.input}
+                placeholder="Enter father name"
+              />
+            </div>
+
+            <div style={styles.inputGroup}>
+              <label style={styles.label}>School Name</label>
+              <input
+                name="school_name"
+                value={addUserForm.school_name}
+                onChange={handleAddUserChange}
+                style={styles.input}
+                placeholder="School name"
+              />
+            </div>
+
+            <div style={styles.inputGroup}>
+              <label style={styles.label}>Address</label>
+              <textarea
+                name="address"
+                value={addUserForm.address}
+                onChange={handleAddUserChange}
+                style={{ ...styles.input, minHeight: '84px', resize: 'vertical' }}
+                placeholder="Enter address"
+              />
             </div>
           </div>
+        </div>
+
+        {isAddStudent && (
+          <>
+            <div style={styles.modalSection}>
+              <h4 style={styles.modalSectionTitle}>Student Details</h4>
+              <div style={{ ...styles.modalGrid, gridTemplateColumns: 'repeat(auto-fit, minmax(210px, 1fr))' }}>
+                <div style={styles.inputGroup}>
+                  <label style={styles.label}>Class*</label>
+                  <select
+                    name="class_name"
+                    value={addUserForm.class_name}
+                    onChange={(e) => {
+                      setAddUserForm((prev) => ({
+                        ...prev,
+                        class_name: e.target.value,
+                        section: '',
+                      }));
+                    }}
+                    style={styles.input}
+                  >
+                    <option value="">-- Select Class --</option>
+                    {studentClassOptions.map((className) => (
+                      <option key={className} value={className}>
+                        {className}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div style={styles.inputGroup}>
+                  <label style={styles.label}>Section</label>
+                  <select
+                    name="section"
+                    value={addUserForm.section}
+                    onChange={handleAddUserChange}
+                    style={styles.input}
+                    disabled={!addUserForm.class_name}
+                  >
+                    <option value="">-- Select Section --</option>
+                    {getStudentSectionsForClass(addUserForm.class_name).map((sec) => (
+                      <option key={sec} value={sec}>
+                        {sec}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div style={styles.inputGroup}>
+                  <label style={styles.label}>Class Teacher</label>
+                  <input
+                    type="text"
+                    name="class_teacher"
+                    value={addUserForm.class_teacher}
+                    onChange={handleAddUserChange}
+                    style={styles.input}
+                  />
+                </div>
+              </div>
+            </div>
+
+            <div style={styles.modalSection}>
+              <h4 style={styles.modalSectionTitle}>Academic IDs</h4>
+              <div style={{ ...styles.modalGrid, gridTemplateColumns: 'repeat(auto-fit, minmax(210px, 1fr))' }}>
+                <div style={styles.inputGroup}>
+                  <label style={styles.label}>Admission No.</label>
+                  <input
+                    type="text"
+                    name="admission_no"
+                    value={addUserForm.admission_no}
+                    onChange={handleAddUserChange}
+                    style={styles.input}
+                  />
+                </div>
+                <div style={styles.inputGroup}>
+                  <label style={styles.label}>Curriculum</label>
+                  <input
+                    type="text"
+                    name="curriculum"
+                    value={addUserForm.curriculum || ''}
+                    onChange={handleAddUserChange}
+                    placeholder="e.g. CBSE / ICSE / State Board"
+                    style={styles.input}
+                  />
+                </div>
+                <div style={styles.inputGroup}>
+                  <label style={styles.label}>CBSE Reg No.</label>
+                  <input
+                    type="text"
+                    name="cbse_reg_no"
+                    value={addUserForm.cbse_reg_no}
+                    onChange={handleAddUserChange}
+                    style={styles.input}
+                  />
+                </div>
+              </div>
+            </div>
+          </>
         )}
 
-        {addUserForm.user_type === 'teacher' && (
+        {(isAddTeacher || isAddManagement) && (
           <div style={styles.modalSection}>
             <h4 style={styles.modalSectionTitle}>Designation</h4>
-            <div style={styles.modalGrid}>
+            <div style={{ ...styles.modalGrid, gridTemplateColumns: '1fr' }}>
               <div style={styles.inputGroup}>
                 <label style={styles.label}>Designation</label>
-                <input
-                  name="designation"
-                  value={addUserForm.designation}
-                  onChange={handleAddUserChange}
-                  style={styles.input}
-                  placeholder="Enter designation"
-                />
+                {isAddManagement ? (
+                  <select
+                    name="designation"
+                    value={addUserForm.designation}
+                    onChange={handleAddUserChange}
+                    style={styles.input}
+                  >
+                    <option value="">Select designation</option>
+                    {managementDesignationOptions.map((option) => (
+                      <option key={option.value} value={option.value}>
+                        {option.label}
+                      </option>
+                    ))}
+                  </select>
+                ) : (
+                  <input
+                    type="text"
+                    name="designation"
+                    value={addUserForm.designation || ''}
+                    onChange={handleAddUserChange}
+                    style={styles.input}
+                    placeholder="Enter designation"
+                  />
+                )}
               </div>
             </div>
           </div>
         )}
 
-        {addUserForm.user_type === 'management' && (
-          <div style={styles.modalSection}>
-            <h4 style={styles.modalSectionTitle}>Designation</h4>
-            <div style={styles.modalGrid}>
-              <div style={styles.inputGroup}>
-                <label style={styles.label}>Designation</label>
-                <select
-                  name="designation"
-                  value={addUserForm.designation}
-                  onChange={handleAddUserChange}
-                  style={styles.input}
-                >
-                  <option value="">Select designation</option>
-                  {managementDesignationOptions.map((option) => (
-                    <option key={option.value} value={option.value}>
-                      {option.label}
-                    </option>
-                  ))}
-                </select>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {addUserForm.user_type === 'teacher' && (
+        {isAddTeacher && (
           <div style={styles.modalSection}>
             <h4 style={styles.modalSectionTitle}>Teaching Classes</h4>
-            <div style={styles.modalGrid}>
-              {Array.from({ length: 12 }, (_, index) => index + 1).map((num) => {
+            <div style={{ ...styles.modalGrid, gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))' }}>
+              {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12].map((num) => {
                 const fieldName = `teaches_to_${num}` as keyof AddUserFormState;
                 return (
                   <div style={styles.inputGroup} key={fieldName}>
                     <label style={styles.label}>Teaches to Class {num}</label>
                     <input
+                      type="text"
                       name={fieldName}
                       value={String(addUserForm[fieldName] || '')}
                       onChange={handleAddUserChange}
@@ -1583,63 +2376,13 @@ useEffect(() => {
             Cancel
           </button>
           <button type="submit" style={styles.primaryActionBtn} disabled={isAddUserSubmitting}>
-            {isAddUserSubmitting ? 'Saving...' : `Add ${addUserForm.user_type}`}
+            {isAddUserSubmitting ? 'Saving...' : addUserSubmitLabel}
           </button>
         </div>
       </form>
     </div>
   </div>
 )}
-{/* STUDENT PREVIEW TABLE */}
-{activeTab === "Student" &&
-  showPreview &&
-  previewData.length > 0 && (
-    <div style={{ marginTop: "30px", overflowX: "auto" }}>
-      <h3>📊 Student Preview</h3>
-
-      <table
-        style={{
-          width: "100%",
-          borderCollapse: "collapse",
-          marginTop: "10px",
-          border: "1px solid #ddd",
-        }}
-      >
-        <thead>
-          <tr>
-            <th style={{ border: "1px solid #ddd", padding: "8px" }}>Student Name</th>
-            <th style={{ border: "1px solid #ddd", padding: "8px" }}>Gender</th>
-            <th style={{ border: "1px solid #ddd", padding: "8px" }}>Phone Number</th>
-            <th style={{ border: "1px solid #ddd", padding: "8px" }}>Aadhar Number</th>
-            <th style={{ border: "1px solid #ddd", padding: "8px" }}>Father Name</th>
-            <th style={{ border: "1px solid #ddd", padding: "8px" }}>Class</th>
-            <th style={{ border: "1px solid #ddd", padding: "8px" }}>Section</th>
-            <th style={{ border: "1px solid #ddd", padding: "8px" }}>Class Teacher</th>
-            <th style={{ border: "1px solid #ddd", padding: "8px" }}>Address</th>
-          </tr>
-        </thead>
-
-        <tbody>
-          {previewData.map((row, index) => (
-            <tr key={index}>
-              <td style={{ border: "1px solid #ddd", padding: "8px" }}>{row.student_name}</td>
-              <td style={{ border: "1px solid #ddd", padding: "8px" }}>{row.gender}</td>
-              <td style={{ border: "1px solid #ddd", padding: "8px" }}>{row.phone_number}</td>
-              <td style={{ border: "1px solid #ddd", padding: "8px" }}>{row.aadhar_number}</td>
-              <td style={{ border: "1px solid #ddd", padding: "8px" }}>{row.father_name}</td>
-              <td style={{ border: "1px solid #ddd", padding: "8px" }}>{row.class}</td>
-              <td style={{ border: "1px solid #ddd", padding: "8px" }}>{row.section}</td>
-              <td style={{ border: "1px solid #ddd", padding: "8px" }}>{row.class_teacher}</td>
-              <td style={{ border: "1px solid #ddd", padding: "8px" }}>{row.address}</td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-    </div>
-)}
-
-
-
           <div style={styles.progressFooter}>
 <div style={styles.trackerRow}>
   {([
@@ -1647,7 +2390,7 @@ useEffect(() => {
     { title: 'Management', sub: 'Logins Created' },
     { title: 'Staff', sub: 'Staff Created' },
     { title: 'Students', sub: 'Students Created' },
-    { title: 'Uploaded Files', sub: 'Files Uploaded' },
+    // { title: 'Uploaded Files', sub: 'Files Uploaded' },
   ] as Array<{ title: StepTitle; sub: string }>).map((step, i, arr) => {
     const isDone = isStepComplete(step.title);
     const color = isDone ? stepColors[i] : '#cfcfcf'; 
@@ -1700,6 +2443,114 @@ useEffect(() => {
 </div>
        
              </div>
+            {activeRoleTab && (
+                <div style={styles.roleRecordsSection}>
+                    <h3 style={styles.sectionHeading}>{roleTabConfig[activeRoleTab].detailsTitle}</h3>
+                    {activeRoleTab === 'Student' && (
+                        <div style={styles.studentFilterBar}>
+                            <div style={styles.studentFilterField}>
+                                <label style={styles.label}>Class</label>
+                                <select
+                                    value={studentClassFilter}
+                                    onChange={(e) => {
+                                        setStudentClassFilter(e.target.value);
+                                        setStudentSectionFilter('');
+                                    }}
+                                    style={styles.input}
+                                >
+                                    <option value="">All Classes</option>
+                                    {studentClassOptions.map((className) => (
+                                        <option key={className} value={className}>
+                                            {className}
+                                        </option>
+                                    ))}
+                                </select>
+                            </div>
+                            <div style={styles.studentFilterField}>
+                                <label style={styles.label}>Section</label>
+                                <select
+                                    value={studentSectionFilter}
+                                    onChange={(e) => setStudentSectionFilter(e.target.value)}
+                                    style={styles.input}
+                                >
+                                    <option value="">All Sections</option>
+                                    {studentSectionOptions.map((section) => (
+                                        <option key={section} value={section}>
+                                            {section}
+                                        </option>
+                                    ))}
+                                </select>
+                            </div>
+                            <div style={styles.studentFilterField}>
+                                <label style={styles.label}>Name</label>
+                                <input
+                                    value={studentNameFilter}
+                                    onChange={(e) => setStudentNameFilter(e.target.value)}
+                                    placeholder="Search student name"
+                                    style={styles.input}
+                                />
+                            </div>
+                        </div>
+                    )}
+                    {roleLoading ? (
+                        <div style={styles.roleRecordsEmpty}>Loading {activeRoleTab.toLowerCase()} users...</div>
+                    ) : roleUsers.length === 0 ? (
+                        <div style={styles.roleRecordsEmpty}>No {activeRoleTab.toLowerCase()} users found.</div>
+                    ) : (
+                        <div style={styles.roleRecordsTableWrap}>
+                            <table style={styles.roleRecordsTable}>
+                                <thead>
+                                    <tr style={styles.roleRecordsHeadRow}>
+                                        {roleTabConfig[activeRoleTab].columns.map((column) => (
+                                            <th key={column.key} style={styles.roleRecordsHeadCell}>
+                                                {column.label}
+                                            </th>
+                                        ))}
+                                        <th style={styles.roleRecordsHeadCell}>Actions</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {filteredRoleUsers.map((user, index) => (
+                                        <tr key={user.id || `${user.username || user.name}-${index}`}>
+                                            {roleTabConfig[activeRoleTab].columns.map((column) => {
+                                                const value =
+                                                    column.key === 'phone'
+                                                        ? user.phone_no || user.father_phone_no || user.phone || '-'
+                                                        : user[column.key] || '-';
+                                                return (
+                                                    <td key={column.key} style={styles.roleRecordsCell}>
+                                                        {value}
+                                                    </td>
+                                                );
+                                            })}
+                                            <td style={styles.roleRecordsCell}>
+                                                <div style={styles.rowActionGroup}>
+                                                    <button
+                                                        type="button"
+                                                        style={styles.rowEditIconBtn}
+                                                        onClick={() => openEditUserModal(user)}
+                                                        aria-label="Edit user"
+                                                    >
+                                                        <Pencil size={16} strokeWidth={2.2} />
+                                                    </button>
+                                                    <button
+                                                        type="button"
+                                                        style={styles.rowDeleteIconBtn}
+                                                        onClick={() => deleteUser(user)}
+                                                        aria-label="Delete user"
+                                                    >
+                                                        <Trash2 size={16} strokeWidth={2.2} />
+                                                    </button>
+                                                </div>
+                                            </td>
+                                        </tr>
+                                    ))}
+                                </tbody>
+                            </table>
+                        </div>
+                    )}
+                </div>
+            )}
         </div>
     );
 };
@@ -1753,6 +2604,10 @@ schoolNameBox: {
     overflowX: "auto",
     backgroundColor: "#f3a673",
     padding: "0 10px",
+    position: "sticky",
+    top: 0,
+    zIndex: 1000,
+    boxShadow: "0 2px 8px rgba(0,0,0,0.08)",
   },
 
   navTab: {
@@ -1785,6 +2640,219 @@ schoolNameBox: {
     margin: "10px",
   },
 
+  uploadCenterWrap: {
+    width: "100%",
+    maxWidth: "820px",
+    margin: "0 auto",
+    display: "flex",
+    flexDirection: "column",
+    alignItems: "center",
+    gap: "16px",
+  },
+
+  uploadFieldsRow: {
+    width: "fit-content",
+    display: "grid",
+    gridTemplateColumns: "repeat(2, 235px)",
+    gap: "10px",
+    justifyContent: "center",
+  },
+
+  uploadFieldInput: {
+    width: "100%",
+    maxWidth: "100%",
+  },
+
+  uploadButtonsRow: {
+    width: "100%",
+    display: "flex",
+    justifyContent: "center",
+    gap: "10px",
+    flexWrap: "wrap",
+    alignItems: "center",
+  },
+
+  uploadPreviewCard: {
+    width: "100%",
+    marginTop: "18px",
+    backgroundColor: "#fff",
+    border: "1px solid #e2e8f0",
+    borderRadius: "14px",
+    boxShadow: "0 8px 24px rgba(15, 23, 42, 0.06)",
+    overflow: "hidden",
+  },
+
+  uploadPreviewHeader: {
+    display: "flex",
+    justifyContent: "space-between",
+    alignItems: "center",
+    gap: "12px",
+    flexWrap: "wrap",
+    padding: "16px 18px",
+    borderBottom: "1px solid #e2e8f0",
+    background: "linear-gradient(135deg, #f8fbff 0%, #eef4ff 100%)",
+  },
+
+  uploadPreviewTitle: {
+    margin: 0,
+    fontSize: "18px",
+    color: "#1f2937",
+  },
+
+  uploadPreviewSubtitle: {
+    margin: "4px 0 0",
+    fontSize: "13px",
+    color: "#64748b",
+  },
+
+  uploadPreviewDownloadBtn: {
+    backgroundColor: "#2563eb",
+    color: "#fff",
+    border: "none",
+    borderRadius: "999px",
+    padding: "10px 16px",
+    cursor: "pointer",
+    fontWeight: 700,
+  },
+
+  uploadPreviewTableWrap: {
+    width: "100%",
+    overflowX: "auto",
+  },
+
+  uploadPreviewTable: {
+    width: "100%",
+    borderCollapse: "collapse",
+    minWidth: "720px",
+  },
+
+  uploadPreviewTh: {
+    position: "sticky",
+    top: 0,
+    backgroundColor: "#334155",
+    color: "#fff",
+    padding: "12px 10px",
+    textAlign: "left",
+    fontSize: "13px",
+    fontWeight: 700,
+    whiteSpace: "nowrap",
+  },
+
+  uploadPreviewTd: {
+    borderTop: "1px solid #e2e8f0",
+    padding: "11px 10px",
+    fontSize: "13px",
+    color: "#1f2937",
+    whiteSpace: "nowrap",
+  },
+
+  excelPreviewOverlay: {
+    position: "fixed",
+    inset: 0,
+    backgroundColor: "rgba(15, 23, 42, 0.62)",
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    padding: "18px",
+    zIndex: 2000,
+  },
+
+  excelPreviewModal: {
+    width: "min(1100px, 100%)",
+    maxHeight: "88vh",
+    display: "flex",
+    flexDirection: "column",
+    backgroundColor: "#fff",
+    borderRadius: "18px",
+    overflow: "hidden",
+    boxShadow: "0 24px 64px rgba(15, 23, 42, 0.28)",
+  },
+
+  excelPreviewHeader: {
+    display: "flex",
+    justifyContent: "space-between",
+    alignItems: "center",
+    gap: "12px",
+    flexWrap: "wrap",
+    padding: "18px 20px",
+    borderBottom: "1px solid #e2e8f0",
+    background: "linear-gradient(135deg, #f8fbff 0%, #eef4ff 100%)",
+  },
+
+  excelPreviewTitle: {
+    margin: 0,
+    fontSize: "20px",
+    color: "#111827",
+  },
+
+  excelPreviewSubtitle: {
+    margin: "4px 0 0",
+    fontSize: "13px",
+    color: "#64748b",
+  },
+
+  excelPreviewActions: {
+    display: "flex",
+    gap: "10px",
+    flexWrap: "wrap",
+    alignItems: "center",
+  },
+
+  excelPreviewPickBtn: {
+    backgroundColor: "#404040",
+    color: "#fff",
+    border: "none",
+    borderRadius: "999px",
+    padding: "10px 16px",
+    cursor: "pointer",
+    fontWeight: 700,
+    marginTop:'20px'
+  },
+
+  excelPreviewTemplateBtn: {
+    backgroundColor: "#404040",
+    color: "#fff",
+    border: "none",
+    borderRadius: "999px",
+    padding: "10px 16px",
+    cursor: "pointer",
+    fontWeight: 700,
+  },
+
+  excelPreviewSubmitBtn: {
+    color: "#fff",
+    border: "none",
+    borderRadius: "999px",
+    padding: "10px 16px",
+    cursor: "pointer",
+    fontWeight: 700,
+  },
+
+  excelPreviewCloseBtn: {
+    backgroundColor: "#111827",
+    color: "#fff",
+    border: "none",
+    borderRadius: "999px",
+    padding: "10px 16px",
+    cursor: "pointer",
+    fontWeight: 700,
+  },
+
+  excelPreviewSummary: {
+    padding: "12px 20px",
+    borderBottom: "1px solid #e2e8f0",
+    backgroundColor: "#f8fafc",
+    color: "#475569",
+    fontSize: "13px",
+  },
+
+  excelPreviewEmptyState: {
+    padding: "28px 20px",
+    textAlign: "center",
+    color: "#64748b",
+    fontSize: "14px",
+  },
+
   row: {
     display: "flex",
     flexWrap: "wrap",
@@ -1795,21 +2863,25 @@ schoolNameBox: {
   inputGroup: {
     display: "flex",
     flexDirection: "column",
-    flex: "1 1 250px",
+    flex: "1 1 210px",
     marginBottom: "10px",
   },
 
   label: {
     fontSize: "12px",
-    color: "#555",
-    marginBottom: "5px",
+    color: "#475569",
+    marginBottom: "6px",
+    fontWeight: 600,
+    textAlign: "center",
   },
 
   input: {
-    padding: "8px",
+    padding: "10px 12px",
     borderRadius: "8px",
-    border: "1px solid #ccc",
+    border: "1px solid #cfd8e3",
     width: "100%",
+    fontSize: "15px",
+    backgroundColor: "#fff",
   },
 
   nextBtn: {
@@ -1851,6 +2923,43 @@ schoolNameBox: {
 
   uploadSection: {
     padding: "10px",
+  },
+
+  userEditorContent: {
+    padding: "20px",
+    margin: "10px",
+    backgroundColor: "#f5f5f5",
+    borderRadius: "8px",
+  },
+
+  userEditorWrapper: {
+    width: "100%",
+    display: "flex",
+    flexDirection: "column",
+    gap: "16px",
+  },
+
+  userEditorHeader: {
+    background: "linear-gradient(135deg, #f8fbff 0%, #eef4ff 100%)",
+    border: "1px solid #dce8ff",
+    borderRadius: "18px",
+    padding: "18px 20px",
+    boxShadow: "0 10px 24px rgba(15, 23, 42, 0.06)",
+  },
+
+  userEditorTitle: {
+    margin: 0,
+    fontSize: "24px",
+    color: "#1f2937",
+    letterSpacing: "-0.3px",
+  },
+
+  userEditorSubtitle: {
+    margin: "6px 0 0",
+    color: "#5b6472",
+    fontSize: "14px",
+    lineHeight: 1.5,
+    maxWidth: "840px",
   },
 
   sectionHeading: {
@@ -1904,6 +3013,91 @@ schoolNameBox: {
     alignItems: "center",
   },
 
+  roleRecordsSection: {
+    margin: "0 10px 20px",
+    padding: "10px",
+    borderRadius: "8px",
+    backgroundColor: "#f5f5f5",
+  },
+
+  roleRecordsTableWrap: {
+    overflowX: "auto",
+  },
+
+  roleRecordsTable: {
+    width: "100%",
+    borderCollapse: "collapse",
+    backgroundColor: "#fff",
+    border: "1px solid #ddd",
+  },
+
+  roleRecordsHeadRow: {
+    backgroundColor: "#f6f6f6",
+  },
+
+  roleRecordsHeadCell: {
+    border: "1px solid #ddd",
+    padding: "8px",
+    textAlign: "left",
+    whiteSpace: "nowrap",
+  },
+
+  roleRecordsCell: {
+    border: "1px solid #ddd",
+    padding: "8px",
+    whiteSpace: "nowrap",
+  },
+
+  roleRecordsEmpty: {
+    padding: "12px 0",
+    color: "#777",
+  },
+
+  studentFilterBar: {
+    display: "flex",
+    gap: "12px",
+    flexWrap: "wrap",
+    marginBottom: "12px",
+  },
+
+  studentFilterField: {
+    flex: "1 1 260px",
+  },
+
+  rowActionGroup: {
+    display: "flex",
+    gap: "8px",
+    flexWrap: "wrap",
+  },
+
+  rowEditIconBtn: {
+    width: "36px",
+    height: "36px",
+    border: "1px solid #9ca3af",
+    backgroundColor: "#f3f4f6",
+    color: "#111827",
+    borderRadius: "8px",
+    cursor: "pointer",
+    display: "inline-flex",
+    alignItems: "center",
+    justifyContent: "center",
+    padding: 0,
+  },
+
+  rowDeleteIconBtn: {
+    width: "36px",
+    height: "36px",
+    border: "1px solid #fca5a5",
+    backgroundColor: "#fff",
+    color: "#dc2626",
+    borderRadius: "8px",
+    cursor: "pointer",
+    display: "inline-flex",
+    alignItems: "center",
+    justifyContent: "center",
+    padding: 0,
+  },
+
   tabActionHeader: {
     width: "100%",
     display: "flex",
@@ -1926,23 +3120,28 @@ schoolNameBox: {
 
   modalOverlay: {
     position: "fixed",
-    inset: 0,
-    backgroundColor: "rgba(15, 23, 42, 0.68)",
+    top: 0,
+    left: 0,
+    width: "100vw",
+    height: "100vh",
+    backgroundColor: "rgba(0, 0, 0, 0.6)",
     display: "flex",
-    alignItems: "center",
     justifyContent: "center",
-    padding: "16px",
-    zIndex: 9999,
+    alignItems: "center",
+    overflow: "hidden",
+    zIndex: 1000,
   },
 
   modalCard: {
-    width: "min(980px, 100%)",
+    backgroundColor: "#fff",
+    padding: "28px",
+    borderRadius: "18px",
+    width: "90%",
     maxHeight: "90vh",
     overflowY: "auto",
-    backgroundColor: "#fff",
-    borderRadius: "18px",
-    boxShadow: "0 20px 60px rgba(0,0,0,0.28)",
-    padding: "20px",
+    maxWidth: "980px",
+    position: "relative",
+    boxShadow: "0 24px 60px rgba(15, 23, 42, 0.28)",
   },
 
   modalHeader: {
@@ -1950,19 +3149,20 @@ schoolNameBox: {
     alignItems: "flex-start",
     justifyContent: "space-between",
     gap: "12px",
-    marginBottom: "18px",
+    marginBottom: "20px",
   },
 
   modalTitle: {
     margin: 0,
-    fontSize: "22px",
-    fontWeight: 800,
+    fontSize: "28px",
+    fontWeight: 700,
     color: "#0f172a",
-    textTransform: "capitalize",
+    paddingBottom: "8px",
+    borderBottom: "none",
   },
 
   modalSubtitle: {
-    margin: "6px 0 0",
+    margin: "8px 0 0",
     color: "#64748b",
     fontSize: "14px",
   },
@@ -1979,7 +3179,7 @@ schoolNameBox: {
   modalForm: {
     display: "flex",
     flexDirection: "column",
-    gap: "18px",
+    gap: "16px",
   },
 
   credentialsCard: {
@@ -2106,44 +3306,79 @@ schoolNameBox: {
 
   modalGrid: {
     display: "grid",
-    gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
+    gridTemplateColumns: "repeat(auto-fit, minmax(210px, 1fr))",
     gap: "14px",
   },
 
   modalSection: {
-    border: "1px solid #e2e8f0",
-    borderRadius: "14px",
-    padding: "14px",
     backgroundColor: "#f8fafc",
+    padding: "18px",
+    borderRadius: "16px",
+    border: "1px solid #dbe4f0",
+    boxShadow: "0 8px 22px rgba(15, 23, 42, 0.05)",
   },
 
   modalSectionTitle: {
-    margin: "0 0 12px",
-    fontSize: "15px",
+    color: "#1f2937",
+    marginBottom: "14px",
+    paddingBottom: "8px",
+    borderBottom: "1px solid #dbe4f0",
+    fontSize: "16px",
     fontWeight: 700,
-    color: "#1e293b",
+    textAlign: "center",
+  },
+
+  photoPreviewLarge: {
+    width: "120px",
+    height: "120px",
+    borderRadius: "4px",
+    objectFit: "cover",
+    border: "1px solid #ddd",
+    backgroundColor: "#f8fafc",
+  },
+
+  uploadButton: {
+    padding: "8px 15px",
+    backgroundColor: "#3498db",
+    color: "white",
+    border: "none",
+    borderRadius: "4px",
+    cursor: "pointer",
+    fontSize: "14px",
+    marginRight: "10px",
+  },
+
+  removeButton: {
+    padding: "8px 15px",
+    backgroundColor: "#e74c3c",
+    color: "white",
+    border: "none",
+    borderRadius: "4px",
+    cursor: "pointer",
+    fontSize: "14px",
   },
 
   modalActions: {
     display: "flex",
     justifyContent: "flex-end",
-    gap: "12px",
+    gap: "10px",
+    marginTop: "20px",
     flexWrap: "wrap",
   },
 
   cancelActionBtn: {
-    border: "1px solid #cbd5e1",
-    backgroundColor: "#fff",
-    color: "#334155",
-    borderRadius: "10px",
-    padding: "10px 16px",
+    border: "none",
+    backgroundColor: "#6c757d",
+    color: "#fff",
+    borderRadius: "4px",
+    padding: "8px 16px",
     cursor: "pointer",
-    fontWeight: 700,
+    fontWeight: 500,
   },
 
   primaryActionBtn: {
     border: "none",
-    backgroundColor: "#0f766e",
+    backgroundColor: "#27ae60",
     color: "#fff",
     borderRadius: "10px",
     padding: "10px 16px",

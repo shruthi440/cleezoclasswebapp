@@ -1164,6 +1164,36 @@
   min-width: 0;
 }
 
+.admin-events-livechat,
+.admin-events-livechat .accountant-card-header,
+.admin-events-livechat .admin-events-card-header,
+.admin-events-livechat .admin-events-chat-meta,
+.admin-events-livechat .admin-events-chat-section {
+  align-items: flex-start;
+  text-align: left;
+}
+
+.admin-events-livechat .accountant-card-filters {
+  align-self: flex-end;
+}
+
+.admin-events-livechat .admin-events-chat-meta {
+  justify-content: flex-end;
+  margin-left: auto;
+}
+
+.admin-events-livechat .admin-events-chat-count {
+  margin-left: auto;
+  justify-content: flex-end;
+}
+
+.admin-events-chat-section,
+.admin-events-chat-item,
+.admin-events-assistant-item {
+  justify-items: flex-start;
+  text-align: left;
+}
+
 .admin-events-footer-item {
   display: grid;
   gap: 0.18rem;
@@ -1215,4 +1245,18 @@
 }
 .admin-events-content > div.admin-events-bottom > div.admin-events-poster-panel.accountant-card{
 overflow: auto !important;
+}
+.admin-events-content > div.admin-events-bottom > div.admin-events-poster-panel.accountant-card{
+overflow: auto !important;
+}
+
+#root > div > div.dashboard-page.dashboard-home-page.frontdesk-dashboard-page.accountant-dashboard-page.accountant-dashboard-home-page.admin-events-page > div.dashboard-shell.accountant-dashboard-shell > div > div.admin-events-content > div.admin-events-bottom{
+  grid-template-columns: 3fr 2fr !important;
+}
+#root > div > div.dashboard-page.dashboard-home-page.frontdesk-dashboard-page.accountant-dashboard-page.accountant-dashboard-home-page.admin-events-page > div.dashboard-shell.accountant-dashboard-shell > div > div.admin-events-content > div.admin-events-bottom > div.admin-events-live-chat-panel.accountant-card{
+  width: 100% !important;
+  overflow-y: auto;
+}
+.admin-events-live-chat-panel.accountant-card::-webkit-scrollbar{
+  display: none;
 }

@@ -14,6 +14,8 @@ type CampaignRow = {
   campaign_scope?: string;
   mobile_number?: string;
   email_id?: string;
+  whatsapp_sent?: number | boolean;
+  whatsapp_received?: number | boolean;
 };
 
 type WhatsAppStatus = {
@@ -58,19 +60,6 @@ const formatDateTime = (date?: string, time?: string) => {
     ? new Date(`1970-01-01T${time}`).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
     : "-";
   return `${formattedDate} ${formattedTime}`;
-};
-
-const getDateKeyForOffset = (offsetFromToday: number) => {
-  const date = new Date();
-  date.setHours(0, 0, 0, 0);
-  date.setDate(date.getDate() - offsetFromToday);
-  return date.toLocaleDateString("en-CA");
-};
-
-const getDayLabelForOffset = (offsetFromToday: number) => {
-  if (offsetFromToday === 0) return "Today";
-  if (offsetFromToday === 1) return "Yesterday";
-  return `${offsetFromToday} Days Ago`;
 };
 
 const FrontDeskWhatsAppLast3Days: React.FC = () => {
@@ -155,17 +144,28 @@ const FrontDeskWhatsAppLast3Days: React.FC = () => {
     [last3DaysRows]
   );
 
+  const deliveredRows = useMemo(
+    () =>
+      whatsappRows.filter(
+        (row) => Number(row?.whatsapp_received ?? row?.whatsapp_sent ?? 0) === 1
+      ),
+    [whatsappRows]
+  );
+
   const dailyWhatsAppSummary = useMemo(
     () =>
       [0, 1, 2].map((offset) => {
-        const dayKey = getDateKeyForOffset(offset);
-        const dayRows = whatsappRows.filter((row) => getLocalDateKey(row?.date) === dayKey);
+        const date = new Date();
+        date.setHours(0, 0, 0, 0);
+        date.setDate(date.getDate() - offset);
+        const dayKey = date.toLocaleDateString("en-CA");
+        const dayRows = deliveredRows.filter((row) => getLocalDateKey(row?.date) === dayKey);
         const sent = dayRows.length;
         const limit = 30;
         return {
           dayKey,
-          label: getDayLabelForOffset(offset),
-          dateLabel: new Date(`${dayKey}T00:00:00`).toLocaleDateString("en-IN", {
+          label: offset === 0 ? "Today" : offset === 1 ? "Yesterday" : `${offset} Days Ago`,
+          dateLabel: date.toLocaleDateString("en-IN", {
             day: "2-digit",
             month: "short",
             year: "numeric",
@@ -175,7 +175,7 @@ const FrontDeskWhatsAppLast3Days: React.FC = () => {
           overBy: Math.max(0, sent - limit),
         };
       }),
-    [whatsappRows]
+    [deliveredRows]
   );
 
   const digitalRows = useMemo(
@@ -191,9 +191,10 @@ const FrontDeskWhatsAppLast3Days: React.FC = () => {
   const todaySummary = dailyWhatsAppSummary[0] || { sent: 0, remaining: 30 };
 
   const rangeLabel = useMemo(() => {
-    const to = new Date();
+    const today = new Date();
     const from = new Date();
     from.setDate(from.getDate() - 2);
+    const to = today;
     return `${from.toLocaleDateString("en-IN", {
       day: "2-digit",
       month: "short",
@@ -268,19 +269,19 @@ const FrontDeskWhatsAppLast3Days: React.FC = () => {
           }}
         >
           <div style={cardStyle}>
-            <div style={labelStyle}>3-Day WhatsApp Sent</div>
-            <div style={valueStyle}>{whatsappRows.length}</div>
-            <div style={subtleStyle}>Total from the last 3 days</div>
+            <div style={labelStyle}>3-Day Delivered</div>
+            <div style={valueStyle}>{deliveredRows.length}</div>
+            <div style={subtleStyle}>Messages delivered in the last 3 days</div>
           </div>
           <div style={cardStyle}>
-            <div style={labelStyle}>Today Sent</div>
+            <div style={labelStyle}>Today Delivered</div>
             <div style={valueStyle}>{todaySummary.sent}</div>
-            <div style={subtleStyle}>Today only</div>
+            <div style={subtleStyle}>Delivered today only</div>
           </div>
           <div style={cardStyle}>
             <div style={labelStyle}>Today Remaining</div>
             <div style={valueStyle}>{todaySummary.remaining}</div>
-            <div style={subtleStyle}>Out of 30 today</div>
+            <div style={subtleStyle}>Out of 30 delivered today</div>
           </div>
           <div style={cardStyle}>
             <div style={labelStyle}>Digital 3-Day</div>
@@ -313,7 +314,7 @@ const FrontDeskWhatsAppLast3Days: React.FC = () => {
                 <div style={labelStyle}>{day.label}</div>
                 <div style={{ marginTop: 8, fontWeight: 800, color: "#334155" }}>{day.dateLabel}</div>
                 <div style={valueStyle}>{day.sent}</div>
-                <div style={subtleStyle}>Sent</div>
+                <div style={subtleStyle}>Delivered</div>
                 <div style={{ marginTop: 10, fontSize: 15, fontWeight: 700, color: "#0f172a" }}>
                   {day.overBy > 0 ? `Over by: ${day.overBy}` : `Remaining: ${day.remaining}`}
                 </div>
@@ -374,7 +375,7 @@ const FrontDeskWhatsAppLast3Days: React.FC = () => {
                 );
               })
             ) : (
-              <div style={mutedLine}>No WhatsApp sends found in the last 3 days.</div>
+              <div style={mutedLine}>No WhatsApp deliveries found in the last 3 days.</div>
             )}
           </div>
         </div>

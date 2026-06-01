@@ -4,6 +4,7 @@ import "./AccountantDashboardnew.css";
 import "./AccountantReportsPageNew.css";
 import DashboardLayout from "../components/DashboardLayout.jsx";
 import EditableProfileMenu from "../shared/EditableProfileMenu.jsx";
+import { resolveInstituteDisplayName } from "../shared/instituteNameUtils";
 
 import collectFeeIcon from "../assets/collect.png";
 import addFeeIcon from "../assets/Navbar-AddFee.png";
@@ -28,7 +29,7 @@ const reportCards = [
   { icon: transactionsIcon, title: "Transactions", subtitle: "Digital Report" },
   { icon: feesReportIcon, title: "Fees Report", subtitle: "Total Fee & Installments" },
   { icon: dueReportIcon, title: "Due Report", subtitle: "Current & Previous years" },
-  { icon: feeTypeIcon, title: "Fee Type", subtitle: "Tuition, Bus, Books etc." },
+  { icon: feeTypeIcon, title: "Fee Type", subtitle: "Tuition, Bus, Books etc.", route: "/AccountantFeeTypeWiseSummary" },
   { icon: discountsIcon, title: "Discounts", subtitle: "Fees & closings" },
   { icon: referralsIcon, title: "Referrals", subtitle: "Student statements" },
   { icon: feesSearchIcon, title: "Fees Search", subtitle: "Student statements" },
@@ -46,12 +47,29 @@ const AccountantReportsPageNew = () => {
     fetch(`https://cleezoclass.com:4000/api/institute?dbName=${encodeURIComponent(schoolCode)}`)
       .then((res) => res.json().catch(() => ({})))
       .then((data) => {
+        const resolvedInstituteName = resolveInstituteDisplayName({
+          apiInstituteName: data?.institute_name || data?.instituteName || data?.schoolName || data?.name,
+          storedSchoolName: localStorage.getItem("schoolName"),
+          storedInstituteName: localStorage.getItem("instituteName"),
+          schoolCode,
+          fallback: "Institute",
+        });
         setInstituteLogo(data.logo || "/default-logo.png");
-        setInstituteName(data.institute_name || data.schoolName || data.name || schoolCode || "Institute");
+        setInstituteName(resolvedInstituteName);
+        localStorage.setItem("schoolName", resolvedInstituteName);
+        localStorage.setItem("instituteName", resolvedInstituteName);
       })
       .catch(() => {
+        const fallbackInstituteName = resolveInstituteDisplayName({
+          storedSchoolName: localStorage.getItem("schoolName"),
+          storedInstituteName: localStorage.getItem("instituteName"),
+          schoolCode,
+          fallback: "Institute",
+        });
         setInstituteLogo("/default-logo.png");
-        setInstituteName(schoolCode || "Institute");
+        setInstituteName(fallbackInstituteName);
+        localStorage.setItem("schoolName", fallbackInstituteName);
+        localStorage.setItem("instituteName", fallbackInstituteName);
       });
   }, []);
 
@@ -105,7 +123,21 @@ const AccountantReportsPageNew = () => {
       <div className="accountant-grid accountant-reports-grid accountant-reports-page-content">
         <div className="accountant-reports-card-row">
           {reportCards.map((card) => (
-            <div key={card.title} className="accountant-report-shortcut accountant-card">
+            <div
+              key={card.title}
+              className="accountant-report-shortcut accountant-card"
+              role={card.route ? "button" : undefined}
+              tabIndex={card.route ? 0 : undefined}
+              onClick={card.route ? () => navigate(card.route) : undefined}
+              onKeyDown={
+                card.route
+                  ? (event) => {
+                      if (event.key === "Enter" || event.key === " ") navigate(card.route);
+                    }
+                  : undefined
+              }
+              style={card.route ? { cursor: "pointer" } : undefined}
+            >
               <div className="accountant-report-shortcut-icon">
                 <img src={card.icon} alt={card.title} />
               </div>

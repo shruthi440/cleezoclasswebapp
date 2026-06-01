@@ -3281,56 +3281,12 @@ const StableCommunicationAssignSection = React.memo(({
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data?.error || "Send failed");
-
-      // Frontend fallback: if backend sends only media (without caption), schedule text separately.
-      // This keeps writeup delivery working on older server versions.
-      if (posterText) {
-        try {
-          const textLeadIds = Array.isArray(options?.leadIdsForWriteup)
-            ? options!.leadIdsForWriteup!.map(String)
-            : [];
-          const textLeads =
-            textLeadIds.length > 0
-              ? leads.filter((lead) => textLeadIds.includes(String(lead.id)))
-              : [];
-          const scheduleDate = String(options?.scheduleFromDate || selectedDate || sendFromDate || "").trim();
-          const scheduleTimeValue = String(options?.scheduleTime || selectedTime || "").trim();
-          const scheduleTime = /^\d{2}:\d{2}$/.test(scheduleTimeValue)
-            ? `${scheduleTimeValue}:00`
-            : scheduleTimeValue;
-
-          if (textLeads.length > 0 && scheduleDate && scheduleTime) {
-            const scheduleStart = new Date(`${scheduleDate}T${scheduleTime}`);
-            const schedulePayload = textLeads.map((lead, index) => {
-              const sendAt = new Date(scheduleStart.getTime() + index * whatsappLeadGapMinutes * 60 * 1000);
-              return {
-                leadId: lead.id,
-                leadName: lead.full_name,
-                phone: lead.mobile_number || "",
-                email: lead.email_id || "",
-                date: sendAt.toISOString().split("T")[0],
-                time: sendAt.toTimeString().split(" ")[0],
-                channels: ["whatsapp"],
-                message: posterText,
-                schoolCode,
-              };
-            });
-            await fetch("https://cleezoclass.com:4000/api/schedule-messages", {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({
-                schedule: schedulePayload,
-                schoolCode,
-              }),
-            });
-          }
-        } catch (writeupErr) {
-          console.warn("[Campaigning] writeup fallback scheduling failed", writeupErr);
-        }
-      }
       return data;
     };
     const totalTargetLeads = targetLeads.length;
+    if (totalTargetLeads > CAMPAIGN_DAILY_LEAD_LIMIT) {
+      throw new Error(`You can send posters to a maximum of ${CAMPAIGN_DAILY_LEAD_LIMIT} leads per day.`);
+    }
     const selectedLeadStartIndex = Math.max((leadFromNumber || 1) - 1, 0);
     const selectedLeadEndIndex =
       leadToNumber && leadToNumber > 0
@@ -3408,8 +3364,8 @@ const StableCommunicationAssignSection = React.memo(({
           (String(resolveGalleryId(ensuredSelectedGallery)) === String(photoId) ? ensuredSelectedGallery : null);
         const forcedPosterText = buildPosterTextFromItem(itemForText);
         const data = await sendById(photoId, {
-          scheduleFromDate: chunkDate,
-          scheduleToDate: chunkDate,
+          scheduleFromDate: sendFromDate || chunkDate,
+          scheduleToDate: sendToDate || sendFromDate || chunkDate,
           scheduleTime: chunkTime,
           leadFrom: selectedLeadStartIndex + 1,
           leadTo: selectedLeadEndIndex,
@@ -5078,7 +5034,6 @@ const StableCommunicationAssignSection = React.memo(({
               )}
               {galleryTarget !== "staff" && (sendMode === "all" || selectedGalleryIds.length > 1) && (
                 <div className="campaign-modal-success" style={{ marginTop: 8 }}>
-                  Images will be scheduled one per day, with up to 30 leads per day and a 1 minute gap per lead. Any extra leads move to the next day automatically.
                 </div>
               )}
               {/* <div className="campaign-modal-success" style={{ marginTop: 8 }}>
@@ -5562,6 +5517,62 @@ const FrontDeskCampaigning: React.FC = () => {
     [campaignStatusScheduledLeads]
   );
 
+  useEffect(() => {
+    console.log("[Campaigning][Digital Gallery] API data received", {
+      campaignStatusSentLeadsCount: campaignStatusSentLeads.length,
+      campaignStatusScheduledLeadsCount: campaignStatusScheduledLeads.length,
+      sampleScheduledLead: communicationDigitalScheduledRows[0]
+        ? {
+            id: communicationDigitalScheduledRows[0].id,
+            lead_id: communicationDigitalScheduledRows[0].lead_id,
+            fromDate: communicationDigitalScheduledRows[0].schedule_from_date,
+            toDate: communicationDigitalScheduledRows[0].schedule_to_date,
+            fromTime: communicationDigitalScheduledRows[0].schedule_from_time,
+            toTime: communicationDigitalScheduledRows[0].schedule_to_time,
+            sendDate: communicationDigitalScheduledRows[0].date,
+            sendTime: communicationDigitalScheduledRows[0].lead_time,
+          }
+        : null,
+    });
+  }, [campaignStatusScheduledLeads.length, campaignStatusSentLeads.length, communicationDigitalScheduledRows]);
+
+  const digitalLeadScheduleRanges = useMemo(() => {
+    const ranges: Record<string, { fromDate?: string; toDate?: string; fromTime?: string; toTime?: string; time?: string }> = {};
+
+    communicationDigitalScheduledRows.forEach((row: any) => {
+      const leadName = String(row?.lead_name || row?.refer_by || row?.full_name || "").trim();
+      if (!leadName) return;
+
+      const key = leadName.toLowerCase();
+      const fromDate = getLocalDateKey(row?.schedule_from_date || row?.date);
+      const toDate = getLocalDateKey(row?.schedule_to_date || row?.date || row?.schedule_from_date);
+      const fromTime = String(row?.schedule_from_time || row?.lead_time || "").trim();
+      const toTime = String(row?.schedule_to_time || row?.lead_time || "").trim();
+      const existing = ranges[key];
+
+      if (!existing) {
+        ranges[key] = {
+          fromDate: fromDate || "",
+          toDate: toDate || "",
+          fromTime: fromTime || "",
+          toTime: toTime || "",
+          time: fromTime && toTime ? `${fromTime} - ${toTime}` : fromTime || toTime || "",
+        };
+        return;
+      }
+
+      if (fromDate && (!existing.fromDate || fromDate < existing.fromDate)) existing.fromDate = fromDate;
+      if (toDate && (!existing.toDate || toDate > existing.toDate)) existing.toDate = toDate;
+      if (fromTime && !existing.fromTime) existing.fromTime = fromTime;
+      if (toTime && !existing.toTime) existing.toTime = toTime;
+      if (!existing.time && (fromTime || toTime)) {
+        existing.time = fromTime && toTime ? `${fromTime} - ${toTime}` : fromTime || toTime || "";
+      }
+    });
+
+    return ranges;
+  }, [communicationDigitalScheduledRows]);
+
   const persistedDigitalLeadSchedules = useMemo(() => {
     const leadKeyById = new Map<string, string>();
     leads.forEach((lead) => {
@@ -5572,7 +5583,10 @@ const FrontDeskCampaigning: React.FC = () => {
       }
     });
 
-    const scheduleMap: Record<string, { fromDate?: string; toDate?: string; time?: string }> = {};
+    const scheduleMap: Record<
+      string,
+      { fromDate?: string; toDate?: string; fromTime?: string; toTime?: string; time?: string }
+    > = {};
     [...communicationDigitalScheduledRows, ...communicationDigitalStatusRows].forEach((row: any) => {
       const leadId = String(row?.lead_id ?? row?.id ?? "").trim();
       const leadKey =
@@ -5602,6 +5616,8 @@ const FrontDeskCampaigning: React.FC = () => {
         scheduleMap[leadKey] = {
           fromDate: scheduleFromDate || "",
           toDate: scheduleToDate || "",
+          fromTime: scheduleFromTime || "",
+          toTime: scheduleToTime || "",
           time: persistedTimeLabel || "",
         };
         return;
@@ -5613,11 +5629,22 @@ const FrontDeskCampaigning: React.FC = () => {
       if (scheduleToDate) {
         if (!existing.toDate || scheduleToDate > existing.toDate) existing.toDate = scheduleToDate;
       }
+      if (scheduleFromTime && !existing.fromTime) existing.fromTime = scheduleFromTime;
+      if (scheduleToTime && !existing.toTime) existing.toTime = scheduleToTime;
       if (!existing.time && persistedTimeLabel) existing.time = persistedTimeLabel;
     });
 
     return scheduleMap;
   }, [communicationDigitalScheduledRows, communicationDigitalStatusRows, leads]);
+
+  useEffect(() => {
+    const sampleKey = Object.keys(persistedDigitalLeadSchedules)[0];
+    console.log("[Campaigning][Digital Gallery] schedule map built", {
+      keysCount: Object.keys(persistedDigitalLeadSchedules).length,
+      sampleKey: sampleKey || null,
+      sampleSchedule: sampleKey ? persistedDigitalLeadSchedules[sampleKey] : null,
+    });
+  }, [persistedDigitalLeadSchedules]);
 
   const effectiveDigitalLeadSchedules = useMemo(
     () => persistedDigitalLeadSchedules,
@@ -5629,6 +5656,8 @@ const FrontDeskCampaigning: React.FC = () => {
       effectiveDigitalLeadSchedules.__ALL__ || effectiveDigitalLeadSchedules.__all__ || {};
     const directKey = String(leadName || "").trim();
     if (!directKey) return allLeadsFallback;
+    const scheduleRange = digitalLeadScheduleRanges[directKey.toLowerCase()];
+    if (scheduleRange) return scheduleRange;
     if (effectiveDigitalLeadSchedules[directKey]) {
       return effectiveDigitalLeadSchedules[directKey];
     }
@@ -5637,7 +5666,9 @@ const FrontDeskCampaigning: React.FC = () => {
     const matchedKey = Object.keys(effectiveDigitalLeadSchedules).find(
       (key) => String(key || "").trim().toLowerCase() === normalizedKey
     );
-    return matchedKey ? effectiveDigitalLeadSchedules[matchedKey] || {} : allLeadsFallback;
+    return matchedKey
+      ? effectiveDigitalLeadSchedules[matchedKey] || {}
+      : digitalLeadScheduleRanges[normalizedKey] || allLeadsFallback;
   }
 
   const renderBulkLeadDropdownPortal = () => {
@@ -5688,11 +5719,14 @@ const FrontDeskCampaigning: React.FC = () => {
               const schedule = getBulkLeadSchedule(item.leadName) as {
                 fromDate?: string;
                 toDate?: string;
+                fromTime?: string;
+                toTime?: string;
                 time?: string;
               };
               const fromDate = schedule.fromDate || item.fromDate || item.date || "";
               const toDate = schedule.toDate || item.toDate || item.date || "";
-              const time = schedule.time || item.time || "";
+              const fromTime = schedule.fromTime || item.fromTime || "";
+              const toTime = schedule.toTime || item.toTime || "";
 
               return (
                 <div
@@ -5710,9 +5744,16 @@ const FrontDeskCampaigning: React.FC = () => {
                       </span>
                     </span>
                     <span className="campaign-bulk-dropdown-item-meta">
-                      Scheduled: From Date: {fromDate ? formatLeadDateLabel(fromDate) : "-"} | To Date:{" "}
-                      {toDate ? formatLeadDateLabel(toDate) : "-"} | Time:{" "}
-                      {time ? formatLeadTimeLabel(time) : "-"}
+                      {fromTime || toTime ? (
+                        <>
+                          Scheduled: From Date: {fromDate ? formatLeadDateLabel(fromDate) : "-"} | To Date:{" "}
+                          {toDate ? formatLeadDateLabel(toDate) : "-"} | From Time:{" "}
+                          {formatLeadTimeLabel(fromTime)} | To Time:{" "}
+                          {formatLeadTimeLabel(toTime)}
+                        </>
+                      ) : (
+                        "Scheduled: not assigned yet"
+                      )}
                     </span>
                   </span>
                   <button
@@ -5780,6 +5821,28 @@ const FrontDeskCampaigning: React.FC = () => {
     })}`;
   }, []);
 
+  const campaignStatusDashboardLeads = useMemo(() => {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const fromDate = new Date(today);
+    fromDate.setDate(fromDate.getDate() - 29);
+
+    const inLastMonth = campaignStatusSentLeads.filter((lead) => {
+      const rawDate = String(lead?.date || "").trim();
+      if (!rawDate) return false;
+      const dateOnly = rawDate.includes("T") ? rawDate.split("T")[0] : rawDate;
+      const parsedDate = new Date(`${dateOnly}T00:00:00`);
+      if (Number.isNaN(parsedDate.getTime())) return false;
+      return parsedDate >= fromDate && parsedDate <= today;
+    });
+
+    return inLastMonth.sort((a, b) => {
+      const aTs = new Date(`${String(a?.date || "").split("T")[0]}T${a?.lead_time || "00:00:00"}`).getTime();
+      const bTs = new Date(`${String(b?.date || "").split("T")[0]}T${b?.lead_time || "00:00:00"}`).getTime();
+      return bTs - aTs;
+    });
+  }, [campaignStatusSentLeads]);
+
   const isWithinLast30Days = (value?: string | null) => {
     const dateKey = getLocalDateKey(value);
     if (!dateKey) return false;
@@ -5800,11 +5863,13 @@ const FrontDeskCampaigning: React.FC = () => {
     });
 
   const monthDigitalStatusRows = useMemo(
-    () =>
-      sortStatusRowsByDateTime(
-        communicationDigitalWhatsAppRows.filter((lead) => isWithinLast30Days((lead as any)?.date))
-      ),
-    [communicationDigitalWhatsAppRows]
+    () => campaignStatusDashboardLeads,
+    [campaignStatusDashboardLeads]
+  );
+
+  const latestDigitalSentRows = useMemo(
+    () => campaignStatusDashboardLeads.slice(0, 2),
+    [campaignStatusDashboardLeads]
   );
 
   const monthSelectedStaffStatusRows = useMemo(
@@ -6961,9 +7026,9 @@ function formatLeadDateLabel(dateValue?: string) {
 }
 
 function formatLeadTimeLabel(timeValue?: string) {
-  if (!timeValue) return "--";
+  if (!timeValue) return "not assigned yet";
   const raw = String(timeValue).trim();
-  if (!raw) return "--";
+  if (!raw) return "not assigned yet";
   if (raw.includes("AM") || raw.includes("PM")) return raw;
   const parts = raw.split(":");
   if (parts.length >= 2) {
@@ -7633,65 +7698,25 @@ const CommunicationAssignSection: React.FC<{
       const data = await res.json();
       if (!res.ok) throw new Error(data?.error || "Send failed");
 
-      if (posterText) {
-        try {
-          const normalizedLeadName = String(sendLeadName || "").trim().toLowerCase();
-          let textLeads = leads.filter((lead) => {
-            const name = String(lead.lead_name || lead.refer_by || "").trim().toLowerCase();
-            return normalizedLeadName ? name === normalizedLeadName : true;
-          });
-          if (leadFromNumber !== null || leadToNumber !== null) {
-            const startIdx = Math.max((leadFromNumber || 1) - 1, 0);
-            const endIdx = leadToNumber ? leadToNumber : textLeads.length;
-            textLeads = textLeads.slice(startIdx, endIdx);
-          }
-          const scheduleDate = String(selectedDate || sendFromDate || "").trim();
-          const scheduleTime = /^\d{2}:\d{2}$/.test(String(selectedTime || ""))
-            ? `${selectedTime}:00`
-            : String(selectedTime || "");
-
-          if (textLeads.length > 0 && scheduleDate && scheduleTime) {
-            const schedulePayload = textLeads.map((lead) => ({
-              leadId: lead.id,
-              leadName: lead.full_name,
-              phone: lead.mobile_number || "",
-              email: lead.email_id || "",
-              date: scheduleDate,
-              time: scheduleTime,
-              channels: ["whatsapp"],
-              message: posterText,
-              schoolCode,
-            }));
-            await fetch("https://cleezoclass.com:4000/api/schedule-messages", {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({
-                schedule: schedulePayload,
-                schoolCode,
-              }),
-            });
-          }
-        } catch (writeupErr) {
-          console.warn("[Campaigning] writeup fallback scheduling failed", writeupErr);
-        }
-      }
       return data;
     };
     try {
       if (sendMode === "all") {
         const ids = visibleGalleryItems.map(resolveGalleryId).filter(Boolean) as Array<string | number>;
         if (ids.length === 0) throw new Error("No gallery images available");
-        const chunkSize = 5;
         let totalLeads = 0;
-        for (let i = 0; i < ids.length; i += chunkSize) {
-          const chunk = ids.slice(i, i + chunkSize);
-          const results = await Promise.allSettled(chunk.map((id) => sendById(id)));
-          results.forEach((res) => {
-            if (res.status === "fulfilled") {
-              totalLeads += Number(res.value?.totalLeads || 0);
-            }
-          });
-          setSendStatus(`Sent ${Math.min(i + chunk.length, ids.length)} of ${ids.length} images...`);
+        let failedImages = 0;
+        for (let i = 0; i < ids.length; i += 1) {
+          try {
+            const data = await sendById(ids[i]);
+            totalLeads += Number(data?.totalLeads || 0);
+          } catch (err) {
+            failedImages += 1;
+          }
+          setSendStatus(`Sent ${Math.min(i + 1, ids.length)} of ${ids.length} images...`);
+        }
+        if (failedImages > 0) {
+          setSendError(`Failed for ${failedImages} image(s)`);
         }
         setSendStatus(`Sent all images to ${totalLeads} leads`);
       } else if (sendMode === "auto") {
@@ -8188,12 +8213,39 @@ upload            </button>
     }
 
     try {
+      console.log("[Campaigning][Digital Gallery] fetching campaign status", {
+        schoolCode,
+        limit: 300,
+      });
       const res = await fetch(
         `https://cleezoclass.com:4000/api/frontdesk/campaign-status?schoolCode=${encodeURIComponent(
           schoolCode
         )}&limit=300`
       );
       const data = await res.json();
+      console.log("[Campaigning][Digital Gallery] fetch response", {
+        ok: res.ok,
+        status: res.status,
+        hasRows: Array.isArray(data?.rows),
+        hasScheduledRows: Array.isArray(data?.scheduledRows),
+        rowsCount: Array.isArray(data?.rows) ? data.rows.length : 0,
+        scheduledRowsCount: Array.isArray(data?.scheduledRows) ? data.scheduledRows.length : 0,
+        sampleScheduledRow: Array.isArray(data?.scheduledRows) && data.scheduledRows[0]
+          ? {
+              id: data.scheduledRows[0].id,
+              lead_id: data.scheduledRows[0].lead_id,
+              fromDate: data.scheduledRows[0].schedule_from_date,
+              toDate: data.scheduledRows[0].schedule_to_date,
+              fromTime: data.scheduledRows[0].schedule_from_time,
+              toTime: data.scheduledRows[0].schedule_to_time,
+              date: data.scheduledRows[0].date,
+              lead_time: data.scheduledRows[0].lead_time,
+            }
+          : null,
+      });
+      if (Array.isArray(data?.scheduledRows) && data.scheduledRows.length > 0) {
+        console.log("[Campaigning][Digital Gallery] scheduledRows raw", data.scheduledRows.slice(0, 3));
+      }
       const rows = Array.isArray(data?.rows)
         ? data.rows
         : Array.isArray(data)
@@ -9036,43 +9088,73 @@ useEffect(() => {
               <div className="campaign-bulk-list-wrap has-leads">
                 {selectedBulkLead ? (
                   <div className="campaign-bulk-selector">
-                    <button
-                      type="button"
-                      ref={bulkLeadSummaryRef}
-                      className="campaign-bulk-summary"
-                      onClick={() => setBulkLeadDropdownOpen((prev) => !prev)}
-                      aria-expanded={bulkLeadDropdownOpen}
-                      aria-haspopup="listbox"
-                    >
-                      <span className="campaign-bulk-dot" />
-                      <span className="campaign-bulk-summary-text">
-                        {selectedBulkLead.leadName || "-"}
-                      </span>
-                      <span className="campaign-bulk-summary-count">
-                        {selectedBulkLead.count} {selectedBulkLead.count === 1 ? "Lead" : "Leads"}
-                      </span>
-                      <span
-                        className={`campaign-bulk-summary-chevron ${
-                          bulkLeadDropdownOpen ? "is-open" : ""
-                        }`}
+                    <div className="campaign-bulk-summary-row">
+                      <button
+                        type="button"
+                        ref={bulkLeadSummaryRef}
+                        className="campaign-bulk-summary"
+                        onClick={() => setBulkLeadDropdownOpen((prev) => !prev)}
+                        aria-expanded={bulkLeadDropdownOpen}
+                        aria-haspopup="listbox"
                       >
-                        ⌄
-                      </span>
-                    </button>
+                        <span className="campaign-bulk-dot" />
+                        <span className="campaign-bulk-summary-text">
+                          {selectedBulkLead.leadName || "-"}
+                        </span>
+                        <span className="campaign-bulk-summary-count">
+                          {selectedBulkLead.count} {selectedBulkLead.count === 1 ? "Lead" : "Leads"}
+                        </span>
+                        <span
+                          className={`campaign-bulk-summary-chevron ${
+                            bulkLeadDropdownOpen ? "is-open" : ""
+                          }`}
+                        >
+                          ⌄
+                        </span>
+                      </button>
+                      <button
+                        type="button"
+                        className="campaign-bulk-delete-btn campaign-bulk-summary-delete-btn"
+                        onClick={(e) => {
+                          e.preventDefault();
+                          e.stopPropagation();
+                          setLeadDeleteTarget({
+                            id: selectedBulkLead.id,
+                            name: selectedBulkLead.leadName || "this campaign",
+                            campaignName: selectedBulkLead.leadName,
+                            count: selectedBulkLead.count,
+                          });
+                        }}
+                        aria-label={`Delete ${selectedBulkLead.leadName || "campaign"}`}
+                        title="Delete"
+                      >
+                        <FaTrashAlt />
+                      </button>
+                    </div>
                     {(() => {
                       const schedule = getBulkLeadSchedule(selectedBulkLead.leadName) as {
                         fromDate?: string;
                         toDate?: string;
+                        fromTime?: string;
+                        toTime?: string;
                         time?: string;
                       };
                       const fromDate = schedule.fromDate || selectedBulkLead.fromDate || selectedBulkLead.date || "";
                       const toDate = schedule.toDate || selectedBulkLead.toDate || selectedBulkLead.date || "";
-                      const time = schedule.time || selectedBulkLead.time || "";
+                      const fromTime = schedule.fromTime || selectedBulkLead.fromTime || "";
+                      const toTime = schedule.toTime || selectedBulkLead.toTime || "";
                       return (
                         <div className="campaign-bulk-dropdown-item-meta">
-                          From Date: {fromDate ? formatLeadDateLabel(fromDate) : "-"} | To Date:{" "}
-                          {toDate ? formatLeadDateLabel(toDate) : "-"} | Time:{" "}
-                          {time ? formatLeadTimeLabel(time) : "-"}
+                          {fromTime || toTime ? (
+                            <>
+                              From Date: {fromDate ? formatLeadDateLabel(fromDate) : "-"} | To Date:{" "}
+                              {toDate ? formatLeadDateLabel(toDate) : "-"} | From Time:{" "}
+                              {formatLeadTimeLabel(fromTime)} | To Time:{" "}
+                              {formatLeadTimeLabel(toTime)}
+                            </>
+                          ) : (
+                            "not assigned yet"
+                          )}
                         </div>
                       );
                     })()}
@@ -9143,27 +9225,26 @@ useEffect(() => {
         ) : activeMiniPanel === "assistant" ? (
           renderAssistantPanel("Lead Predictions", digitalPredictionSummary)
         ) : (
-          <Section title="" variant="marketing" className="campaignSection">
-        <div className="campaignstatusHeader">
+          <Section title="" variant="marketing" className="campaignSection communication-digital-panel">
+        <div className="campaignstatusHeader communication-digital-header">
+          <div className="co-filter-title communication-digital-title">
+            Communication Digital
+          </div>
 
-    <div className="co-filter-title">
-      Communication Digital
-    </div>
+          <div className="communication-digital-summary">
+            <div className="leadsCount communication-digital-count">
+            
+            </div>
 
+            <div className="campaign-datetime communication-digital-range">
+              <span>{campaignStatusRangeLabel}</span>
+            </div>
+          </div>
+        </div>
 
-
-    <div className="leadsCount" style={{ marginTop: 4 }}>
-   <span className="campaign-assign-total-value">    {sharedWhatsappSentToday} </span><span className="leadsLabel">Sent</span>
-   <span className="leadsLabel" style={{ marginLeft: 8 }}>Remaining: {digitalLeftOutOfThirty}</span>
-    <div className="campaign-info-row">
-      <div className="campaign-datetime">
-        <span>{campaignStatusRangeLabel}</span>
-      </div>
-    </div>
-
-    </div>
-
-</div>
+        {latestDigitalSentRows.length > 0 && (
+     null
+        )}
             <div className="co-digital-list">
               {monthDigitalStatusRows.map((lead, index) => {
                 const schedule = effectiveDigitalLeadSchedules[getLeadScheduleKey(lead)] || {};
@@ -9260,9 +9341,6 @@ useEffect(() => {
             <div className="campaignstatusHeader">
               <div className="co-filter-title">Communication Staff</div>
               <div className="leadsCount">
-                <span className="campaign-assign-total-value">{sharedWhatsappSentToday}</span>{" "}
-                <span className="leadsLabel">Sent</span>
-                <span className="leadsLabel" style={{ marginLeft: 8 }}>Remaining: {staffLeftOutOfThirty}</span>
                 <div className="campaign-info-row">
                   <div className="campaign-datetime">
                     <span>{campaignStatusRangeLabel}</span>
@@ -9516,8 +9594,14 @@ useEffect(() => {
                       const schedule = getBulkLeadSchedule(item.leadName) as {
                         fromDate?: string;
                         toDate?: string;
+                        fromTime?: string;
+                        toTime?: string;
                         time?: string;
                       };
+                      const fromDate = schedule.fromDate || item.fromDate || item.date || "";
+                      const toDate = schedule.toDate || item.toDate || item.date || "";
+                      const fromTime = schedule.fromTime || item.fromTime || "";
+                      const toTime = schedule.toTime || item.toTime || "";
 
                       return (
                         <div
@@ -9551,9 +9635,16 @@ useEffect(() => {
                             </button>
                           </div>
                           <div className="campaign-bulk-popup-meta">
-                            From Date: {schedule.fromDate ? formatLeadDateLabel(schedule.fromDate) : "-"} | To Date:{" "}
-                            {schedule.toDate ? formatLeadDateLabel(schedule.toDate) : "-"}
-                            {schedule.time ? ` | Time: ${formatLeadTimeLabel(schedule.time)}` : ""}
+                            {fromTime || toTime ? (
+                              <>
+                                From Date: {fromDate ? formatLeadDateLabel(fromDate) : "-"} | To Date:{" "}
+                                {toDate ? formatLeadDateLabel(toDate) : "-"} | From Time:{" "}
+                                {formatLeadTimeLabel(fromTime)} | To Time:{" "}
+                                {formatLeadTimeLabel(toTime)}
+                              </>
+                            ) : (
+                              "not assigned yet"
+                            )}
                           </div>
                         </div>
                       );

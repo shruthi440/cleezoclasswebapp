@@ -28,6 +28,7 @@ import ErrorPopup from "../shared/ErrorPopup.jsx";
 import TaskOfTheDay from "../shared/TaskOfTheDay.tsx";
 import LeadsTable from "./FrontDesk_Track.tsx";
 import abcLogo from "../assets/logoab.png";
+import { resolveInstituteDisplayName } from "../shared/instituteNameUtils";
 import homeIcon from "../assets/Dashboard.png";
 import usersIcon from "../assets/Staff Assign.png";
 import chartIcon from "../assets/Lead Profile.png";
@@ -8335,7 +8336,16 @@ useEffect(() => {
       }
 
       console.log("📂 Institute data received:", data);
-      setSchoolName(data.institute_name || currentDbName);
+      const resolvedSchoolName = resolveInstituteDisplayName({
+        apiInstituteName: data?.institute_name || data?.instituteName || data?.schoolName || data?.name,
+        storedSchoolName: localStorage.getItem("schoolName"),
+        storedInstituteName: localStorage.getItem("instituteName"),
+        schoolCode: currentDbName,
+        fallback: "Unknown School",
+      });
+      setSchoolName(resolvedSchoolName);
+      localStorage.setItem("schoolName", resolvedSchoolName);
+      localStorage.setItem("instituteName", resolvedSchoolName);
       setLogo(data.logo || "/default-logo.png");
       setInstituteAddress(data.address || "Address not available");
 
@@ -8379,7 +8389,15 @@ useEffect(() => {
       if (retriesLeft > 0) {
         return fetchInstituteInfo(retriesLeft - 1);
       }
-      setSchoolName(currentDbName || "Unknown School");
+      const fallbackSchoolName = resolveInstituteDisplayName({
+        storedSchoolName: localStorage.getItem("schoolName"),
+        storedInstituteName: localStorage.getItem("instituteName"),
+        schoolCode: currentDbName,
+        fallback: "Unknown School",
+      });
+      setSchoolName(fallbackSchoolName);
+      localStorage.setItem("schoolName", fallbackSchoolName);
+      localStorage.setItem("instituteName", fallbackSchoolName);
       setLogo("/default-logo.png");
       setInstituteAddress("Address not available");
     }

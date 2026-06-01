@@ -24,6 +24,7 @@ import AdmissionEnrollment from "./FrontDesk_Enrollment.tsx";
 import "./Frontdesk_Communication.css";
 import DashboardLayout from "../components/DashboardLayout.jsx";
 import EditableProfileMenu from "../shared/EditableProfileMenu.jsx";
+import { resolveInstituteDisplayName } from "../shared/instituteNameUtils";
 
 type ReportType =
   | "all"
@@ -246,11 +247,28 @@ const FrontDeskReport: React.FC = () => {
           throw new Error(data?.error || `HTTP ${res.status}`);
         }
         setSchoolLogo(data.logo || "/default-logo.png");
-        setSchoolName(data.institute_name || data.schoolName || data.name || schoolCode || "Institute");
+        const resolvedSchoolName = resolveInstituteDisplayName({
+          apiInstituteName: data?.institute_name || data?.instituteName || data?.schoolName || data?.name,
+          storedSchoolName: localStorage.getItem("schoolName"),
+          storedInstituteName: localStorage.getItem("instituteName"),
+          schoolCode,
+          fallback: "Institute",
+        });
+        setSchoolName(resolvedSchoolName);
+        localStorage.setItem("schoolName", resolvedSchoolName);
+        localStorage.setItem("instituteName", resolvedSchoolName);
       } catch {
         if (retriesLeft > 0) return fetchInstituteInfo(retriesLeft - 1);
         setSchoolLogo("/default-logo.png");
-        setSchoolName(schoolCode || "Institute");
+        const fallbackSchoolName = resolveInstituteDisplayName({
+          storedSchoolName: localStorage.getItem("schoolName"),
+          storedInstituteName: localStorage.getItem("instituteName"),
+          schoolCode,
+          fallback: "Institute",
+        });
+        setSchoolName(fallbackSchoolName);
+        localStorage.setItem("schoolName", fallbackSchoolName);
+        localStorage.setItem("instituteName", fallbackSchoolName);
       }
     };
 

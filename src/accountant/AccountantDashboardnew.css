@@ -320,10 +320,28 @@
   font-size: 0.65rem;
   font-weight: 600;
   color: #1f2937;
-  white-space: nowrap;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  line-height: 1.05;
+  white-space: normal;
   overflow: hidden;
-  text-overflow: ellipsis;
   max-width: 220px;
+}
+
+.accountant-school-name-line {
+  display: block;
+  min-width: 0;
+}
+
+.accountant-school-name-line-primary {
+  font-size: 0.65rem;
+  font-weight: 700;
+}
+
+.accountant-school-name-line-secondary {
+  font-size: 0.58rem;
+  font-weight: 600;
 }
 
 .accountant-grid {

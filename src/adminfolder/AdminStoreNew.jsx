@@ -8,6 +8,8 @@ import "./AdminEventsAndMeetings.css";
 import "./AdminStoreNew.css";
 import EditableProfileMenu from "../shared/EditableProfileMenu.jsx";
 import ErrorPopup from "../shared/ErrorPopup";
+import InstituteBrand from "../shared/InstituteBrand.jsx";
+import { resolveInstituteDisplayName } from "../shared/instituteNameUtils";
 
 import dashboardIcon from "../assets/Dashboard.png";
 import academicsIcon from "../assets/Staff Assign.png";
@@ -191,6 +193,19 @@ const AdminStoreNew = () => {
   const [chatRequests, setChatRequests] = useState([]);
   const [storeActions, setStoreActions] = useState([]);
   const [assistantActions, setAssistantActions] = useState([]);
+  const [popupType, setPopupType] = useState("");
+  const [party1List, setParty1List] = useState([]);
+  const [classOptions, setClassOptions] = useState([]);
+  const [sectionOptions, setSectionOptions] = useState([]);
+  const [studentOptions, setStudentOptions] = useState([]);
+  const [liveChatForm, setLiveChatForm] = useState({
+    party1: "",
+    className: "",
+    section: "",
+    student: "",
+    date: new Date().toISOString().split("T")[0],
+    time: "",
+  });
 
   const [itemForm, setItemForm] = useState({
     categoryType: "Books / Other",
@@ -242,24 +257,36 @@ const AdminStoreNew = () => {
     window.location.replace(import.meta.env.BASE_URL || "/");
   };
 
+  const openLiveChatPopup = () => setPopupType("liveChat");
+  const closePopup = () => setPopupType("");
+
   const loadSchoolProfile = async () => {
     if (!schoolCode) return;
     try {
       const response = await fetch(`https://cleezoclass.com:4000/api/institute?dbName=${schoolCode}`);
       const data = await response.json();
-      const resolvedSchoolName = String(
-        data?.institute_name ||
-          data?.instituteName ||
-          data?.school_name ||
-          data?.name ||
-          data?.schoolName ||
-          "Unknown School"
-      ).trim();
+      const resolvedSchoolName = resolveInstituteDisplayName({
+        apiInstituteName: data?.institute_name || data?.instituteName || data?.school_name || data?.name || data?.schoolName,
+        storedSchoolName: localStorage.getItem("schoolName"),
+        storedInstituteName: localStorage.getItem("instituteName"),
+        schoolCode,
+        fallback: "Unknown School",
+      });
       const normalizedLogo = normalizeInstituteLogo(data?.logo);
       setSchoolName(resolvedSchoolName || "Unknown School");
       setSchoolLogo(normalizedLogo || "/default-logo.png");
+      localStorage.setItem("schoolName", resolvedSchoolName);
+      localStorage.setItem("instituteName", resolvedSchoolName);
     } catch {
-      setSchoolName("Unknown School");
+      const fallbackSchoolName = resolveInstituteDisplayName({
+        storedSchoolName: localStorage.getItem("schoolName"),
+        storedInstituteName: localStorage.getItem("instituteName"),
+        schoolCode,
+        fallback: "Unknown School",
+      });
+      setSchoolName(fallbackSchoolName);
+      localStorage.setItem("schoolName", fallbackSchoolName);
+      localStorage.setItem("instituteName", fallbackSchoolName);
       setSchoolLogo("/default-logo.png");
     }
   };
@@ -297,6 +324,114 @@ const AdminStoreNew = () => {
     loadSchoolProfile();
     loadDashboard();
   }, [schoolCode]);
+
+  useEffect(() => {
+    if (!schoolCode) return;
+
+    const loadLiveChatMeta = async () => {
+      try {
+        const [{ data: staffData }, { data: classData }] = await Promise.all([
+          fetchJson(`${API_BASE}/party1?schoolCode=${encodeURIComponent(schoolCode)}`),
+          fetchJson(`${API_BASE}/classes?schoolCode=${encodeURIComponent(schoolCode)}`),
+        ]);
+
+        setParty1List(Array.isArray(staffData) ? staffData : Array.isArray(staffData?.data) ? staffData.data : []);
+        setClassOptions(Array.isArray(classData) ? classData : Array.isArray(classData?.data) ? classData.data : []);
+      } catch (error) {
+        console.error("Failed to load live chat meta", error);
+      }
+    };
+
+    loadLiveChatMeta();
+  }, [schoolCode]);
+
+  useEffect(() => {
+    if (!schoolCode || !liveChatForm.className) {
+      setSectionOptions([]);
+      setStudentOptions([]);
+      return;
+    }
+
+    fetchJson(`${API_BASE}/sections/${encodeURIComponent(liveChatForm.className)}?schoolCode=${encodeURIComponent(schoolCode)}`)
+      .then((data) => {
+        const list = Array.isArray(data) ? data : Array.isArray(data?.data) ? data.data : [];
+        setSectionOptions(list);
+        setLiveChatForm((prev) => ({ ...prev, section: "", student: "" }));
+      })
+      .catch((error) => {
+        console.error("Failed to load sections", error);
+        setSectionOptions([]);
+      });
+  }, [schoolCode, liveChatForm.className]);
+
+  useEffect(() => {
+    if (!schoolCode || !liveChatForm.className || !liveChatForm.section) {
+      setStudentOptions([]);
+      return;
+    }
+
+    fetchJson(
+      `${API_BASE}/admin/students/${encodeURIComponent(liveChatForm.className)}/${encodeURIComponent(liveChatForm.section)}?schoolCode=${encodeURIComponent(schoolCode)}`
+    )
+      .then((data) => {
+        const list = Array.isArray(data) ? data : Array.isArray(data?.data) ? data.data : [];
+        setStudentOptions(list);
+        setLiveChatForm((prev) => ({ ...prev, student: "" }));
+      })
+      .catch((error) => {
+        console.error("Failed to load students", error);
+        setStudentOptions([]);
+      });
+  }, [schoolCode, liveChatForm.className, liveChatForm.section]);
+
+  const handleCreateLiveChatRequest = async () => {
+    const { party1, className, section, student, date, time } = liveChatForm;
+    if (!party1 || !className || !section || !student) {
+      setPopupMessage("Staff, class, section, and student are required.");
+      return;
+    }
+
+    const party1Obj = party1List.find((item) => item.name === party1);
+    if (!party1Obj) {
+      setPopupMessage("Please select a valid staff member.");
+      return;
+    }
+
+    try {
+      const data = await fetchJson(`${API_BASE}/chat-request`, {
+        method: "POST",
+        body: JSON.stringify({
+          party1_id: party1Obj.id,
+          party1_name: party1Obj.name,
+          party2_class: className,
+          party2_section: section,
+          party2_student: student,
+          date,
+          time,
+          schoolCode,
+        }),
+      });
+
+      if (!data?.success) {
+        throw new Error(data?.message || "Failed to save chat request.");
+      }
+
+      setPopupMessage("Individual chat request has been successfully saved.");
+      setLiveChatForm({
+        party1: "",
+        className,
+        section,
+        student: "",
+        date: new Date().toISOString().split("T")[0],
+        time: "",
+      });
+      closePopup();
+      await loadDashboard();
+    } catch (error) {
+      console.error("Failed to save chat request", error);
+      setPopupMessage(error.message || "Failed to save chat request.");
+    }
+  };
 
   const filteredOrders = useMemo(
     () =>
@@ -440,8 +575,11 @@ const AdminStoreNew = () => {
             </div>
 
             <div className="dashboard-topbar-center accountant-topbar-center">
-              <img src={schoolLogo || "/default-logo.png"} alt={schoolName || "School Logo"} className="accountant-school-logo" />
-              <span style={{ fontWeight: 700, marginLeft: "0.4rem" }}>{schoolName || "Unknown School"}</span>
+              <InstituteBrand
+                logoSrc={schoolLogo || "/default-logo.png"}
+                logoAlt={schoolName || "School Logo"}
+                instituteName={schoolName || "Unknown School"}
+              />
             </div>
 
             <div className="dashboard-topbar-right accountant-topbar-right">
@@ -568,15 +706,22 @@ const AdminStoreNew = () => {
               <div className="admin-events-livechat accountant-card">
                 <div className="admin-events-card-header">
                   <h3>{activeQuickPanel === "assistant" ? "Assistant Actions" : activeQuickPanel === "storepo" ? "Store PO" : "Live Chat"}</h3>
-                  <div className="admin-events-chat-count">
-                    <strong>
-                      {activeQuickPanel === "assistant"
-                        ? assistantActions.length
-                        : activeQuickPanel === "storepo"
-                          ? storeActions.length
-                          : chatRequests.length}
-                    </strong>
-                    <span>{activeQuickPanel === "assistant" ? "Actions" : activeQuickPanel === "storepo" ? "Requests" : "Chats"}</span>
+                  <div className="accountant-card-filters">
+                    {activeQuickPanel === "livechat" ? (
+                      <button type="button" className="admin-events-create-btn" onClick={openLiveChatPopup}>
+                        + Create New
+                      </button>
+                    ) : null}
+                    <div className="accountant-feetype-count">
+                      <strong>
+                        {activeQuickPanel === "assistant"
+                          ? assistantActions.length
+                          : activeQuickPanel === "storepo"
+                            ? storeActions.length
+                            : chatRequests.length}
+                      </strong>
+                      <span>{activeQuickPanel === "assistant" ? "Actions" : activeQuickPanel === "storepo" ? "Requests" : "Chats"}</span>
+                    </div>
                   </div>
                 </div>
 
@@ -731,9 +876,89 @@ const AdminStoreNew = () => {
                 </div>
               </div>
             </div>
+              </div>
+            </div>
+          </div>
+
+      {popupType === "liveChat" && (
+        <div className="admin-events-modal-overlay" onClick={closePopup}>
+          <div className="admin-events-modal" onClick={(e) => e.stopPropagation()}>
+            <div className="admin-events-card-header">
+              <h3>Individual Chat Request</h3>
+              <button type="button" className="admin-events-modal-close" onClick={closePopup}>×</button>
+            </div>
+            <div className="admin-events-form-grid">
+              <select
+                className="admin-events-input"
+                value={liveChatForm.party1}
+                onChange={(e) => setLiveChatForm((prev) => ({ ...prev, party1: e.target.value }))}
+              >
+                <option value="">Party 1 Staff</option>
+                {party1List.map((item) => (
+                  <option key={item.id} value={item.name}>
+                    {item.name} ({item.user_type})
+                  </option>
+                ))}
+              </select>
+              <select
+                className="admin-events-input"
+                value={liveChatForm.className}
+                onChange={(e) => setLiveChatForm((prev) => ({ ...prev, className: e.target.value }))}
+              >
+                <option value="">Class</option>
+                {classOptions.map((item, index) => (
+                  <option key={`${item}-${index}`} value={String(item)}>
+                    {String(item)}
+                  </option>
+                ))}
+              </select>
+              <select
+                className="admin-events-input"
+                value={liveChatForm.section}
+                onChange={(e) => setLiveChatForm((prev) => ({ ...prev, section: e.target.value }))}
+                disabled={!liveChatForm.className}
+              >
+                <option value="">Section</option>
+                {sectionOptions.map((item, index) => (
+                  <option key={`${item}-${index}`} value={String(item)}>
+                    {String(item)}
+                  </option>
+                ))}
+              </select>
+              <select
+                className="admin-events-input"
+                value={liveChatForm.student}
+                onChange={(e) => setLiveChatForm((prev) => ({ ...prev, student: e.target.value }))}
+                disabled={!liveChatForm.className || !liveChatForm.section}
+              >
+                <option value="">Student</option>
+                {studentOptions.map((item, index) => (
+                  <option key={`${item?.id || index}`} value={item?.name || item?.student_name || ""}>
+                    {item?.name || item?.student_name || "Student"}
+                  </option>
+                ))}
+              </select>
+              <input
+                className="admin-events-input"
+                type="date"
+                value={liveChatForm.date}
+                onChange={(e) => setLiveChatForm((prev) => ({ ...prev, date: e.target.value }))}
+              />
+              <input
+                className="admin-events-input"
+                type="time"
+                value={liveChatForm.time}
+                onChange={(e) => setLiveChatForm((prev) => ({ ...prev, time: e.target.value }))}
+              />
+            </div>
+            <div className="admin-events-action-row">
+              <button type="button" className="admin-events-submit-btn" onClick={handleCreateLiveChatRequest}>
+                Create Chat Request
+              </button>
+            </div>
           </div>
         </div>
-      </div>
+      )}
 
       <ErrorPopup message={popupMessage} onClose={() => setPopupMessage("")} />
     </div>

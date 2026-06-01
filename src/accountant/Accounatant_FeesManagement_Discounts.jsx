@@ -27,6 +27,61 @@ const STATIC_FEE_OPTIONS = [
   { label: "Other Fees", value: "Other Fees" },
 ];
 
+const CLASS_PRIORITY = {
+  prekg: -4,
+  "pre kg": -4,
+  prenursery: -3,
+  "pre nursery": -3,
+  nursery: -2,
+  lkg: -1,
+  ukg: -0.5,
+};
+
+const getClassSortValue = (value) => {
+  const normalized = String(value || "").trim().toLowerCase();
+  if (!normalized) return Number.MAX_SAFE_INTEGER;
+
+  if (CLASS_PRIORITY[normalized] !== undefined) {
+    return CLASS_PRIORITY[normalized];
+  }
+
+  const numericMatch = normalized.match(/\d+/);
+  if (numericMatch) {
+    return Number(numericMatch[0]);
+  }
+
+  const romanMap = {
+    i: 1,
+    ii: 2,
+    iii: 3,
+    iv: 4,
+    v: 5,
+    vi: 6,
+    vii: 7,
+    viii: 8,
+    ix: 9,
+    x: 10,
+    xi: 11,
+    xii: 12,
+  };
+
+  const romanValue = romanMap[normalized.replace(/[^ivx]/g, "")];
+  return romanValue ?? Number.MAX_SAFE_INTEGER;
+};
+
+const sortClassLabels = (items) =>
+  [...items].sort((a, b) => {
+    const sortA = getClassSortValue(a);
+    const sortB = getClassSortValue(b);
+
+    if (sortA !== sortB) return sortA - sortB;
+
+    return String(a).localeCompare(String(b), undefined, {
+      numeric: true,
+      sensitivity: "base",
+    });
+  });
+
 const IMAGE_BASE_URL = 'https://cleezoclass.com:4000';
 const API_BASE = 'https://cleezoclass.com:4000/api/admin';
 
@@ -92,7 +147,7 @@ const IncomeForm5 = ({ dynamicFeeTypes: externalDynamicFeeTypes = [] }) => {
         ]);
 
         const rawClasses = Array.isArray(classRes.data) ? classRes.data : [];
-        const normalizedClasses = [
+        const normalizedClasses = sortClassLabels([
           ...new Set(
             rawClasses
               .map((item) =>
@@ -100,14 +155,7 @@ const IncomeForm5 = ({ dynamicFeeTypes: externalDynamicFeeTypes = [] }) => {
               )
               .filter(Boolean)
           ),
-        ].sort((a, b) => {
-          const n1 = parseInt(a, 10);
-          const n2 = parseInt(b, 10);
-          if (!Number.isNaN(n1) && !Number.isNaN(n2)) return n1 - n2;
-          if (!Number.isNaN(n1)) return -1;
-          if (!Number.isNaN(n2)) return 1;
-          return a.localeCompare(b);
-        });
+        ]);
 
         const sectionsArray = Array.isArray(sectionRes.data) ? sectionRes.data : [];
         setClassList(normalizedClasses);
@@ -364,13 +412,34 @@ const submitModalFeeEntries = async (e) => {
   const getBaseAmountForFeeType = (feeType) => {
     if (!feeType) return 0;
     const lower = feeType.toLowerCase();
-    if (lower.includes("tuition")) return fees.tuition || 0;
-    if (lower.includes("admission")) return fees.admission || 0;
-    if (lower.includes("book")) return fees.book || 0;
-    if (lower.includes("uniform")) return fees.uniform || 0;
-    if (lower.includes("exam")) return fees.exam || 0;
-    if (lower.includes("other")) return fees.other || 0;
-    if (lower.includes("bus")) return fees.bus || 0;
+    if (lower.includes("tuition")) {
+      console.log("[Discounts] base amount resolved", { feeType, source: "static:tuition", amount: fees.tuition || 0 });
+      return fees.tuition || 0;
+    }
+    if (lower.includes("admission")) {
+      console.log("[Discounts] base amount resolved", { feeType, source: "static:admission", amount: fees.admission || 0 });
+      return fees.admission || 0;
+    }
+    if (lower.includes("book")) {
+      console.log("[Discounts] base amount resolved", { feeType, source: "static:book", amount: fees.book || 0 });
+      return fees.book || 0;
+    }
+    if (lower.includes("uniform")) {
+      console.log("[Discounts] base amount resolved", { feeType, source: "static:uniform", amount: fees.uniform || 0 });
+      return fees.uniform || 0;
+    }
+    if (lower.includes("exam")) {
+      console.log("[Discounts] base amount resolved", { feeType, source: "static:exam", amount: fees.exam || 0 });
+      return fees.exam || 0;
+    }
+    if (lower.includes("other")) {
+      console.log("[Discounts] base amount resolved", { feeType, source: "static:other", amount: fees.other || 0 });
+      return fees.other || 0;
+    }
+    if (lower.includes("bus")) {
+      console.log("[Discounts] base amount resolved", { feeType, source: "static:bus", amount: fees.bus || 0 });
+      return fees.bus || 0;
+    }
 
     const selectedBase = normalizeFeeColumnBase(feeType);
     const matchingDynamicFee = resolvedDynamicFeeTypes.find((fee) => {
@@ -396,10 +465,25 @@ const submitModalFeeEntries = async (e) => {
       for (const key of candidateKeys) {
         const value = feeStructure?.[key];
         const parsed = Number(String(value ?? "").replace(/,/g, ""));
-        if (Number.isFinite(parsed) && parsed >= 0) return parsed;
+        if (Number.isFinite(parsed) && parsed >= 0) {
+          console.log("[Discounts] base amount resolved", {
+            feeType,
+            source: "dynamic",
+            matchedFee: matchingDynamicFee,
+            key,
+            amount: parsed,
+          });
+          return parsed;
+        }
       }
     }
 
+    console.log("[Discounts] base amount resolved", {
+      feeType,
+      source: "not-found",
+      amount: 0,
+      feeStructureKeys: Object.keys(feeStructure || {}),
+    });
     return 0;
   };
 
@@ -533,6 +617,13 @@ const submitModalFeeEntries = async (e) => {
     const updatedEntries = [...modalFeeEntries];
     updatedEntries[index][field] = value;
     setModalFeeEntries(updatedEntries);
+    console.log("[Discounts] modal fee entry changed", {
+      index,
+      field,
+      value,
+      currentEntry: updatedEntries[index],
+      allEntries: updatedEntries,
+    });
   };
  
  const [studentDiscount, setStudentDiscount] = useState(null);
@@ -557,18 +648,28 @@ const submitModalFeeEntries = async (e) => {
     });
   };
 
-  const feeTypeOptions = [
-    ...STATIC_FEE_OPTIONS,
-    ...resolvedDynamicFeeTypes.map((fee) => ({
-      label: fee.feeName,
-      value: fee.feeName,
-    })),
-  ].filter((option, index, self) => {
-    const normalizedValue = String(option.value || "").trim().toLowerCase();
-    return (
-      normalizedValue &&
-      index === self.findIndex((item) => String(item.value || "").trim().toLowerCase() === normalizedValue)
-    );
+  const dynamicFeeTypeOptions = [
+    ...new Map(
+      resolvedDynamicFeeTypes
+        .map((fee) => {
+          const value = String(fee?.columnBase || fee?.feeName || fee?.feesType || "").trim();
+          if (!value) return null;
+          return [
+            value.toLowerCase(),
+            {
+              label: fee?.feeName || fee?.feesType || value,
+              value,
+            },
+          ];
+        })
+        .filter(Boolean)
+    ).values(),
+  ].sort((a, b) => String(a.label).localeCompare(String(b.label), undefined, { numeric: true, sensitivity: "base" }));
+
+  console.log("[Discounts] dynamic fee options loaded", {
+    schoolCode,
+    resolvedDynamicFeeTypes,
+    dynamicFeeTypeOptions,
   });
 
 return (
@@ -721,11 +822,15 @@ return (
 
                     <select className="btn-dropdown-FeesManagement" value={entry.feeType} onChange={e=>handleModalFeeEntryChanges(index,'feeType',e.target.value)} required>
                       <option value="">Fee Type</option>
-                      {feeTypeOptions.map((option) => (
-                        <option key={option.value} value={option.value}>
-                          {option.label}
-                        </option>
-                      ))}
+                      {dynamicFeeTypeOptions.length > 0 && (
+                        <optgroup label="Dynamic Fee Types">
+                          {dynamicFeeTypeOptions.map((option) => (
+                            <option key={option.value} value={option.value}>
+                              {option.label}
+                            </option>
+                          ))}
+                        </optgroup>
+                      )}
                     </select></div>
                     {entry.feeType && (entry.reason==='Other' ? 
 
@@ -737,7 +842,9 @@ return (
                         <option value="">Reason</option>
                         <option value="Staff Concession">Staff</option>
                         <option value="VIP Concession">VIP</option>
-                        <option value="SC/ST Concession">SC/ST</option>
+                        <option value="caste/Religion">caste/Religion</option>
+                       <option value="Parent Concession">Parent</option>
+
                         <option value="Sibling Concession">Sibling</option>
                         <option value="Other">Other</option>
                       </select></div>

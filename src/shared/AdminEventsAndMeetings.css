@@ -1176,6 +1176,36 @@
   min-width: 0;
 }
 
+.admin-events-livechat,
+.admin-events-livechat .accountant-card-header,
+.admin-events-livechat .admin-events-card-header,
+.admin-events-livechat .admin-events-chat-meta,
+.admin-events-livechat .admin-events-chat-section {
+  align-items: flex-start;
+  text-align: left;
+}
+
+.admin-events-livechat .accountant-card-filters {
+  align-self: flex-end;
+}
+
+.admin-events-livechat .admin-events-chat-meta {
+  justify-content: flex-end;
+  margin-left: auto;
+}
+
+.admin-events-livechat .admin-events-chat-count {
+  margin-left: auto;
+  justify-content: flex-end;
+}
+
+.admin-events-chat-section,
+.admin-events-chat-item,
+.admin-events-assistant-item {
+  justify-items: flex-start;
+  text-align: left;
+}
+
 .admin-events-footer-item {
   display: grid;
   gap: 0.18rem;

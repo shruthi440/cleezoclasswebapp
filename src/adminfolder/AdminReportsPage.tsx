@@ -1,20 +1,19 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import axios from "axios";
-import { FaUser } from "react-icons/fa";
+import { FaArrowDown, FaArrowUp, FaBook, FaClock, FaFileAlt, FaTrophy, FaUser, FaUserClock, FaCheckCircle } from "react-icons/fa";
 import "./AdminReportsPage.css";
 import "./AdminDashboardNew.css";
 import "../frontdeskdahboard/FrontDesk.css";
 import EditableProfileMenu from "../shared/EditableProfileMenu.jsx";
+import InstituteBrand from "../shared/InstituteBrand.jsx";
+import { resolveInstituteDisplayName } from "../shared/instituteNameUtils";
 
 import dashboardIcon from "../assets/Dashboard.png";
 import academicsIcon from "../assets/Staff Assign.png";
 import leadProfileIcon from "../assets/Lead Profile.png";
 import enrollmentIcon from "../assets/Enrollment.png";
 import reportsIcon from "../assets/Reports .png";
-import timelineIcon from "../assets/Timeline.png";
-import followupIcon from "../assets/Profile.png";
-import assistantIcon from "../assets/Assistant.png";
 import communicationIcon from "../assets/Communication Assign.png";
 
 const API_BASE = "https://cleezoclass.com:4000/api";
@@ -51,6 +50,31 @@ type TopperRow = {
   total_tests: number;
 };
 
+type LatecomerRow = {
+  id: string | number;
+  name: string;
+  date: string;
+  time: string;
+  loginTime: string;
+  status: string;
+};
+
+type LeaveRequestRow = {
+  id: string | number;
+  name: string;
+  dates: string;
+  reason: string;
+  status: string;
+};
+
+type UnarrivedTeacherRow = {
+  id: string | number;
+  name: string;
+  absent_days: number | string;
+};
+
+type DetailView = "teacherAttendance" | "leaveRequests" | "latecomers" | null;
+
 const sidebarItems = [
   { key: "dashboard", label: "Dashboard", icon: dashboardIcon, route: "/AdminDashboard" },
   { key: "academics", label: "Academics", icon: academicsIcon, route: "/AdiminAcademicsNew" },
@@ -61,11 +85,11 @@ const sidebarItems = [
 ];
 
 const quickCards = [
-  { key: "attendance" as const, title: "Attendance", subtitle: "Class wise attendance list", icon: timelineIcon },
-  { key: "marks" as const, title: "Academic Marks", subtitle: "Student marks list", icon: academicsIcon },
-  { key: "topper" as const, title: "Topper List", subtitle: "Highest average performers", icon: assistantIcon },
-  { key: "low" as const, title: "Low Performance", subtitle: "Below 40 marks", icon: followupIcon },
-  { key: "high" as const, title: "High Performance", subtitle: "80+ marks", icon: communicationIcon },
+  { key: "attendance" as const, title: "Attendance", subtitle: "Class wise attendance list", icon: <FaCheckCircle /> },
+  { key: "marks" as const, title: "Academic Marks", subtitle: "Student marks list", icon: <FaBook /> },
+  { key: "topper" as const, title: "Topper List", subtitle: "Highest average performers", icon: <FaTrophy /> },
+  { key: "low" as const, title: "Low Performance", subtitle: "Below 40 marks", icon: <FaArrowDown /> },
+  { key: "high" as const, title: "High Performance", subtitle: "80+ marks", icon: <FaArrowUp /> },
 ];
 
 const monthOptions = (() => {
@@ -98,6 +122,25 @@ const normalizeText = (value: unknown) => String(value ?? "").trim().toLowerCase
 const matchesSearch = (text: string, search: string) =>
   !search || normalizeText(text).includes(normalizeText(search));
 
+const isTimeLikeValue = (value: unknown) => {
+  const text = String(value ?? "").trim();
+  if (!text) return false;
+  const lower = text.toLowerCase();
+  if (["pending", "approved", "rejected", "fever", "sick", "other", "n/a", "na", "-"].includes(lower)) return false;
+  return (
+    /^\d{1,2}:\d{2}(:\d{2})?\s?(am|pm)?$/i.test(text) ||
+    /^\d{1,2}:\d{2}(:\d{2})?$/.test(text) ||
+    /^\d{1,2}[/-]\d{1,2}[/-]\d{2,4}$/.test(text)
+  );
+};
+
+const pickLateTimeValue = (...values: unknown[]) => {
+  for (const value of values) {
+    if (isTimeLikeValue(value)) return String(value).trim();
+  }
+  return "-";
+};
+
 const AdminReportsPage: React.FC = () => {
   const navigate = useNavigate();
   const [activeSidebar, setActiveSidebar] = useState("reports");
@@ -118,6 +161,12 @@ const AdminReportsPage: React.FC = () => {
   const [error, setError] = useState("");
   const [attendanceRows, setAttendanceRows] = useState<AttendanceRow[]>([]);
   const [marksRows, setMarksRows] = useState<MarksRow[]>([]);
+  const [hrLoading, setHrLoading] = useState(false);
+  const [latecomers, setLatecomers] = useState<LatecomerRow[]>([]);
+  const [leaveRequests, setLeaveRequests] = useState<LeaveRequestRow[]>([]);
+  const [unarrivedTeachers, setUnarrivedTeachers] = useState<UnarrivedTeacherRow[]>([]);
+  const [teacherAbsentCount, setTeacherAbsentCount] = useState(0);
+  const [activeDetailView, setActiveDetailView] = useState<DetailView>(null);
 
   useEffect(() => {
     const schoolCode = localStorage.getItem("schoolCode");
@@ -129,12 +178,29 @@ const AdminReportsPage: React.FC = () => {
       .then((data) => {
         if (cancelled) return;
         setSchoolLogo(data?.logo || "/default-logo.png");
-        setSchoolName(data?.institute_name || data?.schoolName || data?.name || schoolCode || "Institute");
+        const resolvedSchoolName = resolveInstituteDisplayName({
+          apiInstituteName: data?.institute_name || data?.instituteName || data?.school_name || data?.name || data?.schoolName,
+          storedSchoolName: localStorage.getItem("schoolName"),
+          storedInstituteName: localStorage.getItem("instituteName"),
+          schoolCode,
+          fallback: "Institute",
+        });
+        setSchoolName(resolvedSchoolName);
+        localStorage.setItem("schoolName", resolvedSchoolName);
+        localStorage.setItem("instituteName", resolvedSchoolName);
       })
       .catch(() => {
         if (cancelled) return;
         setSchoolLogo("/default-logo.png");
-        setSchoolName(schoolCode || "Institute");
+        const fallbackSchoolName = resolveInstituteDisplayName({
+          storedSchoolName: localStorage.getItem("schoolName"),
+          storedInstituteName: localStorage.getItem("instituteName"),
+          schoolCode,
+          fallback: "Institute",
+        });
+        setSchoolName(fallbackSchoolName);
+        localStorage.setItem("schoolName", fallbackSchoolName);
+        localStorage.setItem("instituteName", fallbackSchoolName);
       });
 
     return () => {
@@ -249,6 +315,78 @@ const AdminReportsPage: React.FC = () => {
   }, [selectedClass, selectedSection, selectedMonth]);
 
   useEffect(() => {
+    const schoolCode = localStorage.getItem("schoolCode");
+    if (!schoolCode) return;
+
+    let cancelled = false;
+
+    const loadHrSummary = async () => {
+      setHrLoading(true);
+      try {
+        const today = new Date().toISOString().split("T")[0];
+        const [latecomersRes, leaveRequestsRes, unarrivedRes] = await Promise.all([
+          axios.get(`${API_BASE}/latecomers/today`, { params: { schoolCode } }).catch(() => ({ data: [] })),
+          axios.get(`${API_BASE}/leave-requests/all`, { params: { schoolCode } }).catch(() => ({ data: [] })),
+          axios.get(`${API_BASE}/teachers_attendance/unarrived`, { params: { date: today, schoolCode } }).catch(() => ({ data: [] })),
+        ]);
+
+        const latecomerRows = Array.isArray(latecomersRes.data)
+          ? latecomersRes.data
+              .filter((record) => String(record?.Login_time || "") > String(record?.time || ""))
+              .map((record) => ({
+                id: record?.id ?? `${record?.username || "late"}-${record?.date || ""}`,
+                name: record?.username || record?.teacherName || record?.name || "-",
+                date: String(record?.date || "-"),
+                time: pickLateTimeValue(record?.time, record?.Logout_time, record?.logoutTime),
+                loginTime: pickLateTimeValue(record?.Login_time, record?.loginTime),
+                status: record?.status || "Late",
+              }))
+          : [];
+
+        const leaveRequestRows = Array.isArray(leaveRequestsRes.data)
+          ? leaveRequestsRes.data.map((req) => ({
+              id: req?.teacherId ?? req?.id ?? `${req?.teacherName || "leave"}-${req?.leaveDates || ""}`,
+              name: req?.teacherName || req?.name || "-",
+              dates: req?.leaveDates || req?.dates || "-",
+              reason: req?.reason || "-",
+              status: req?.status || "pending",
+            }))
+          : [];
+
+        if (cancelled) return;
+        setLatecomers(latecomerRows);
+        setLeaveRequests(leaveRequestRows);
+        setUnarrivedTeachers(
+          Array.isArray(unarrivedRes.data)
+            ? unarrivedRes.data.map((teacher) => ({
+                id: teacher?.id ?? teacher?.teacherId ?? teacher?.username ?? teacher?.name ?? `${teacher?.username || "teacher"}-${teacher?.absent_days || 0}`,
+                name: teacher?.username || teacher?.teacherName || teacher?.name || "-",
+                absent_days: teacher?.absent_days ?? teacher?.absentDays ?? teacher?.late_count ?? 0,
+              }))
+            : []
+        );
+        setTeacherAbsentCount(Array.isArray(unarrivedRes.data) ? unarrivedRes.data.length : 0);
+      } catch (hrError) {
+        if (cancelled) return;
+        setLatecomers([]);
+        setLeaveRequests([]);
+        setUnarrivedTeachers([]);
+        setTeacherAbsentCount(0);
+      } finally {
+        if (!cancelled) {
+          setHrLoading(false);
+        }
+      }
+    };
+
+    loadHrSummary();
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
       if (userDropdownRef.current && !userDropdownRef.current.contains(event.target as Node)) {
         setUserDropdownOpen(false);
@@ -357,6 +495,7 @@ const AdminReportsPage: React.FC = () => {
   );
 
   const visibleRows = useMemo(() => {
+    if (activeDetailView) return [];
     switch (activeReport) {
       case "marks":
         return filteredMarksRows;
@@ -370,7 +509,7 @@ const AdminReportsPage: React.FC = () => {
       default:
         return filteredAttendanceRows;
     }
-  }, [activeReport, filteredAttendanceRows, filteredMarksRows, highRows, lowRows, topperRows]);
+  }, [activeDetailView, activeReport, filteredAttendanceRows, filteredMarksRows, highRows, lowRows, topperRows]);
 
   const attendanceAverage = useMemo(() => {
     if (!filteredAttendanceRows.length) return 0;
@@ -381,6 +520,39 @@ const AdminReportsPage: React.FC = () => {
     if (!filteredMarksRows.length) return 0;
     return filteredMarksRows.reduce((sum, row) => sum + Number(row.marks || 0), 0) / filteredMarksRows.length;
   }, [filteredMarksRows]);
+
+  const leaveRequestCounts = useMemo(() => {
+    const normalizedStatus = (value: string) => value.trim().toLowerCase();
+    return leaveRequests.reduce(
+      (acc, request) => {
+        const status = normalizedStatus(request.status);
+        if (status === "pending") acc.pending += 1;
+        else if (status === "approved" || status === "accept" || status === "accepted") acc.approved += 1;
+        else if (status === "rejected" || status === "declined" || status === "deny" || status === "denied") acc.rejected += 1;
+        else acc.pending += 1;
+        return acc;
+      },
+      { pending: 0, approved: 0, rejected: 0 }
+    );
+  }, [leaveRequests]);
+
+  const teacherAttendanceSummary = useMemo(() => {
+    const late = latecomers.length;
+    const leaves = leaveRequestCounts.pending;
+    const absent = teacherAbsentCount;
+    return { late, leaves, absent };
+  }, [latecomers.length, leaveRequestCounts.pending, teacherAbsentCount]);
+
+  const activeTableTitle = useMemo(() => {
+    if (activeDetailView === "teacherAttendance") return "Teacher Attendance List";
+    if (activeDetailView === "leaveRequests") return "Leave Requests";
+    if (activeDetailView === "latecomers") return "Late Comers";
+    if (activeReport === "attendance") return "Attendance List";
+    if (activeReport === "marks") return "Academic Marks List";
+    if (activeReport === "topper") return "Topper List";
+    if (activeReport === "low") return "Low Performance Top 10";
+    return "High Performance Top 10";
+  }, [activeDetailView, activeReport]);
 
 
 
@@ -397,6 +569,109 @@ const AdminReportsPage: React.FC = () => {
   const renderTable = () => {
     if (loading) {
       return <div className="admin-reports-empty-state">Loading reports...</div>;
+    }
+
+    if (activeDetailView === "teacherAttendance") {
+      return (
+        <table className="admin-reports-table">
+          <thead>
+            <tr>
+              <th>ID</th>
+              <th>Teacher Name</th>
+              <th>Absences This Month</th>
+            </tr>
+          </thead>
+          <tbody>
+            {unarrivedTeachers.length > 0 ? (
+              unarrivedTeachers.map((teacher) => (
+                <tr key={String(teacher.id)}>
+                  <td>{teacher.id}</td>
+                  <td>{teacher.name}</td>
+                  <td>{teacher.absent_days}</td>
+                </tr>
+              ))
+            ) : (
+              <tr>
+                <td colSpan={3} className="admin-reports-empty-cell">
+                  No unarrived teachers found.
+                </td>
+              </tr>
+            )}
+          </tbody>
+        </table>
+      );
+    }
+
+    if (activeDetailView === "leaveRequests") {
+      return (
+        <table className="admin-reports-table">
+          <thead>
+            <tr>
+              <th>ID</th>
+              <th>Name</th>
+              <th>Dates</th>
+              <th>Reason</th>
+              <th>Status</th>
+            </tr>
+          </thead>
+          <tbody>
+            {leaveRequests.length > 0 ? (
+              leaveRequests.map((request) => (
+                <tr key={String(request.id)}>
+                  <td>{request.id}</td>
+                  <td>{request.name}</td>
+                  <td>{request.dates}</td>
+                  <td>{request.reason}</td>
+                  <td>{request.status}</td>
+                </tr>
+              ))
+            ) : (
+              <tr>
+                <td colSpan={5} className="admin-reports-empty-cell">
+                  No leave requests found.
+                </td>
+              </tr>
+            )}
+          </tbody>
+        </table>
+      );
+    }
+
+    if (activeDetailView === "latecomers") {
+      return (
+        <table className="admin-reports-table">
+          <thead>
+            <tr>
+              <th>ID</th>
+              <th>Name</th>
+              <th>Date</th>
+              <th>Time</th>
+              <th>Login Time</th>
+              <th>Status</th>
+            </tr>
+          </thead>
+          <tbody>
+            {latecomers.length > 0 ? (
+              latecomers.map((person) => (
+                <tr key={String(person.id)}>
+                  <td>{person.id}</td>
+                  <td>{person.name}</td>
+                  <td>{person.date}</td>
+                  <td>{person.time}</td>
+                  <td>{person.loginTime}</td>
+                  <td>{person.status}</td>
+                </tr>
+              ))
+            ) : (
+              <tr>
+                <td colSpan={5} className="admin-reports-empty-cell">
+                  No late comers found today.
+                </td>
+              </tr>
+            )}
+          </tbody>
+        </table>
+      );
     }
 
     if (!visibleRows.length) {
@@ -573,8 +848,11 @@ const AdminReportsPage: React.FC = () => {
             </div>
 
             <div className="dashboard-topbar-center accountant-topbar-center">
-              <img src={schoolLogo || "/default-logo.png"} alt={schoolName || "School Logo"} className="accountant-school-logo" />
-              <span style={{ fontWeight: 700, marginLeft: "0.4rem" }}>{schoolName || "Unknown School"}</span>
+              <InstituteBrand
+                logoSrc={schoolLogo || "/default-logo.png"}
+                logoAlt={schoolName || "School Logo"}
+                instituteName={schoolName || "Unknown School"}
+              />
             </div>
 
             <div className="dashboard-topbar-right accountant-topbar-right">
@@ -645,18 +923,62 @@ const AdminReportsPage: React.FC = () => {
 
         
 
-            <div className="accountant-reports-card-row">
-              {quickCards.map((card) => {
-                const isActive = activeReport === card.key;
+            <div className="accountant-reports-card-row admin-reports-all-cards-row">
+              {[
+                ...quickCards.map((card) => ({
+                  key: card.key,
+                  title: card.title,
+                  subtitle: card.subtitle,
+                  icon: card.icon,
+                  kind: "report" as const,
+                })),
+                {
+                  key: "teacherAttendance",
+                  title: "Teacher Attendance",
+                  subtitle: hrLoading ? "Loading..." : `${teacherAttendanceSummary.late + teacherAttendanceSummary.leaves + teacherAttendanceSummary.absent} records`,
+                  icon: <FaUserClock />,
+                  kind: "detail" as const,
+                },
+                {
+                  key: "leaveRequests",
+                  title: "Leave Requests",
+                  subtitle: hrLoading ? "Loading..." : `${leaveRequests.length} records`,
+                  icon: <FaFileAlt />,
+                  kind: "detail" as const,
+                },
+                {
+                  key: "latecomers",
+                  title: "Late Comers",
+                  subtitle: hrLoading ? "Loading..." : `${latecomers.length} records`,
+                  icon: <FaClock />,
+                  kind: "detail" as const,
+                },
+              ].map((card) => {
+                const isActive =
+                  card.kind === "report"
+                    ? activeDetailView === null && activeReport === card.key
+                    : activeDetailView === card.key;
+
                 return (
                   <button
-                    key={card.key}
+                    key={String(card.key)}
                     type="button"
-                    className={`accountant-reports-card ${isActive ? "accountant-reports-card-active" : ""}`}
-                    onClick={() => setActiveReport(card.key)}
+                    className={`accountant-reports-card admin-reports-hr-card ${isActive ? "accountant-reports-card-active admin-reports-hr-card-active" : ""}`}
+                    onClick={() => {
+                      if (card.kind === "report") {
+                        setActiveDetailView(null);
+                        setActiveReport(card.key as ReportType);
+                      } else {
+                        setActiveDetailView(card.key as DetailView);
+                      }
+                    }}
                   >
                     <div className="accountant-reports-card-icon">
-                      <img src={card.icon} alt={card.title} />
+                      {typeof card.icon === "string" ? (
+                        <img src={card.icon} alt={card.title} />
+                      ) : (
+                        <span className="admin-reports-hr-icon">{card.icon}</span>
+                      )}
                     </div>
                     <div className="accountant-reports-card-title">{card.title}</div>
                     <div className="accountant-reports-card-subtitle">{card.subtitle}</div>
@@ -668,15 +990,15 @@ const AdminReportsPage: React.FC = () => {
             <div className="accountant-reports-table-card">
               <div className="accountant-reports-toolbar">
                 <div>
-                  <strong>{activeReport === "attendance" ? "Attendance List" : activeReport === "marks" ? "Academic Marks List" : activeReport === "topper" ? "Topper List" : activeReport === "low" ? "Low Performance Top 10" : "High Performance Top 10"}</strong>
+                  <strong>{activeTableTitle}</strong>
                   <p>
-                    {selectedClass === "All" ? "All classes" : selectedClass}
-                    {selectedSection !== "All" ? `, Section ${selectedSection}` : ""}
-                    {selectedMonth ? `, ${selectedMonth}` : ""}
+                    {activeDetailView
+                      ? "HR summary"
+                      : `${selectedClass === "All" ? "All classes" : selectedClass}${selectedSection !== "All" ? `, Section ${selectedSection}` : ""}${selectedMonth ? `, ${selectedMonth}` : ""}`}
                   </p>
                 </div>
                 <div className="accountant-reports-toolbar-meta">
-                  <span>{visibleRows.length} rows</span>
+                  <span>{activeDetailView === "teacherAttendance" ? unarrivedTeachers.length : activeDetailView === "leaveRequests" ? leaveRequests.length : activeDetailView === "latecomers" ? latecomers.length : visibleRows.length} rows</span>
                 </div>
               </div>
 
