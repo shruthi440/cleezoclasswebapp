@@ -20,7 +20,7 @@ import {
 import ErrorPopup from '../shared/ErrorPopup';
     const API_BASE = 'https://cleezoclass.com:4000/api/'; // Match your backend PORT
 
-const ExamDashboard = () => {
+const ExamDashboard = ({ compactMode = false } = {}) => {
   const [popup, setPopup] = useState({ message: "", type: "" });
 
   // --- State for Question Paper Generator ---
@@ -1484,7 +1484,7 @@ const isLargeMonitor = window.innerWidth > 1440;
 const [showQuestionPopup, setShowQuestionPopup] = useState(false);
 
 return (
-  <div className={`staff-page-container ${isMobile ? "staff-mobile" : isLaptop ? "staff-laptop" : ""}`}>
+  <div className={`staff-page-container ${compactMode ? "staff-compact-page" : ""} ${isMobile ? "staff-mobile" : isLaptop ? "staff-laptop" : ""}`}>
     {/* ===== HEADER (Outside Scroll) ===== */}
       <div className="footprintsinner">Operations – Academic – Staff</div>
 

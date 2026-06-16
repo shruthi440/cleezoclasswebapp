@@ -4,6 +4,7 @@ import "./dashboardGlobal.css";
 
 
 
+
 const joinClasses = (...classes) => classes.filter(Boolean).join(" ");
 
 const renderAction = (item, className, children) => {
@@ -35,10 +36,12 @@ const DashboardLayout = ({
 
   pageClassName = "",
   sidebarItems = [],
+  sidebarTopAction = null,
   topbarTabs = [],
   logoSrc,
   logoAlt = "Logo",
   instituteName = "",
+  instituteNameMode = "split",
   topbarRight = null,
 lockViewport = false,
 
@@ -91,7 +94,46 @@ lockViewport = false,
       className={joinClasses("dashboard-page", pageClassName)}
 
     >
-      <div className="dashboard-shell accountant-dashboard-shell">
+      <div className="dashboard-shell accountant-dashboard-shell" style={{ position: "relative"}}>
+        {sidebarTopAction ? (
+          <div
+            style={{
+              position: "absolute",
+              top: "calc(50% - 15.5rem - 1.1rem - 3px)",
+              left: "0.65rem",
+              zIndex: 2,
+              overflow:"visible",
+            }}
+          >
+            <button
+              type="button"
+              onClick={sidebarTopAction.onClick}
+              className="dashboard-sidebar-top-action"
+              style={{
+                display: "inline-flex",
+                alignItems: "center",
+                padding: 0,
+                margin: 0,
+                border: 0,
+                outline: 0,
+                appearance: "none",
+                background: "transparent",
+                boxShadow: "none",
+                color: "#111111",
+                fontSize: "0.82rem",
+                fontWeight: 700,
+                textDecoration: "underline",
+                textDecorationColor: "#f36b79",
+                textUnderlineOffset: "0.18rem",
+                whiteSpace: "nowrap",
+                cursor: "pointer",
+              }}
+            >
+              {sidebarTopAction.label || "Chief Dashboard"}
+            </button>
+          </div>
+        ) : null}
+
         <aside className="dashboard-sidebar accountant-sidebar-strip">
           {sidebarItems.map((item) =>
             renderAction(
@@ -139,16 +181,22 @@ lockViewport = false,
                   />
                 ) : null}
                 {normalizedInstituteName ? (
-                  <span className="dashboard-school-name accountant-school-name">
-                    <span className="dashboard-school-name-line dashboard-school-name-line-primary">
-                      {instituteNameFirstLine}
+                  instituteNameMode === "single" ? (
+                    <span className="dashboard-school-name accountant-school-name dashboard-school-name-single">
+                      {normalizedInstituteName}
                     </span>
-                    {instituteNameSecondLine ? (
-                      <span className="dashboard-school-name-line dashboard-school-name-line-secondary">
-                        {instituteNameSecondLine}
+                  ) : (
+                    <span className="dashboard-school-name accountant-school-name">
+                      <span className="dashboard-school-name-line dashboard-school-name-line-primary">
+                        {instituteNameFirstLine}
                       </span>
-                    ) : null}
-                  </span>
+                      {instituteNameSecondLine ? (
+                        <span className="dashboard-school-name-line dashboard-school-name-line-secondary">
+                          {instituteNameSecondLine}
+                        </span>
+                      ) : null}
+                    </span>
+                  )
                 ) : null}
               </div>
             </div>
@@ -161,12 +209,12 @@ lockViewport = false,
       </div>
 
       {footerLogoSrc ? (
-        <div className="dashboard-footer-brand accountant-footer-brand">
+        <div className="accountant-footer-brand">
           <span>{footerText}</span>
           <img
             src={footerLogoSrc}
             alt={footerLogoAlt}
-            className="dashboard-footer-logo accountant-footer-logo"
+            className="accountant-footer-logo"
           />
         </div>
       ) : null}

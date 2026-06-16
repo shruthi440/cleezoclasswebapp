@@ -248,6 +248,7 @@ font-weight: 600;
   justify-content: center;
   align-items: center;
   min-height: 4.5rem;
+  overflow: hidden;
 }
 
 .dashboard-school-brand {
@@ -255,16 +256,17 @@ font-weight: 600;
   align-items: center;
   gap: 0.78rem;
   min-width: 0;
-  height: 4.4rem;
-  max-height: 4.4rem;
+  height: 3.7rem;
+  max-height: 3.7rem;
+  overflow: hidden;
 }
 
 .dashboard-school-logo {
-  width: 4.4rem;
-  height: 4.4rem;
+  width: auto;
+  height: 100%;
   max-width: 4.4rem;
-  min-width: 4.4rem;
-  flex: 0 0 4.4rem;
+  min-width: 3rem;
+  flex: 0 0 auto;
   object-fit: contain;
   object-position: center;
   display: block;
@@ -305,6 +307,16 @@ font-weight: 600;
   line-height: 1;
   white-space: nowrap;
   margin-top: 0.05rem;
+}
+
+.dashboard-school-name-single {
+  display: block;
+  width: auto;
+  max-width: 28rem;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  line-height: 1.05;
 }
 
 .dashboard-topbar-right {
@@ -679,6 +691,69 @@ height: ;
   font-size: 1.12rem;
   font-weight: 700;
   color: var(--dashboard-text);
+}
+
+.dashboard-page .admin-events-livechat,
+.dashboard-page .admin-academics-storepo,
+.dashboard-page .tt-academics-storepo,
+.dashboard-page .admission-livechat-card {
+  text-align: left;
+  align-items: flex-start;
+}
+
+.dashboard-page .admin-events-livechat .accountant-card-header,
+.dashboard-page .admin-events-livechat .admin-events-card-header,
+.dashboard-page .admin-academics-storepo .admin-academics-side-header,
+.dashboard-page .tt-academics-storepo .tt-academics-side-header,
+.dashboard-page .admission-livechat-card .accountant-card-header {
+  align-items: flex-start;
+}
+
+.dashboard-page .admin-events-livechat .accountant-card-filters,
+.dashboard-page .admin-events-livechat .admin-events-chat-meta,
+.dashboard-page .admission-livechat-card .accountant-card-filters {
+  top: 0;
+  align-self: flex-end;
+  justify-content: flex-end;
+}
+
+.dashboard-page .accountant-card-header .accountant-card-filters,
+.dashboard-page .admin-academics-storepo .accountant-card-filters,
+.dashboard-page .admin-events-livechat .accountant-card-filters,
+.dashboard-page .admission-livechat-card .accountant-card-filters {
+  margin-left: auto;
+  justify-content: flex-end;
+}
+
+.dashboard-page .admin-events-livechat .admin-events-chat-meta,
+.dashboard-page .admin-events-chat-count,
+.dashboard-page .admin-academics-storepo .admin-academics-request-count,
+.dashboard-page .tt-academics-storepo .tt-academics-request-count {
+  justify-self: end;
+  margin-left: auto;
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+}
+
+.dashboard-page .admin-events-chat-meta,
+.dashboard-page .admin-events-chat-section,
+.dashboard-page .admin-events-chat-item,
+.dashboard-page .admin-events-assistant-item,
+.dashboard-page .admin-academics-po-list,
+.dashboard-page .admin-academics-po-item,
+.dashboard-page .admin-academics-assistant-item,
+.dashboard-page .tt-academics-po-list,
+.dashboard-page .tt-academics-po-item,
+.dashboard-page .tt-academics-assistant-item {
+  justify-items: flex-start;
+  text-align: left;
+}
+
+.dashboard-page .admin-events-chat-item,
+.dashboard-page .admin-academics-po-item,
+.dashboard-page .tt-academics-po-item {
+  align-items: center;
 }
 
 .dashboard-page .collect-filter,
@@ -1786,7 +1861,7 @@ height: ;
 }
 
 .dashboard-page.dashboard-home-page .accountant-total-strip-list {
-  grid-template-columns: repeat(5, minmax(0, 1fr));
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 0.16rem;
 }
 
@@ -2196,6 +2271,7 @@ height: ;
   justify-content: center;
   min-height: 4.5rem;
   align-items: center;
+  overflow: hidden;
 }
 
 .accountant-school-brand {
@@ -2203,12 +2279,15 @@ height: ;
   align-items: center;
   gap: 0.5rem;
   min-width: 0;
+  height: 3.7rem;
+  max-height: 3.7rem;
+  overflow: hidden;
 }
 
 .accountant-school-logo {
   width: auto;
   max-width: 6.2rem;
-  height: 3.6rem;
+  height: 100%;
   object-fit: contain;
 }
 
@@ -4042,7 +4121,9 @@ height: ;
   }
 
   .accountant-dashboard-home-page .accountant-school-logo {
-    width: 6.2rem;
+    width: auto;
+    max-width: 6.2rem;
+    height: 100%;
   }
 
   .accountant-dashboard-home-page .accountant-topbar-tab,
@@ -4612,7 +4693,7 @@ position: relative;
 display: grid;
 grid-template-rows: auto minmax(0, 1fr) auto;
 gap: 0.46rem;
-padding: 0.82rem 1.95rem 0.34rem 2.95rem;
+/* padding: 0.82rem 1.95rem 0.34rem 2.95rem; */
 box-sizing:border-box;
 width: 100%;
 overflow: hidden;
@@ -4687,9 +4768,9 @@ font-weight: bold;
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 50px;
+  /* gap: 5px; */
   background-color: #fff;
-  padding: 20px;
+  padding: 10px;
   border-radius: 8px;
   width: 13vw;
 }
@@ -7802,48 +7883,61 @@ font-size:13px
   .frontdesk-dashboard-page .accountant-bottom-right {
     overflow-x: auto !important;
     overflow-y: hidden !important;
+
     -webkit-overflow-scrolling: touch;
     touch-action: pan-x;
     overscroll-behavior-x: contain;
     scroll-snap-type: x proximity;
   }
 }
-
-/* FINAL tablet override: keep dashboard rows horizontally swipeable on iPad/rotated tabs. */
 @media (min-width: 769px) and (max-width: 1366px) {
+
   .frontdesk-dashboard-page .accountant-row-top,
   .frontdesk-dashboard-page .accountant-row-middle,
-  .frontdesk-dashboard-page .accountant-row-bottom,
+  .frontdesk-dashboard-page .accountant-row-bottom {
+    display: grid !important;
+    gap: 0.75rem !important;
+    width: 100% !important;
+    align-items: stretch !important;
+  }
+
+  /* Row 1 */
+  .frontdesk-dashboard-page .accountant-row-top {
+    grid-template-columns: 1fr 1fr 1fr !important;
+  }
+
+  /* Row 2 */
+  .frontdesk-dashboard-page .accountant-row-middle {
+    grid-template-columns: 1fr 1fr 1fr !important;
+  }
+
+  /* Row 3 */
+  .frontdesk-dashboard-page .accountant-row-bottom {
+    grid-template-columns: 1fr 1fr 1fr !important;
+  }
+
   .frontdesk-dashboard-page .accountant-bottom-right {
     display: grid !important;
-    grid-template-columns: none !important;
-    grid-template-rows: none !important;
-    grid-auto-flow: column !important;
-    grid-auto-columns: minmax(18rem, calc((100% - 1rem) / 2)) !important;
+    grid-template-columns: 1fr !important;
     gap: 0.75rem !important;
-    overflow-x: auto !important;
-    overflow-y: hidden !important;
-    -webkit-overflow-scrolling: touch !important;
-    touch-action: pan-x !important;
-    overscroll-behavior-x: contain !important;
-    scroll-snap-type: x proximity !important;
-    scrollbar-width: none !important;
   }
 
-  .frontdesk-dashboard-page .accountant-row-top > *,
-  .frontdesk-dashboard-page .accountant-row-middle > *,
-  .frontdesk-dashboard-page .accountant-row-bottom > *,
-  .frontdesk-dashboard-page .accountant-bottom-right > * {
-    min-width: 18rem !important;
-    scroll-snap-align: start !important;
+  /* Make all cards equal height */
+  .frontdesk-dashboard-page .accountant-card,
+  .frontdesk-dashboard-page .accountant-ticket-card,
+  .frontdesk-dashboard-page .accountant-premium-card,
+  .frontdesk-dashboard-page .accountant-collect-card,
+  .frontdesk-dashboard-page .accountant-feetype-card {
+    min-height: 20px !important;
+    height: 100% !important;
   }
 
-  .frontdesk-dashboard-page .accountant-row-top::-webkit-scrollbar,
-  .frontdesk-dashboard-page .accountant-row-middle::-webkit-scrollbar,
-  .frontdesk-dashboard-page .accountant-row-bottom::-webkit-scrollbar,
-  .frontdesk-dashboard-page .accountant-bottom-right::-webkit-scrollbar {
-    width: 0 !important;
-    height: 0 !important;
+  /* Mini cards */
+  .frontdesk-dashboard-page .accountant-mini-cards {
+    display: grid !important;
+    grid-template-columns: repeat(3, 1fr) !important;
+    gap: 0.5rem !important;
+    height: 80% !important;
   }
 }
 
@@ -8135,30 +8229,51 @@ body::-webkit-scrollbar {
 
 
 
-
-.frontdesk-dashboard-page .accountant-footer-brand {
+.accountant-footer-brand {
   position: absolute;
   left: 50%;
-  bottom: 0.22rem;
+  bottom: -0.6rem;
+
   transform: translateX(-50%);
+
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 0.14rem;
-  font-size: 0.72rem;
+
+  gap: 0.12rem;
+
+  padding: 0.18rem 0.55rem;
+
+  background: rgba(255, 255, 255, 0.08);
+  /* backdrop-filter: blur(8px); */
+
+  border-radius: 18px;
+
+  font-size: 0.58rem;
   color: #d9d9d9;
+
   line-height: 1;
   white-space: nowrap;
-  z-index: 3;
 }
 
-.frontdesk-dashboard-page .accountant-footer-brand span {
+.accountant-footer-brand span {
   color: #d9d9d9;
   font-weight: 500;
+
   display: inline-flex;
   align-items: center;
 }
 
+.accountant-footer-logo {
+  height: 0.8rem;
+  width: auto;
+
+  object-fit: contain;
+  display: block;
+background-color: var(--white);
+  position: relative;
+  top: 0.02rem;
+}
 
 
 
@@ -8609,10 +8724,12 @@ body::-webkit-scrollbar {
 
 
 @media (max-width: 920px) {
+
   .frontdesk-dashboard-page.accountant-dashboard-page {
     height: auto;
     min-height: 100vh;
-    overflow: auto;
+    overflow-x: hidden;
+    overflow-y: auto;
   }
 
   .frontdesk-dashboard-page .accountant-dashboard-shell {
@@ -8622,22 +8739,24 @@ body::-webkit-scrollbar {
     overflow: visible;
   }
 
+
+
   .frontdesk-dashboard-page .accountant-sidebar-strip {
     width: 100%;
     min-width: 0;
     height: auto;
-    align-self: stretch;
+
     flex-direction: row;
     justify-content: flex-start;
+
     gap: 0.85rem;
-    border-radius: 0;
     padding: 0.75rem 1rem;
+
     overflow-x: auto;
     overflow-y: hidden;
   }
 
   .frontdesk-dashboard-page .accountant-sidebar-item {
-    width: auto;
     min-width: 3.1rem;
     flex: 0 0 auto;
   }
@@ -8646,21 +8765,23 @@ body::-webkit-scrollbar {
     display: none;
   }
 
+  /* MAIN */
+
   .frontdesk-dashboard-page .accountant-main-area {
-    padding: 0.9rem 1rem 0.65rem;
+    padding: 0.9rem;
     overflow: visible;
   }
 
   .frontdesk-dashboard-page .accountant-grid {
-    grid-template-rows: auto;
-    overflow: visible;
+    display: flex;
+    flex-direction: column;
     gap: 0.75rem;
-    padding-right: 0;
   }
+
+  /* TOPBAR */
 
   .frontdesk-dashboard-page .accountant-topbar {
     grid-template-columns: 1fr;
-    justify-items: center;
     gap: 0.8rem;
   }
 
@@ -8668,14 +8789,10 @@ body::-webkit-scrollbar {
   .frontdesk-dashboard-page .accountant-topbar-right {
     width: 100%;
     justify-content: center;
-    flex-wrap: nowrap !important;
   }
 
   .frontdesk-dashboard-page .accountant-topbar-left {
-    justify-content: flex-start;
     overflow-x: auto;
-    overflow-y: hidden;
-    -webkit-overflow-scrolling: touch;
     scrollbar-width: none;
   }
 
@@ -8683,128 +8800,128 @@ body::-webkit-scrollbar {
     display: none;
   }
 
-  .frontdesk-dashboard-page .accountant-row-top,
-  .frontdesk-dashboard-page .accountant-row-middle,
-  .frontdesk-dashboard-page .accountant-row-bottom,
-  .frontdesk-dashboard-page .accountant-bottom-right {
-    grid-template-columns: 1fr;
-    grid-template-rows: none;
+  /* =========================
+     TOP ROW
+  ========================= */
+
+  .frontdesk-dashboard-page .accountant-row-top {
+    display: flex;
+    overflow-x: auto;
     gap: 0.75rem;
+    scrollbar-width: none;
   }
 
+  .frontdesk-dashboard-page .accountant-row-top::-webkit-scrollbar {
+    display: none;
+  }
+
+  .frontdesk-dashboard-page .accountant-row-top > * {
+    flex: 0 0 85%;
+    min-width: 85%;
+  }
+
+  /* =========================
+     MIDDLE ROW
+  ========================= */
+
+  .frontdesk-dashboard-page .accountant-row-middle {
+    display: flex !important;
+    flex-direction: row !important;
+
+    gap: 0.75rem !important;
+
+    overflow-x: auto !important;
+    overflow-y: hidden !important;
+
+    padding-bottom: 1rem !important;
+    padding-right: 2rem !important;
+
+    scroll-snap-type: x mandatory !important;
+
+    scrollbar-width: none !important;
+    -webkit-overflow-scrolling: touch !important;
+  }
+
+  .frontdesk-dashboard-page .accountant-row-middle::-webkit-scrollbar {
+    display: none !important;
+  }
+
+  .frontdesk-dashboard-page .accountant-row-middle > * {
+    flex: 0 0 60% !important;
+    min-width: 60% !important;
+
+    scroll-snap-align: start !important;
+  }
+
+  .frontdesk-dashboard-page .accountant-row-middle > *:last-child {
+    margin-right: 2rem !important;
+  }
+
+  /* =========================
+     BOTTOM ROW
+  ========================= */
+
+  .frontdesk-dashboard-page .accountant-row-bottom {
+    display: flex;
+    overflow-x: auto;
+    gap: 0.75rem;
+    scrollbar-width: none;
+  }
+
+  .frontdesk-dashboard-page .accountant-row-bottom::-webkit-scrollbar {
+    display: none;
+  }
+
+  .frontdesk-dashboard-page .accountant-row-bottom > * {
+    flex: 0 0 85%;
+    min-width: 85%;
+  }
+
+  /* CARD HEIGHTS */
+
+  .frontdesk-dashboard-page .accountant-collect-card,
+  .frontdesk-dashboard-page .admission-events-card,
+  .frontdesk-dashboard-page .admission-livechat-card {
+    min-height: 520px !important;
+    height: auto !important;
+  }
+
+  .frontdesk-dashboard-page .accountant-ticket-card,
+  .frontdesk-dashboard-page .accountant-premium-card {
+    min-height: 420px !important;
+  }
+
+  /* MINI CARDS */
+
   .frontdesk-dashboard-page .accountant-mini-cards {
-    grid-template-columns: repeat(3, minmax(0, 1fr));
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
     gap: 0.5rem;
+    width: 100%;
   }
 
   .frontdesk-dashboard-page .accountant-quick-card {
     min-height: 7rem;
-    padding: 0.6rem 0.4rem;
+    padding: 0.6rem;
   }
 
-  .frontdesk-dashboard-page .accountant-quick-card h4,
-  .frontdesk-dashboard-page .accountant-quick-card p {
-    white-space: normal;
+  .frontdesk-dashboard-page .accountant-quick-card img {
+    width: 52px;
+    height: 52px;
+    object-fit: contain;
   }
 
-  .frontdesk-dashboard-page .accountant-collect-content {
-    grid-template-columns: 1fr;
-    justify-items: center;
-    text-align: center;
-    gap: 0.75rem;
+  /* STUDENT GRID */
+
+  .frontdesk-dashboard-page .accountant-student-list {
+    grid-template-columns: repeat(2, 1fr);
   }
 
-  .frontdesk-dashboard-page .collect-stats {
-    justify-self: center;
+  .frontdesk-dashboard-page .accountant-ticket-users {
+    grid-template-columns: repeat(3, 1fr);
   }
 
-  .frontdesk-dashboard-page .collect-stats p {
-    justify-content: center;
-    text-align: center;
-  }
-
-  .frontdesk-dashboard-page .accountant-total-due {
-    text-align: center;
-  }
-
-  .frontdesk-dashboard-page .accountant-outstanding-card .co-filter-row,
-  .frontdesk-dashboard-page .accountant-card-header,
-  .frontdesk-dashboard-page .collect-header,
-  .frontdesk-dashboard-page .tickets-header-and-tabs {
-    flex-wrap: wrap;
-    gap: 0.5rem;
-  }
-
-  .frontdesk-dashboard-page .accountant-outstanding-card .Campaigning-lead-grid {
-    grid-template-columns: repeat(3, minmax(0, 1fr));
-    gap: 0.45rem 0.25rem;
-  }
-
-  .frontdesk-dashboard-page .accountant-outstanding-card .Campaigning-lead-name {
-    font-size: 0.68rem;
-    line-height: 1.15;
-    overflow-wrap: anywhere;
-    word-break: break-word;
-  }
-
-  .frontdesk-dashboard-page .accountant-feetype-meta {
-    width: 100%;
-    margin-left: 0;
-    padding-top: 0;
-    justify-content: space-between;
-    align-items: center;
-    flex-wrap: wrap;
-    gap: 0.5rem;
-  }
-
-  .frontdesk-dashboard-page .accountant-feetype-count {
-    margin-top: 0;
-  }
-
-  .frontdesk-dashboard-page .accountant-feetype-card .leadContent {
-    display: grid;
-    grid-template-columns: 3.5rem 1.9rem minmax(0, 1fr);
-    gap: 0.45rem;
-    align-items: start;
-  }
-
-  .frontdesk-dashboard-page .accountant-feetype-card .leadDate {
-    min-width: 0;
-    margin-right: 0;
-    font-size: 0.62rem;
-    line-height: 1.2;
-  }
-
-  .frontdesk-dashboard-page .accountant-feetype-card .leadAvatar {
-    width: 1.8rem;
-    height: 1.8rem;
-    margin-right: 0;
-  }
-
-  .frontdesk-dashboard-page .accountant-feetype-card .leadInfo {
-    min-width: 0;
-    font-size: 0.68rem;
-    line-height: 1.22;
-    overflow-wrap: anywhere;
-    word-break: break-word;
-  }
-
-  .frontdesk-dashboard-page .accountant-feetype-card .leadName {
-    display: block;
-    font-size: 0.74rem;
-    line-height: 1.2;
-    overflow-wrap: anywhere;
-    word-break: break-word;
-  }
-
-  .frontdesk-dashboard-page .accountant-feetype-card .leadConnector {
-    left: 4.5rem;
-  }
-
-  .frontdesk-dashboard-page .accountant-ticket-card .tc-teacherRow,
-  .frontdesk-dashboard-page .accountant-ticket-card .tickets-student-grid {
-    grid-template-columns: repeat(3, minmax(0, 1fr));
-  }
+  /* TOTAL STRIP */
 
   .frontdesk-dashboard-page .accountant-total-strip-list {
     grid-template-columns: 1fr;
@@ -8813,12 +8930,8 @@ body::-webkit-scrollbar {
 
   .frontdesk-dashboard-page .accountant-total-strip-item,
   .frontdesk-dashboard-page .accountant-total-strip-item-total {
-    align-items: center;
     text-align: center;
-  }
-
-  .frontdesk-dashboard-page .accountant-total-strip-date {
-    align-self: center;
+    align-items: center;
   }
 }
 
@@ -9004,7 +9117,21 @@ body::-webkit-scrollbar {
 
 }
 
-@media (min-width: 1370px) {
+/* =========================
+   IMPORTANT GRID FIX
+========================= */
+
+.dashboard-shell,
+.accountant-dashboard-shell,
+.dashboard-main,
+.accountant-main-area,
+.accountant-grid,
+.admin-events-content {
+  min-width: 0;
+  min-height: 0;
+}
+
+@media (min-width:1200px)and(max-width: 1369px) {
   .frontdesk-dashboard-page.accountant-dashboard-page,
   .frontdesk-dashboard-page.accountant-dashboard-home-page {
     position: relative !important;
@@ -9019,7 +9146,7 @@ body::-webkit-scrollbar {
   .frontdesk-dashboard-page .accountant-dashboard-shell {
     height: 100% !important;
     min-height: 0 !important; 
-    overflow: hidden !important; 
+    /* overflow: hidden !important;  */
   }
 
   /* Carry over the beautifully sized perfectly short sidebar! */
@@ -9121,7 +9248,7 @@ body::-webkit-scrollbar {
   .frontdesk-dashboard-page.accountant-dashboard-home-page .accountant-bottom-right {
     display: grid !important;
     grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
-    grid-template-rows: minmax(0, 1fr) auto !important;
+    grid-template-rows: minmax(0, 2.86fr) auto !important;
     gap: 0.34rem !important;
     overflow: visible !important;
   }
@@ -9634,7 +9761,7 @@ body::-webkit-scrollbar {
   .dashboard-page.frontdesk-dashboard-page.accountant-dashboard-page .accountant-bottom-right,
   .dashboard-page.frontdesk-dashboard-page.accountant-dashboard-home-page .accountant-bottom-right {
     grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
-    grid-template-rows: minmax(0, 0.86fr) auto !important;
+    grid-template-rows: minmax(0, 2.86fr) auto !important;
     gap: 0.34rem !important;
     height: 100% !important;
     overflow: hidden !important;
@@ -9710,10 +9837,10 @@ body::-webkit-scrollbar {
     overflow-x: hidden !important;
     overscroll-behavior: contain !important;
     padding-right: 0.6rem !important;
-    padding-bottom: 3rem !important;
-    grid-template-rows: max-content minmax(14rem, 1fr) minmax(14rem, max-content) !important;
+    padding-bottom:0.3rem !important;
+    /* grid-template-rows: max-content minmax(14rem, 1fr) minmax(14rem, max-content) !important; */
   }
-
+/* syam */
   .dashboard-page .dashboard-sidebar,
   .dashboard-page .accountant-sidebar-strip,
   .frontdesk-dashboard-page .dashboard-sidebar,
@@ -9876,8 +10003,9 @@ body::-webkit-scrollbar {
     overscroll-behavior: contain !important;
     padding-right: 0.6rem !important;
     padding-bottom: 0.5rem !important;
-    grid-template-rows: max-content minmax(14rem, 1fr) minmax(14rem, max-content) !important;
+    grid-template-rows: max-content minmax(18rem, 1fr) minmax(14rem, max-content) !important;
   }
+  /* syam */
 
   .dashboard-page.frontdesk-dashboard-page.dashboard-home-page .dashboard-sidebar,
   .dashboard-page.frontdesk-dashboard-page.accountant-dashboard-page .dashboard-sidebar,
@@ -9991,4 +10119,167 @@ body::-webkit-scrollbar {
   .dashboard-page.frontdesk-dashboard-page.accountant-dashboard-home-page .accountant-mini-cards {
     gap: 0.48rem !important;
   }
+}
+
+
+.accountant-dashboard-loader {
+  position: fixed;
+  inset: 0;
+
+  display: flex;
+  align-items: center;
+  justify-content: center;
+
+  background: rgba(255, 255, 255, 0.15);
+  backdrop-filter: blur(5px);
+  -webkit-backdrop-filter: blur(2px);
+
+  z-index: 999999;
+}
+
+.accountant-dashboard-loader-logo {
+  width: 100px;
+  height: 100px;
+  object-fit: contain;
+
+  animation: accountantPulse 5s ease-in-out infinite;
+}
+
+@keyframes accountantPulse {
+  0% {
+    transform: scale(0.85);
+    opacity: 0.8;
+  }
+
+  50% {
+    transform: scale(1.15);
+    opacity: 1;
+  }
+
+  100% {
+    transform: scale(0.85);
+    opacity: 0.5;
+  }
+}
+
+.accountant-dashboard-loader-badge{
+  display:inline-block;
+  padding:6px 14px;
+  border-radius:999px;
+  background:#fdecef;
+  color:#c44755;
+  font-size:12px;
+  font-weight:700;
+  margin-bottom:16px;
+}
+
+.accountant-dashboard-loader-message h2{
+  margin:0;
+  font-size:28px;
+  font-weight:700;
+  color:#111827;
+}
+
+.accountant-dashboard-loader-subtitle{
+  margin-top:12px;
+  color:#6b7280;
+  line-height:1.7;
+  max-width:520px;
+}
+
+.accountant-dashboard-loader-progress{
+  margin-top:24px;
+  width:100%;
+  max-width:420px;
+  height:22px;
+  border-radius:999px;
+  overflow:hidden;
+  background:#f3f4f6;
+  position:relative;
+}
+
+.accountant-dashboard-loader-progress::after{
+  content:"";
+  position:absolute;
+  inset:0;
+  width:40%;
+  background:#c44754;
+  border-radius:999px;
+  animation:loadingSlide 1.4s infinite;
+}
+
+.accountant-dashboard-loader-status{
+  margin-top:24px;
+  text-align:left;
+  background:#fff;
+  border-radius:12px;
+  padding:16px;
+  border:1px solid #ececec;
+  line-height:2;
+  width:100%;
+  max-width:420px;
+}
+
+.accountant-dashboard-loader-help{
+  margin-top:20px;
+  text-align:left;
+  max-width:520px;
+  font-size:13px;
+  color:#4b5563;
+}
+
+.accountant-dashboard-loader-help ul{
+  margin:8px 0 0;
+  padding-left:18px;
+}
+
+.accountant-dashboard-loader-footer{
+  margin-top:18px;
+  font-size:12px;
+  color:#9ca3af;
+}
+
+@keyframes loadingSlide{
+  0%{
+    left:-40%;
+  }
+  100%{
+    left:100%;
+  }
+}
+.accountant-loader-help{
+  margin-top:24px;
+  text-align:center;
+  max-width:500px;
+}
+
+.accountant-loader-help h3{
+  margin-bottom:8px;
+  color:#111827;
+}
+
+.accountant-loader-help p{
+  color:#6b7280;
+  margin-bottom:20px;
+}
+
+.accountant-loader-actions{
+  display:flex;
+  gap:12px;
+  justify-content:center;
+  flex-wrap:wrap;
+}
+
+.accountant-loader-actions button{
+  border:none;
+  padding:10px 18px;
+  border-radius:10px;
+  cursor:pointer;
+  font-weight:600;
+  background:#c44755;
+  color:white;
+}
+
+.accountant-loader-actions button:hover{
+  opacity:.9;
 }

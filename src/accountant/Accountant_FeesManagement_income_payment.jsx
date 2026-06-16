@@ -1919,7 +1919,7 @@ useEffect(() => {
   fetchStudents();
 
   // ⏱ refresh every 3 seconds
-  const interval = setInterval(fetchStudents, 3000);
+  const interval = setInterval(fetchStudents,60000);
 
   // 🧹 cleanup
   return () => clearInterval(interval);

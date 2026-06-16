@@ -5,7 +5,11 @@ import axios from "axios";
 import "./AccountantDashboardnew.css";
 import "../frontdeskdahboard/FrontDesk.css";
 import EditableProfileMenu from "../shared/EditableProfileMenu.jsx";
-
+import ErrorPopup from "../shared/ErrorPopup";
+import InstituteBrand from "../shared/InstituteBrand.jsx";
+import { resolveInstituteDisplayName } from "../shared/instituteNameUtils";
+import { getUserDisplayName } from "../shared/userDisplayName";
+import Swal from "sweetalert2";
 import abcLogo from "../assets/logoab.png";
 import dashboardIcon from "../assets/Dashboard.png";
 import academicsIcon from "../assets/Staff Assign.png";
@@ -16,6 +20,8 @@ import reportsIcon from "../assets/Reports .png";
 import timelineIcon from "../assets/Timeline.png";
 import followupIcon from "../assets/Profile.png";
 import assistantIcon from "../assets/Assistant.png";
+import Radiusselectingg from "../shared/radiusselcting.jsx";
+import AttendanceForms from "../shared/TeacherAttendanceTimeSetting.jsx";
 
 const sidebarItems = [
   { key: "dashboard", label: "Dashboard", icon: dashboardIcon, route: "/AdminDashboard" },
@@ -69,14 +75,15 @@ const formatChatDateTime = (dateValue, timeValue) => {
 
 const formatAttendanceClock = (value) => {
   if (!value) return "--";
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return String(value);
-  return date.toLocaleTimeString("en-IN", {
-    hour: "2-digit",
-    minute: "2-digit",
-  });
+  try {
+    // Extract HH:MM from the ISO string (e.g., "2026-06-11T09:00:00.000Z" → "09:00")
+    const timePart = value.split("T")[1]?.split(".")[0] || "";
+    if (!timePart) return "--";
+    return timePart.substring(0, 5); // Returns "HH:MM"
+  } catch {
+    return "--";
+  }
 };
-
 const formatStoredTime = (value) => {
   if (!value) return "--";
   const raw = String(value).trim();
@@ -155,7 +162,7 @@ const bufferToPathString = (bufferData) => {
     for (let i = 0; i < bytes.byteLength; i += 1) {
       pathString += String.fromCharCode(bytes[i]);
     }
-    return pathString.trim().replace(/\u0000/g, "");
+    return pathString.trim().replaceAll("\u0000", "");
   } catch {
     return "";
   }
@@ -249,6 +256,44 @@ const buildAttendanceSummary = (apiData) => {
   }, 0);
 
   return (totalPercentage / monthly.length).toFixed(2);
+};
+
+const buildTeacherAttendanceSummary = (teacherData) => {
+  const attendance = Array.isArray(teacherData?.attendance) ? teacherData.attendance : [];
+  if (!attendance.length) {
+    return {
+      percent: null,
+      totalDays: 0,
+      presentDays: 0,
+      lateDays: 0,
+      latestDate: "",
+    };
+  }
+
+  const presentDays = attendance.filter((entry) => {
+    const status = String(entry?.status || entry?.attendance_status || "present").toLowerCase();
+    return status === "present" || status === "p";
+  }).length;
+
+  const lateDays = attendance.filter((entry) => {
+    const status = String(entry?.status || entry?.attendance_status || "").toLowerCase();
+    const entryTime = String(entry?.entry_time || entry?.login_time || "").trim();
+    return status.includes("late") || Boolean(entryTime && entryTime > "09:00:00");
+  }).length;
+
+  const latestDate = attendance
+    .map((entry) => entry?.date || entry?.attendance_date || entry?.created_at || "")
+    .filter(Boolean)
+    .sort()
+    .at(-1) || "";
+
+  return {
+    percent: attendance.length > 0 ? ((presentDays / attendance.length) * 100).toFixed(1) : null,
+    totalDays: attendance.length,
+    presentDays,
+    lateDays,
+    latestDate: latestDate ? new Date(latestDate).toLocaleDateString("en-IN") : "",
+  };
 };
 
 const fallbackTermRows = [
@@ -424,7 +469,9 @@ const AdiminAcademicsNew = () => {
   const [students, setStudents] = useState([]);
   const [studentMarksMap, setStudentMarksMap] = useState({});
   const [studentAttendanceMap, setStudentAttendanceMap] = useState({});
+  const [teacherAttendanceMap, setTeacherAttendanceMap] = useState({});
   const [loadingStudentMarks, setLoadingStudentMarks] = useState(false);
+  const [loadingTeacherAttendance, setLoadingTeacherAttendance] = useState(false);
   const [poItems, setPoItems] = useState([]);
   const [loadingPoItems, setLoadingPoItems] = useState(false);
   const [processingPoId, setProcessingPoId] = useState(null);
@@ -440,6 +487,28 @@ const AdiminAcademicsNew = () => {
   const [studentPopupAcademics, setStudentPopupAcademics] = useState([]);
   const [studentPopupAttendance, setStudentPopupAttendance] = useState([]);
   const [trendSubjectKey, setTrendSubjectKey] = useState("__all__");
+  const [selectedTeacher, setSelectedTeacher] = useState(null);
+  const [teacherPopupLoading, setTeacherPopupLoading] = useState(false);
+  const [teacherPopupError, setTeacherPopupError] = useState("");
+  const [teacherPopupAttendance, setTeacherPopupAttendance] = useState([]);
+  const [teacherPopupSalary, setTeacherPopupSalary] = useState(null);
+  const [popupType, setPopupType] = useState("");
+  const [popupMessage, setPopupMessage] = useState("");
+  const [party1List, setParty1List] = useState([]);
+  const [classOptions, setClassOptions] = useState([]);
+  const [sectionOptions, setSectionOptions] = useState([]);
+  const [studentOptions, setStudentOptions] = useState([]);
+const [showRadiusPopup, setShowRadiusPopup] = useState(false);
+const [showTeacherAttendancePopup, setShowTeacherAttendancePopup] = useState(false);
+const [attendanceView, setAttendanceView] = useState("teacher");
+  const [liveChatForm, setLiveChatForm] = useState({
+    party1: "",
+    className: "",
+    section: "",
+    student: "",
+    date: new Date().toISOString().split("T")[0],
+    time: "",
+  });
   const [schoolName, setSchoolName] = useState("Unknown School");
   const [schoolLogo, setSchoolLogo] = useState("/default-logo.png");
   const [studentAlertTime, setStudentAlertTime] = useState(null);
@@ -507,6 +576,9 @@ const AdiminAcademicsNew = () => {
     window.location.replace(import.meta.env.BASE_URL || "/");
   };
 
+  const openLiveChatPopup = () => setPopupType("liveChat");
+  const closePopup = () => setPopupType("");
+
   useEffect(() => {
     fetchPoItems();
   }, [schoolCode]);
@@ -516,22 +588,30 @@ const AdiminAcademicsNew = () => {
     fetch(`https://cleezoclass.com:4000/api/institute?dbName=${schoolCode}`)
       .then((res) => res.json())
       .then((data) => {
-        const resolvedSchoolName = String(
-          data?.institute_name ||
-          data?.instituteName ||
-          data?.school_name ||
-          data?.name ||
-          data?.schoolName ||
-          "Unknown School"
-        ).trim();
+        const resolvedSchoolName = resolveInstituteDisplayName({
+          apiInstituteName: data?.institute_name || data?.instituteName || data?.school_name || data?.name || data?.schoolName,
+          storedSchoolName: localStorage.getItem("schoolName"),
+          storedInstituteName: localStorage.getItem("instituteName"),
+          schoolCode,
+          fallback: "Unknown School",
+        });
         const normalizedLogo = normalizeInstituteLogo(data?.logo);
         setSchoolName(resolvedSchoolName);
         setSchoolLogo(normalizedLogo || "/default-logo.png");
         localStorage.setItem("schoolName", resolvedSchoolName);
+        localStorage.setItem("instituteName", resolvedSchoolName);
         localStorage.setItem("schoolLogo", normalizedLogo || "/default-logo.png");
       })
       .catch(() => {
-        setSchoolName("Unknown School");
+        const fallbackSchoolName = resolveInstituteDisplayName({
+          storedSchoolName: localStorage.getItem("schoolName"),
+          storedInstituteName: localStorage.getItem("instituteName"),
+          schoolCode,
+          fallback: "Unknown School",
+        });
+        setSchoolName(fallbackSchoolName);
+        localStorage.setItem("schoolName", fallbackSchoolName);
+        localStorage.setItem("instituteName", fallbackSchoolName);
         setSchoolLogo("/default-logo.png");
       });
   }, [schoolCode]);
@@ -581,9 +661,25 @@ const AdiminAcademicsNew = () => {
   }, [schoolCode]);
 
   const handleResetStudentAlertTime = async () => {
-    if (!schoolCode) return;
-    const confirmed = window.confirm("Reset student alert time?");
-    if (!confirmed) return;
+ if (!schoolCode) return;
+
+const result = await Swal.fire({
+  title: "Reset Student Alert Time?",
+  text: "This action cannot be undone.",
+  // icon: "warning",
+
+  showCancelButton: true,
+
+  confirmButtonText: "Yes, Reset",
+  cancelButtonText: "Cancel",
+
+  confirmButtonColor: "#ef6574",
+  cancelButtonColor: "#6b7280",
+
+  reverseButtons: true
+});
+
+if (!result.isConfirmed) return;
 
     try {
       await axios.post("https://cleezoclass.com:4000/api/attendance/reset-alert-time", {
@@ -597,8 +693,20 @@ const AdiminAcademicsNew = () => {
 
   const handleResetTeacherAttendanceTime = async () => {
     if (!schoolCode) return;
-    const confirmed = window.confirm("Reset teacher attendance time?");
-    if (!confirmed) return;
+    const result = await Swal.fire({
+      title:"Reset Teacher timings?",
+      text:"This action cannot be undone.",
+       showCancelButton: true,
+
+  confirmButtonText: "Yes, Reset",
+  cancelButtonText: "Cancel",
+
+  confirmButtonColor: "#ef6574",
+  cancelButtonColor: "#6b7280",
+
+  reverseButtons: true
+    })
+   if(!result.isConfirmed)return
 
     try {
       await axios.post("https://cleezoclass.com:4000/attendance/reset-login-logout-time", {
@@ -608,6 +716,51 @@ const AdiminAcademicsNew = () => {
     } catch (error) {
       console.error("Failed to reset teacher attendance time", error);
     }
+  };
+
+  const handleTeacherCardClick = async (teacher) => {
+    const teacherId = teacher?.teacher_id || teacher?.id || teacher?._id;
+    if (!teacherId) return;
+
+    setSelectedTeacher(teacher);
+    setTeacherPopupLoading(true);
+    setTeacherPopupError("");
+    setTeacherPopupAttendance([]);
+    setTeacherPopupSalary(null);
+
+    try {
+      const [teacherRes, salaryRes] = await Promise.all([
+        fetch(`https://cleezoclass.com:4000/teacher/${teacherId}?schoolCode=${encodeURIComponent(schoolCode)}`),
+        fetch(
+          `https://cleezoclass.com:4000/api/salary/${teacherId}?schoolCode=${encodeURIComponent(schoolCode)}`
+        ),
+      ]);
+
+      if (!teacherRes.ok) {
+        const errorText = await teacherRes.text();
+        throw new Error(`Failed to fetch teacher details. ${errorText}`);
+      }
+
+      const teacherData = await teacherRes.json();
+      const salaryData = salaryRes.ok ? await salaryRes.json().catch(() => null) : null;
+
+      setSelectedTeacher(teacherData);
+      setTeacherPopupAttendance(Array.isArray(teacherData?.attendance) ? teacherData.attendance : []);
+      setTeacherPopupSalary(salaryData);
+    } catch (error) {
+      console.error("Failed to load teacher details", error);
+      setTeacherPopupError(error?.message || "Failed to load teacher details.");
+    } finally {
+      setTeacherPopupLoading(false);
+    }
+  };
+
+  const closeTeacherPopup = () => {
+    setSelectedTeacher(null);
+    setTeacherPopupLoading(false);
+    setTeacherPopupError("");
+    setTeacherPopupAttendance([]);
+    setTeacherPopupSalary(null);
   };
 
   useEffect(() => {
@@ -632,6 +785,120 @@ const AdiminAcademicsNew = () => {
 
     loadChatRequests();
   }, [schoolCode]);
+
+  useEffect(() => {
+    if (!schoolCode) return;
+
+    const loadLiveChatMeta = async () => {
+      try {
+        const [{ data: staffData }, { data: classData }] = await Promise.all([
+          axios.get("https://cleezoclass.com:4000/api/party1", { params: { schoolCode } }),
+          axios.get("https://cleezoclass.com:4000/api/classes", { params: { schoolCode } }),
+        ]);
+
+        setParty1List(Array.isArray(staffData) ? staffData : []);
+        setClassOptions(Array.isArray(classData) ? classData : []);
+      } catch (error) {
+        console.error("Failed to load live chat meta", error);
+      }
+    };
+
+    loadLiveChatMeta();
+  }, [schoolCode]);
+
+  useEffect(() => {
+    if (!schoolCode || !liveChatForm.className) {
+      setSectionOptions([]);
+      setStudentOptions([]);
+      return;
+    }
+
+    axios
+      .get(`https://cleezoclass.com:4000/api/sections/${encodeURIComponent(liveChatForm.className)}`, {
+        params: { schoolCode },
+      })
+      .then((res) => {
+        setSectionOptions(Array.isArray(res.data) ? res.data : []);
+        setLiveChatForm((prev) => ({ ...prev, section: "", student: "" }));
+      })
+      .catch((error) => {
+        console.error("Failed to load sections", error);
+        setSectionOptions([]);
+      });
+  }, [schoolCode, liveChatForm.className]);
+
+  useEffect(() => {
+    if (!schoolCode || !liveChatForm.className || !liveChatForm.section) {
+      setStudentOptions([]);
+      return;
+    }
+
+    axios
+      .get(
+        `https://cleezoclass.com:4000/api/admin/students/${encodeURIComponent(liveChatForm.className)}/${encodeURIComponent(liveChatForm.section)}`,
+        { params: { schoolCode } }
+      )
+      .then((res) => {
+        setStudentOptions(Array.isArray(res.data) ? res.data : []);
+        setLiveChatForm((prev) => ({ ...prev, student: "" }));
+      })
+      .catch((error) => {
+        console.error("Failed to load students", error);
+        setStudentOptions([]);
+      });
+  }, [schoolCode, liveChatForm.className, liveChatForm.section]);
+
+  const handleCreateLiveChatRequest = async () => {
+    const { party1, className, section, student, date, time } = liveChatForm;
+
+    if (!party1 || !className || !section || !student) {
+      setPopupMessage("Staff, class, section, and student are required.");
+      return;
+    }
+
+    const party1Obj = party1List.find((item) => item.name === party1);
+    if (!party1Obj) {
+      setPopupMessage("Please select a valid staff member.");
+      return;
+    }
+
+    try {
+      const { data } = await axios.post("https://cleezoclass.com:4000/api/chat-request", {
+        party1_id: party1Obj.id,
+        party1_name: party1Obj.name,
+        party2_class: className,
+        party2_section: section,
+        party2_student: student,
+        date,
+        time,
+        schoolCode,
+      });
+
+      if (!data?.success) {
+        throw new Error(data?.message || "Failed to save chat request.");
+      }
+
+      setPopupMessage("Individual chat request has been successfully saved.");
+      setLiveChatForm({
+        party1: "",
+        className,
+        section,
+        student: "",
+        date: new Date().toISOString().split("T")[0],
+        time: "",
+      });
+      closePopup();
+      if (schoolCode) {
+        const { data: refreshed } = await axios.get("https://cleezoclass.com:4000/api/chat-requests", {
+          params: { schoolCode },
+        });
+        setChatRequests(Array.isArray(refreshed) ? refreshed : []);
+      }
+    } catch (error) {
+      console.error("Failed to save chat request", error);
+      setPopupMessage(error?.response?.data?.message || error.message || "Failed to save chat request.");
+    }
+  };
 
   const handleProcessPO = async (item, newStatus) => {
     const poId = item?.id || item?.po_id || item?.request_id;
@@ -694,6 +961,44 @@ const AdiminAcademicsNew = () => {
   }, [schoolCode]);
 
   useEffect(() => {
+    if (!schoolCode || teachers.length === 0) {
+      setTeacherAttendanceMap({});
+      return;
+    }
+
+    let ignore = false;
+    setLoadingTeacherAttendance(true);
+
+    Promise.all(
+      teachers.map(async (teacher) => {
+        const teacherId = teacher?.teacher_id || teacher?.id || teacher?._id;
+        if (!teacherId) return [teacherId, null];
+
+        try {
+          const response = await axios.get(`https://cleezoclass.com:4000/teacher/${teacherId}`, {
+            params: { schoolCode },
+          });
+          return [teacherId, buildTeacherAttendanceSummary(response.data)];
+        } catch (error) {
+          console.error("Failed to load teacher attendance", teacherId, error);
+          return [teacherId, buildTeacherAttendanceSummary(null)];
+        }
+      })
+    )
+      .then((entries) => {
+        if (ignore) return;
+        setTeacherAttendanceMap(Object.fromEntries(entries.filter(([id]) => id)));
+      })
+      .finally(() => {
+        if (!ignore) setLoadingTeacherAttendance(false);
+      });
+
+    return () => {
+      ignore = true;
+    };
+  }, [teachers, schoolCode]);
+
+  useEffect(() => {
     if (!schoolCode) return;
     setDropdownLoading(true);
     Promise.all([
@@ -741,74 +1046,201 @@ const AdiminAcademicsNew = () => {
       });
   }, [className, section, schoolCode]);
 
-  useEffect(() => {
-    if (!schoolCode || !className || !section || students.length === 0) {
-      setStudentMarksMap({});
-      setStudentAttendanceMap({});
-      return;
-    }
+  // useEffect(() => {
+  //   if (!schoolCode || !className || !section || students.length === 0) {
+  //     setStudentMarksMap({});
+  //     setStudentAttendanceMap({});
+  //     return;
+  //   }
 
-    let ignore = false;
-    setLoadingStudentMarks(true);
+  //   let ignore = false;
+  //   setLoadingStudentMarks(true);
 
-    Promise.all(
-      students.map(async (student) => {
-        try {
-          const payload = {
-            name: student.name,
-            class_name: className,
-            section,
-            schoolCode,
-          };
-          const [performanceRes, attendanceRes] = await Promise.all([
-            axios.post(
-              "https://cleezoclass.com:4000/api/overall/academic-performance",
-              payload
-            ),
-            axios.post(
-              "https://cleezoclass.com:4000/api/report/attendance/monthly",
-              payload
-            ),
-          ]);
-          return [
-            student.id,
-            {
-              performance: buildPerformanceSummary(performanceRes.data),
-              attendance: buildAttendanceSummary(attendanceRes.data),
-            },
-          ];
-        } catch {
-          return [
-            student.id,
-            {
-              performance: { obtained: 0, total: 0, percent: null, grade: null },
-              attendance: null,
-            },
-          ];
-        }
-      })
-    )
-      .then((entries) => {
-        if (ignore) return;
-        const combined = Object.fromEntries(entries);
-        const marks = {};
-        const attendance = {};
-        Object.entries(combined).forEach(([studentId, value]) => {
-          marks[studentId] = value.performance;
-          attendance[studentId] = value.attendance;
-        });
-        setStudentMarksMap(marks);
-        setStudentAttendanceMap(attendance);
-      })
-      .finally(() => {
-        if (!ignore) setLoadingStudentMarks(false);
-      });
+  //   Promise.all(
+  //     students.map(async (student) => {
+  //       try {
+  //         const payload = {
+  //           name: student.name,
+  //           class_name: className,
+  //           section,
+  //           schoolCode,
+  //         };
+  //         const [performanceRes, attendanceRes] = await Promise.all([
+  //           axios.post(
+  //             "https://cleezoclass.com:4000/api/overall/academic-performance",
+  //             payload
+  //           ),
+  //           axios.post(
+  //             "https://cleezoclass.com:4000/api/report/attendance/monthly",
+  //             payload
+  //           ),
+  //         ]);
+  //         return [
+  //           student.id,
+  //           {
+  //             performance: buildPerformanceSummary(performanceRes.data),
+  //             attendance: buildAttendanceSummary(attendanceRes.data),
+  //           },
+  //         ];
+  //       } catch {
+  //         return [
+  //           student.id,
+  //           {
+  //             performance: { obtained: 0, total: 0, percent: null, grade: null },
+  //             attendance: null,
+  //           },
+  //         ];
+  //       }
+  //     })
+  //   )
+  //     .then((entries) => {
+  //       if (ignore) return;
+  //       const combined = Object.fromEntries(entries);
+  //       const marks = {};
+  //       const attendance = {};
+  //       Object.entries(combined).forEach(([studentId, value]) => {
+  //         marks[studentId] = value.performance;
+  //         attendance[studentId] = value.attendance;
+  //       });
+  //       setStudentMarksMap(marks);
+  //       setStudentAttendanceMap(attendance);
+  //     })
+  //     .finally(() => {
+  //       if (!ignore) setLoadingStudentMarks(false);
+  //     });
 
-    return () => {
-      ignore = true;
-    };
-  }, [students, schoolCode, className, section]);
+  //   return () => {
+  //     ignore = true;
+  //   };
+  // }, [students, schoolCode, className, section]);
+const [studentPopupBehavior, setStudentPopupBehavior] = useState([]);
+  // useEffect(() => {
+  //   if (!schoolCode || !className || !section || students.length === 0) {
+  //     setStudentMarksMap({});
+  //     setStudentAttendanceMap({});
+  //     return;
+  //   }
 
+  //   let ignore = false;
+  //   setLoadingStudentMarks(true);
+
+  //   Promise.all(
+  //     students.map(async (student) => {
+  //       try {
+  //         const payload = {
+  //           name: student.name,
+  //           class_name: className,
+  //           section,
+  //           schoolCode,
+  //         };
+  //         const [performanceRes, attendanceRes] = await Promise.all([
+  //           axios.post(
+  //             "https://cleezoclass.com:4000/api/overall/academic-performance",
+  //             payload
+  //           ),
+  //           axios.post(
+  //             "https://cleezoclass.com:4000/api/report/attendance/monthly",
+  //             payload
+  //           ),
+  //         ]);
+  //         return [
+  //           student.id,
+  //           {
+  //             performance: buildPerformanceSummary(performanceRes.data),
+  //             attendance: buildAttendanceSummary(attendanceRes.data),
+  //           },
+  //         ];
+  //       } catch {
+  //         return [
+  //           student.id,
+  //           {
+  //             performance: { obtained: 0, total: 0, percent: null, grade: null },
+  //             attendance: null,
+  //           },
+  //         ];
+  //       }
+  //     })
+  //   )
+  //     .then((entries) => {
+  //       if (ignore) return;
+  //       const combined = Object.fromEntries(entries);
+  //       const marks = {};
+  //       const attendance = {};
+  //       Object.entries(combined).forEach(([studentId, value]) => {
+  //         marks[studentId] = value.performance;
+  //         attendance[studentId] = value.attendance;
+  //       });
+  //       setStudentMarksMap(marks);
+  //       setStudentAttendanceMap(attendance);
+  //     })
+  //     .finally(() => {
+  //       if (!ignore) setLoadingStudentMarks(false);
+  //     });
+
+  //   return () => {
+  //     ignore = true;
+  //   };
+  // }, [students, schoolCode, className, section]);
+useEffect(() => {
+  if (!selectedStudent || !schoolCode || !className || !section) return;
+
+  let ignore = false;
+  setStudentPopupLoading(true);
+
+  const payload = {
+    name: selectedStudent.name,
+    class_name: className,
+    section,
+    schoolCode,
+  };
+
+  Promise.all([
+    axios.post("https://cleezoclass.com:4000/api/overall/academic-performance", payload),
+    axios.post("https://cleezoclass.com:4000/api/report/attendance/monthly", payload),
+    axios.get("https://cleezoclass.com:4000/api/student/behavior", { params: payload }),
+  ])
+    .then(([performanceRes, attendanceRes, behaviorRes]) => {
+
+      if (ignore) return;
+
+      const performanceData = Array.isArray(performanceRes.data)
+        ? performanceRes.data
+        : performanceRes.data?.performance || [];
+
+      const attendanceData = Array.isArray(attendanceRes.data?.monthly)
+        ? attendanceRes.data.monthly
+        : [];
+
+      const behaviorData = Array.isArray(behaviorRes.data)
+        ? behaviorRes.data
+        : [];
+
+      // ✅ DEBUG LOGS
+      console.log("📊 Academic Performance:", performanceData);
+      console.log("📅 Attendance Data:", attendanceData);
+      console.log("🧠 Behavior API Raw Response:", behaviorRes.data);
+      console.log("🧠 Behavior Parsed Data:", behaviorData);
+
+      setStudentPopupAcademics(performanceData);
+      setStudentPopupAttendance(attendanceData);
+      setStudentPopupBehavior(behaviorData);
+    })
+    .catch((err) => {
+      console.error("❌ API Error:", err);
+
+      if (ignore) return;
+      setStudentPopupAcademics([]);
+      setStudentPopupAttendance([]);
+      setStudentPopupBehavior([]);
+    })
+    .finally(() => {
+      if (!ignore) setStudentPopupLoading(false);
+    });
+
+  return () => {
+    ignore = true;
+  };
+}, [selectedStudent, schoolCode, className, section]);
   const getClassLabel = (cls) => {
     if (cls == null) return "";
     if (typeof cls === "string" || typeof cls === "number") return String(cls);
@@ -851,7 +1283,7 @@ const AdiminAcademicsNew = () => {
     ? new Date(teacherAttendanceTimes.UPLOADED_DATE).toLocaleDateString("en-IN")
     : "";
   const teacherAttendanceSummary = hasTeacherAttendanceTimes
-    ? `   Login: ${formatAttendanceClock(teacherAttendanceTimes?.LOGIN_TIME)} | Logout: ${formatAttendanceClock(teacherAttendanceTimes?.LOGOUT_TIME)}`
+    ? `    ${formatAttendanceClock(teacherAttendanceTimes?.LOGIN_TIME)} |  ${formatAttendanceClock(teacherAttendanceTimes?.LOGOUT_TIME)}`
     : "Teacher Attendance - No time set yet.";
   const hasStudentAlertTime = Boolean(studentAlertTime?.alert_time);
   const studentAlertDate = studentAlertTime?.uploaded_date
@@ -865,6 +1297,19 @@ const AdiminAcademicsNew = () => {
     ? `${attendanceRadius} meters`
     : "No radius set yet.";
   const attendanceRadiusAddedDate = attendanceRadiusDate ? `Added on: ${attendanceRadiusDate}` : "";
+  const staffAttendanceStats = useMemo(() => {
+    const values = Object.values(teacherAttendanceMap).filter(Boolean);
+    const numericValues = values
+      .map((item) => Number(item?.percent))
+      .filter((value) => !Number.isNaN(value));
+
+    if (numericValues.length === 0) {
+      return { average: null, total: 0 };
+    }
+
+    const average = numericValues.reduce((sum, value) => sum + value, 0) / numericValues.length;
+    return { average: average.toFixed(1), total: numericValues.length };
+  }, [teacherAttendanceMap]);
 
   const popupTermRows = useMemo(
     () => getPopupTermRows(studentPopupAcademics),
@@ -905,6 +1350,22 @@ const AdiminAcademicsNew = () => {
   const activeTrendTitle = selectedSubjectRow
     ? `Test Type Trend (${getPopupSubjectLabel(selectedSubjectRow)})`
     : "Test Type Performance Trend (All Subjects)";
+
+  const teacherPopupStats = useMemo(() => {
+    const attendance = Array.isArray(teacherPopupAttendance) ? teacherPopupAttendance : [];
+    const presentDays = attendance.filter((entry) => {
+      const status = String(entry?.status || entry?.attendance_status || "present").toLowerCase();
+      return status === "present" || status === "p";
+    }).length;
+    const lateDays = attendance.filter((entry) => {
+      const status = String(entry?.status || entry?.attendance_status || "").toLowerCase();
+      const entryTime = String(entry?.entry_time || entry?.login_time || "").trim();
+      return status.includes("late") || Boolean(entryTime && entryTime > "09:00:00");
+    }).length;
+    const totalDays = attendance.length;
+    const percent = totalDays > 0 ? ((presentDays / totalDays) * 100).toFixed(1) : null;
+    return { presentDays, lateDays, totalDays, percent };
+  }, [teacherPopupAttendance]);
 
   useEffect(() => {
     if (!selectedStudent || !schoolCode || !className || !section) return;
@@ -996,8 +1457,11 @@ const AdiminAcademicsNew = () => {
             </div>
 
             <div className="dashboard-topbar-center accountant-topbar-center">
-              <img src={schoolLogo || "/default-logo.png"} alt={schoolName || "School Logo"} className="accountant-school-logo" />
-              <span style={{ fontWeight: 700, marginLeft: "0.4rem" }}>{schoolName || "Unknown School"}</span>
+              <InstituteBrand
+                logoSrc={schoolLogo || "/default-logo.png"}
+                logoAlt={schoolName || "School Logo"}
+                instituteName={schoolName || "Unknown School"}
+              />
             </div>
 
             <div className="dashboard-topbar-right accountant-topbar-right">
@@ -1009,7 +1473,7 @@ const AdiminAcademicsNew = () => {
           <div className="admin-academics-content">
             <div className="admin-academics-top">
                <div className="accountant-welcome-block">
-                <h2>Hi, Vinay!</h2>
+                <h2>Hi, {getUserDisplayName()}!</h2>
                 <p>Check Store Inventory,</p>
                 <p>Report Track to Class Teacher</p>
                 <p>Submit Building maintenance</p>
@@ -1017,18 +1481,29 @@ const AdiminAcademicsNew = () => {
 
               <div className="admin-academics-summary accountant-card">
                 <div className="admin-academics-summary-ring">
-                  <div className="admin-academics-summary-ring-inner">70%</div>
+                  <div className="admin-academics-summary-ring-inner">
+                    {staffAttendanceStats.average ? `${staffAttendanceStats.average}%` : "70%"}
+                  </div>
                 </div>
                 <div className="admin-academics-summary-stats">
-                  <p><span>Performance - staff:</span> <strong>70%</strong></p>
+                  <p>
+                    <span>Performance - staff:</span>
+                    <strong>
+                      {loadingTeacherAttendance
+                        ? "..."
+                        : staffAttendanceStats.average
+                          ? `${staffAttendanceStats.average}%`
+                          : "70%"}
+                    </strong>
+                  </p>
                   <p><span>Performance - student:</span> <strong>89%</strong></p>
                   <p><span>Behavior:</span> <strong>0 Misbehavior</strong></p>
                   <p><span>Staff overtime:</span> <strong>6 Teachers</strong></p>
                 </div>
-                <div className="admin-academics-summary-right">
-                  <button type="button" className="collect-filter">
-                    <span>As on today</span>
-                  </button>
+                  <div className="admin-academics-summary-right">
+                    <button type="button" className="collect-filter">
+                      <span>As on today</span>
+                    </button>
                   <div className="admin-academics-exam">
                     <h3>Exam Schedule</h3>
                     <p>SA-2 | 15/04/2026</p>
@@ -1179,7 +1654,8 @@ const AdiminAcademicsNew = () => {
               return (
                 <div
                   key={teacher.teacher_id || index}
-                  className="admin-academics-student-card"
+                  className="admin-academics-student-card admin-academics-student-card-clickable"
+                  onClick={() => handleTeacherCardClick(teacher)}
                 >
                   <div className="admin-academics-student-avatar-wrap">
                     <div className="admin-academics-student-avatar">
@@ -1204,10 +1680,21 @@ const AdiminAcademicsNew = () => {
                   </div>
 
                   <div className="admin-academics-student-score">
-                    Classes:{" "}
-                    {classes.length > 0
-                      ? classes.join(", ")
-                      : "-"}
+                    Classes: {classes.length > 0 ? classes.join(", ") : "-"}
+                  </div>
+
+                  <div className="admin-academics-student-score">
+                    {loadingTeacherAttendance
+                      ? "Loading attendance..."
+                      : teacherAttendanceMap[teacher.teacher_id || teacher.id || teacher._id]
+                        ? `Attendance: ${teacherAttendanceMap[teacher.teacher_id || teacher.id || teacher._id].percent ?? "-"}%`
+                        : "Attendance: -"}
+                  </div>
+
+                  <div className="admin-academics-student-score">
+                    {teacherAttendanceMap[teacher.teacher_id || teacher.id || teacher._id]?.latestDate
+                      ? `Updated: ${teacherAttendanceMap[teacher.teacher_id || teacher.id || teacher._id].latestDate}`
+                      : ""}
                   </div>
                 </div>
               );
@@ -1301,23 +1788,112 @@ const AdiminAcademicsNew = () => {
             ? "Store PO"
             : "Live Chat"}
         </h3>
-        <div className="admin-academics-request-count">
-          <strong>
-            {activeQuickPanel === "assistant"
-              ? assistantPanelItems.length
-              : activeQuickPanel === "storepo"
-              ? poItems.length
-              : chatRequests.length}
-          </strong>
-          <span>
-            {activeQuickPanel === "assistant"
-              ? "Actions"
-              : activeQuickPanel === "storepo"
-              ? "Requests"
-              : "Chats"}
-          </span>
+        <div className="accountant-card-filters admin-academics-request-count">
+          {activeQuickPanel === "livechat" ? (
+            <button type="button" className="admin-events-create-btn" onClick={openLiveChatPopup}>
+              + Create New
+            </button>
+          ) : null}
+          <div className="accountant-feetype-count">
+            <strong>
+              {activeQuickPanel === "assistant"
+                ? assistantPanelItems.length
+                : activeQuickPanel === "storepo"
+                ? poItems.length
+                : chatRequests.length}
+            </strong>
+            <span>
+              {activeQuickPanel === "assistant"
+                ? "Actions"
+                : activeQuickPanel === "storepo"
+                ? "Requests"
+                : "Chats"}
+            </span>
+          </div>
+        </div>
+  </div>
+
+  {popupType === "liveChat" && (
+    <div className="admin-events-modal-overlay" onClick={closePopup}>
+      <div className="admin-events-modal" onClick={(e) => e.stopPropagation()}>
+        <div className="admin-events-card-header">
+          <h3>Individual Chat Request</h3>
+          <button type="button" className="admin-events-modal-close" onClick={closePopup}>×</button>
+        </div>
+        <div className="admin-events-form-grid">
+          <select
+            className="admin-events-input"
+            value={liveChatForm.party1}
+            onChange={(e) => setLiveChatForm((prev) => ({ ...prev, party1: e.target.value }))}
+          >
+            <option value="">Party 1 Staff</option>
+            {party1List.map((item) => (
+              <option key={item.id} value={item.name}>
+                {item.name} ({item.user_type})
+              </option>
+            ))}
+          </select>
+          <select
+            className="admin-events-input"
+            value={liveChatForm.className}
+            onChange={(e) => setLiveChatForm((prev) => ({ ...prev, className: e.target.value }))}
+          >
+            <option value="">Class</option>
+            {classOptions.map((item, index) => (
+              <option key={`${item}-${index}`} value={String(item)}>
+                {String(item)}
+              </option>
+            ))}
+          </select>
+          <select
+            className="admin-events-input"
+            value={liveChatForm.section}
+            onChange={(e) => setLiveChatForm((prev) => ({ ...prev, section: e.target.value }))}
+            disabled={!liveChatForm.className}
+          >
+            <option value="">Section</option>
+            {sectionOptions.map((item, index) => (
+              <option key={`${item}-${index}`} value={String(item)}>
+                {String(item)}
+              </option>
+            ))}
+          </select>
+          <select
+            className="admin-events-input"
+            value={liveChatForm.student}
+            onChange={(e) => setLiveChatForm((prev) => ({ ...prev, student: e.target.value }))}
+            disabled={!liveChatForm.className || !liveChatForm.section}
+          >
+            <option value="">Student</option>
+            {studentOptions.map((item, index) => (
+              <option key={`${item?.id || index}`} value={item?.name || item?.student_name || ""}>
+                {item?.name || item?.student_name || "Student"}
+              </option>
+            ))}
+          </select>
+          <input
+            className="admin-events-input"
+            type="date"
+            value={liveChatForm.date}
+            onChange={(e) => setLiveChatForm((prev) => ({ ...prev, date: e.target.value }))}
+          />
+          <input
+            className="admin-events-input"
+            type="time"
+            value={liveChatForm.time}
+            onChange={(e) => setLiveChatForm((prev) => ({ ...prev, time: e.target.value }))}
+          />
+        </div>
+        <div className="admin-events-action-row">
+          <button type="button" className="admin-events-submit-btn" onClick={handleCreateLiveChatRequest}>
+            Create Chat Request
+          </button>
         </div>
       </div>
+    </div>
+  )}
+
+  <ErrorPopup message={popupMessage} onClose={() => setPopupMessage("")} />
 
       <div className="admin-academics-side-subtitle">
         {activeQuickPanel === "livechat"
@@ -1351,10 +1927,6 @@ const AdiminAcademicsNew = () => {
                       item?.preferred_time || item?.time || item?.requested_time
                     )} - {item?.party1_name || item?.teacher_name || "Staff"} to {item?.party2_student || item?.student_name || "Student"}, {item?.party2_class || item?.class_name || "-"}{item?.party2_section || item?.section || ""}
                   </span>
-                  <div className="admin-academics-po-actions">
-                    <button type="button">▷</button>
-                    <button type="button">✕</button>
-                  </div>
                 </div>
               ))
             )}
@@ -1373,10 +1945,6 @@ const AdiminAcademicsNew = () => {
                       item?.approved_time || item?.time || item?.requested_time
                     )} - {item?.party1_name || item?.teacher_name || "Staff"} to {item?.party2_student || item?.student_name || "Student"}, {item?.party2_class || item?.class_name || "-"}{item?.party2_section || item?.section || ""}
                   </span>
-                  <div className="admin-academics-po-actions">
-                    <button type="button">▷</button>
-                    <button type="button">✕</button>
-                  </div>
                 </div>
               ))
             )}
@@ -1430,109 +1998,70 @@ const AdiminAcademicsNew = () => {
   </div>
 </div>
             <div className="admin-academics-bottom">
-              <div className="admin-academics-alerts accountant-card">
-                <div
-                  style={{
-                    display: "grid",
-                    gridTemplateColumns: "repeat(3, minmax(0, 1fr))",
-                    gap: "0.85rem",
-                  }}
-                >
-                  <div
-                    className="admin-academics-alert-item"
-                    style={{
-                      display: "grid",
-                      gap: "0.35rem",
-                      minHeight: "92px",
-                      alignContent: "start",
-                    }}
-                  >
-                    <div className="admin-academics-alert-text" style={{ display: "grid", gap: "0.25rem" }}>
-                      <span style={{ fontWeight: 700 }}>Student Alert Time</span>
-                      {hasStudentAlertTime ? (
-                        <>
-                          <span>{studentAlertSummary}</span>
-                          {studentAlertDate ? <span>Date: {studentAlertDate}</span> : null}
-                        </>
-                      ) : (
-                        <span>No student alert time set yet.</span>
-                      )}
-                    </div>
-                    <div className="admin-academics-alert-action-wrap">
-                      <button
-                        type="button"
-                        className="btn-solid admin-academics-alert-action"
-                        onClick={
-                          !hasStudentAlertTime
-                            ? () => navigate("/TeacherAttendanceForms?view=student")
-                            : handleResetStudentAlertTime
-                        }
-                      >
-                        {!hasStudentAlertTime ? "Add" : "Reset"}
-                      </button>
-                    </div>
+              <div className="admin-academics-tests accountant-card admin-academics-alerts">
+                <div className="admin-academics-test-item admin-academics-alert-item">
+                  <strong>Student Alert Time</strong>
+                  {hasStudentAlertTime ? (
+                    <span>{studentAlertSummary}</span>
+                  ) : (
+                    <span>No student alert time set yet.</span>
+                  )}
+                  <div className="admin-academics-alert-action-wrap">
+                    <button
+                      type="button"
+                      className="btn-solid admin-academics-alert-action"
+                   onClick={
+  !hasStudentAlertTime
+    ? () => {
+        setAttendanceView("student");
+        setShowTeacherAttendancePopup(true);
+      }
+    : handleResetStudentAlertTime
+}
+                    >
+                      {!hasStudentAlertTime ? "Add" : "Reset"}
+                    </button>
                   </div>
+                </div>
 
-                  <div
-                    className="admin-academics-alert-item"
-                    style={{
-                      display: "grid",
-                      gap: "0.35rem",
-                      minHeight: "92px",
-                      alignContent: "start",
-                    }}
-                  >
-                    <div className="admin-academics-alert-text" style={{ display: "grid", gap: "0.25rem" }}>
-                      <span style={{ fontWeight: 700 }}>Teacher Attendance</span>
-                      {hasTeacherAttendanceTimes ? (
-                        <>
-                          <span>{teacherAttendanceSummary}</span>
-                          {teacherAttendanceDate ? <span>Date: {teacherAttendanceDate}</span> : null}
-                        </>
-                      ) : (
-                        <span>No teacher time set yet.</span>
-                      )}
-                    </div>
-                    <div className="admin-academics-alert-action-wrap">
-                      <button
-                        type="button"
-                        className="btn-solid admin-academics-alert-action"
-                        onClick={
-                          !hasTeacherAttendanceTimes
-                            ? () => navigate("/TeacherAttendanceForms?view=teacher")
-                            : handleResetTeacherAttendanceTime
-                        }
-                      >
-                        {!hasTeacherAttendanceTimes ? "Add" : "Reset"}
-                      </button>
-                    </div>
+                <div className="admin-academics-test-item admin-academics-alert-item">
+                  <strong>Teacher Attendance</strong>
+                  {hasTeacherAttendanceTimes ? (
+                    <span>{teacherAttendanceSummary}</span>
+                  ) : (
+                    <span>No teacher time set yet.</span>
+                  )}
+                  <div className="admin-academics-alert-action-wrap">
+                    <button
+                      type="button"
+                      className="btn-solid admin-academics-alert-action"
+onClick={
+  !hasTeacherAttendanceTimes
+    ? () => {
+        setAttendanceView("teacher");
+        setShowTeacherAttendancePopup(true);
+      }
+    : handleResetTeacherAttendanceTime
+}
+                    >
+                      {!hasTeacherAttendanceTimes ? "Add" : "Reset"}
+                    </button>
                   </div>
+                </div>
 
-                  <div
-                    className="admin-academics-alert-item"
-                    style={{
-                      display: "grid",
-                      gap: "0.35rem",
-                      minHeight: "92px",
-                      alignContent: "start",
-                    }}
-                  >
-                    <div className="admin-academics-alert-text" style={{ display: "grid", gap: "0.25rem" }}>
-                      <span style={{ fontWeight: 700 }}>Attendance Radius</span>
-                      <span>{attendanceRadiusSummary}</span>
-                      {attendanceRadiusAddedDate ? <span>{attendanceRadiusAddedDate}</span> : null}
-                    </div>
-                    <div className="admin-academics-alert-action-wrap">
-                      <button
-                        type="button"
-                        className="btn-solid admin-academics-alert-action"
-                        onClick={() => navigate("/Radiusselecting")}
-                      >
-                        {hasAttendanceRadius ? "Update Radius" : "Set Radius"}
-                      </button>
-                    </div>
+                <div className="admin-academics-test-item admin-academics-alert-item">
+                  <strong>Attendance Radius</strong>
+                  <span>{attendanceRadiusSummary}</span>
+                  {attendanceRadiusAddedDate ? <span>{attendanceRadiusAddedDate}</span> : null}
+                  <div className="admin-academics-alert-action-wrap">
+                    <button
+                      type="button"
+                      className="btn-solid admin-academics-alert-action"
+                      onClick={() => setShowRadiusPopup(true)}
+                    >
+                      {hasAttendanceRadius ? "Update Radius" : "Set Radius"}
+                    </button>
                   </div>
-
                 </div>
               </div>
 
@@ -1568,230 +2097,410 @@ const AdiminAcademicsNew = () => {
           </div>
         </div>
       </div>
+      {showRadiusPopup && (
+  <div
+    className="globalpopup-overlay"
+    onClick={() => setShowRadiusPopup(false)}
+  >
+    <div
+      className="globalpopup-content"
+      onClick={(e) => e.stopPropagation()}
+      style={{
+        width: "60%",
+        maxWidth: "700px",
+        height: "60vh",
+        overflow: "auto",
+      }}
+    >
+      <button
+        className="globalpopup-close-btn"
+        onClick={() => setShowRadiusPopup(false)}
+      >
+        ×
+      </button>
 
-      {selectedStudent ? (
-        <div className="admin-academics-modal-overlay" onClick={() => setSelectedStudent(null)}>
+      <Radiusselectingg />
+    </div>
+  </div>
+)}
+{showTeacherAttendancePopup && (
+  <div
+    className="globalpopup-overlay"
+    onClick={() => setShowTeacherAttendancePopup(false)}
+  >
+    <div
+      className="globalpopup-content"
+      onClick={(e) => e.stopPropagation()}
+      style={{
+        width: "25%",
+        maxWidth: "1400px",
+        height: "60vh",
+        overflow: "auto",
+      }}
+    >
+      <button
+        className="globalpopup-close-btn"
+        onClick={() => setShowTeacherAttendancePopup(false)}
+      >
+        ×
+      </button>
+<AttendanceForms view={attendanceView} />
+    </div>
+  </div>
+)}
+
+
+  {selectedStudent ? (
+  <div className="admin-academics-modal-overlay" onClick={() => setSelectedStudent(null)}>
+    <div className="admin-academics-modal" onClick={(e) => e.stopPropagation()}>
+      <div className="admin-academics-modal-header">
+        <div>
+          <h3>{selectedStudent.name || "Student"}</h3>
+          <p>
+            {className || "-"} - {section || "-"} | ID: {selectedStudent.id || "-"}
+          </p>
+        </div>
+        <button type="button" onClick={() => setSelectedStudent(null)}>
+          Close
+        </button>
+      </div>
+
+      <div className="admin-academics-modal-tabs">
+        {[
+          { key: "attendance", label: "Attendance" },
+          { key: "behaviour", label: "Behaviour" },
+          { key: "academics", label: "Academics" },
+        ].map((tab) => (
+          <button
+            key={tab.key}
+            type="button"
+            className={studentPopupTab === tab.key ? "active" : ""}
+            onClick={() => setStudentPopupTab(tab.key)}
+          >
+            {tab.label}
+          </button>
+        ))}
+      </div>
+
+      <div className="admin-academics-modal-content">
+        {studentPopupLoading ? (
+          <div className="admin-academics-modal-empty">Loading details...</div>
+        ) : studentPopupTab === "academics" ? (
+          <>
+            <div className="admin-academics-split-view">
+              <div className="admin-academics-split-left">
+                <div className="admin-academics-table-wrap">
+                  <table className="admin-academics-modal-table">
+                    <thead>
+                      <tr>
+                        <th>Subject</th>
+                        {popupTermRows.map((term) => (
+                          <th key={term.key}>{term.label}</th>
+                        ))}
+                        <th>Total</th>
+                        <th>Grade</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {studentPopupAcademics.length === 0 ? (
+                        <tr>
+                          <td colSpan={popupTermRows.length + 3}>No academic data found.</td>
+                        </tr>
+                      ) : (
+                        studentPopupAcademics.map((item, index) => {
+                          const total = getPopupRowTotal(item, popupTermRows);
+                          const grade = getPopupRowGrade(item, popupTermRows);
+                          return (
+                            <tr key={`${item?.subject || "subject"}-${index}`}>
+                              <td>{item?.subject || item?.subject_name || item?.name || "-"}</td>
+                              {popupTermRows.map((term) => (
+                                <td key={`${item?.subject || index}-${term.key}`}>
+                                  {getPopupMarkForRow(item, term)}
+                                </td>
+                              ))}
+                              <td>{total}</td>
+                              <td>{grade}</td>
+                            </tr>
+                          );
+                        })
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+              <div className="admin-academics-split-right">
+                <div className="admin-academics-trend-card">
+                  <div className="admin-academics-trend-head">
+                    <strong>{activeTrendTitle}</strong>
+                    {activeTrend.overallDiff !== null ? (
+                      <span
+                        className={
+                          activeTrend.overallDiff > 0
+                            ? "admin-academics-trend-pill up"
+                            : activeTrend.overallDiff < 0
+                              ? "admin-academics-trend-pill down"
+                              : "admin-academics-trend-pill flat"
+                        }
+                      >
+                        Overall: {activeTrend.overallDiff > 0 ? "+" : ""}
+                        {activeTrend.overallDiff}%
+                      </span>
+                    ) : null}
+                  </div>
+
+                  <div className="admin-academics-trend-filter-row">
+                    <label htmlFor="trend-subject-select">Subject:</label>
+                    <select
+                      id="trend-subject-select"
+                      className="admin-academics-trend-subject-select"
+                      value={trendSubjectKey}
+                      onChange={(e) => setTrendSubjectKey(e.target.value)}
+                    >
+                      <option value="__all__">All Subjects</option>
+                      {popupSubjectOptions.map((subject) => (
+                        <option key={subject.key} value={subject.key}>
+                          {subject.label}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  {activeTrend.validPoints.length < 2 ? (
+                    <div className="admin-academics-trend-empty">
+                      Add more than one test record to view improvement trend.
+                    </div>
+                  ) : (
+                    <>
+                      <div className="admin-academics-trend-chart-wrap">
+                        <svg viewBox="0 0 560 180" className="admin-academics-trend-chart" preserveAspectRatio="none">
+                          {(() => {
+                            const values = activeTrend.validPoints.map((point) => Number(point.value));
+                            const minVal = Math.min(...values);
+                            const maxVal = Math.max(...values);
+                            const spread = maxVal - minVal || 1;
+                            const xStep = activeTrend.validPoints.length > 1 ? 520 / (activeTrend.validPoints.length - 1) : 0;
+                            const toY = (val) => 16 + ((maxVal - val) / spread) * 128;
+                            const toX = (idx) => 20 + idx * xStep;
+                            const polyline = activeTrend.validPoints
+                              .map((point, idx) => `${toX(idx)},${toY(Number(point.value))}`)
+                              .join(" ");
+                            return (
+                              <>
+                                <line x1="20" y1="144" x2="540" y2="144" className="admin-academics-trend-axis" />
+                                <polyline points={polyline} className="admin-academics-trend-line" />
+                                {activeTrend.validPoints.map((point, idx) => (
+                                  <g key={point.key}>
+                                    <circle cx={toX(idx)} cy={toY(Number(point.value))} r="4.5" className="admin-academics-trend-dot" />
+                                    <text x={toX(idx)} y="165" textAnchor="middle" className="admin-academics-trend-x-label">
+                                      {point.label}
+                                    </text>
+                                    <text x={toX(idx)} y={toY(Number(point.value)) - 8} textAnchor="middle" className="admin-academics-trend-value-label">
+                                      {Number(point.value).toFixed(1)}%
+                                    </text>
+                                  </g>
+                                ))}
+                              </>
+                            );
+                          })()}
+                        </svg>
+                      </div>
+
+                      <div className="admin-academics-trend-transitions">
+                        {activeTrend.transitions.map((item) => (
+                          <span
+                            key={`${item.from}-${item.to}`}
+                            className={`admin-academics-trend-transition ${item.improved ? "up" : item.diff < 0 ? "down" : "flat"}`}
+                          >
+                            {item.from} to {item.to}: {item.status} ({item.diff > 0 ? "+" : ""}
+                            {item.diff}%)
+                          </span>
+                        ))}
+                      </div>
+                    </>
+                  )}
+                </div>
+              </div>
+            </div>
+          </>
+        ) : studentPopupTab === "attendance" ? (
+          <table className="admin-academics-modal-table">
+            <thead>
+              <tr>
+                <th>Month</th>
+                <th>Present</th>
+                <th>Total</th>
+                <th>Percentage</th>
+              </tr>
+            </thead>
+            <tbody>
+              {studentPopupAttendance.length === 0 ? (
+                <tr>
+                  <td colSpan="4">No attendance data found.</td>
+                </tr>
+              ) : (
+                studentPopupAttendance.map((month, index) => {
+                  const present = Number(month?.present || 0);
+                  const total = Number(month?.total || 0);
+                  const percent = total > 0 ? ((present / total) * 100).toFixed(2) : "0.00";
+                  return (
+                    <tr key={`${month?.month || "month"}-${index}`}>
+                      <td>{month?.month} {month?.year}</td>
+                      <td>{present}</td>
+                      <td>{total}</td>
+                      <td>{percent}%</td>
+                    </tr>
+                  );
+                })
+              )}
+            </tbody>
+          </table>
+        ) : (
+          // Behavior Tab
+         
+  // Behavior Tab (Table Format)
+  <div className="admin-academics-table-wrap">
+    <table className="admin-academics-modal-table">
+      <thead>
+        <tr>
+          <th>S.No</th>
+          <th>Date</th>
+          <th>Report</th>
+          <th>Comment</th>
+        </tr>
+      </thead>
+      <tbody>
+        {studentPopupBehavior.length === 0 ? (
+          <tr>
+            <td colSpan="4">No behavior reports found.</td>
+          </tr>
+        ) : (
+          studentPopupBehavior.map((report, index) => (
+            <tr key={index}>
+              <td>{index + 1}</td>
+              <td>{new Date(report.created_at).toLocaleDateString("en-IN")}</td>
+              <td>{report.report || "N/A"}</td>
+              <td>{report.comment || "N/A"}</td>
+            </tr>
+          ))
+        )}
+      </tbody>
+    </table>
+  </div>
+
+        )}
+      </div>
+    </div>
+  </div>
+) : null}
+
+      {selectedTeacher ? (
+        <div className="admin-academics-modal-overlay" onClick={closeTeacherPopup}>
           <div className="admin-academics-modal" onClick={(e) => e.stopPropagation()}>
             <div className="admin-academics-modal-header">
               <div>
-                <h3>{selectedStudent.name || "Student"}</h3>
+                <h3>{selectedTeacher.teacher_name || selectedTeacher.name || "Teacher"}</h3>
                 <p>
-                  {className || "-"} - {section || "-"} | ID: {selectedStudent.id || "-"}
+                  {selectedTeacher.designation || selectedTeacher.subject || "-"} | ID:{" "}
+                  {selectedTeacher.teacher_id || selectedTeacher.id || "-"}
                 </p>
               </div>
-              <button type="button" onClick={() => setSelectedStudent(null)}>
+              <button type="button" onClick={closeTeacherPopup}>
                 Close
               </button>
             </div>
 
-            <div className="admin-academics-modal-tabs">
-              {[
-                { key: "attendance", label: "Attendance" },
-                { key: "behaviour", label: "Behaviour" },
-                { key: "academics", label: "Academics" },
-              ].map((tab) => (
-                <button
-                  key={tab.key}
-                  type="button"
-                  className={studentPopupTab === tab.key ? "active" : ""}
-                  onClick={() => setStudentPopupTab(tab.key)}
-                >
-                  {tab.label}
-                </button>
-              ))}
-            </div>
-
             <div className="admin-academics-modal-content">
-              {studentPopupLoading ? (
-                <div className="admin-academics-modal-empty">Loading details...</div>
-              ) : studentPopupTab === "academics" ? (
+              {teacherPopupLoading ? (
+                <div className="admin-academics-modal-empty">Loading teacher details...</div>
+              ) : teacherPopupError ? (
+                <div className="admin-academics-modal-empty">{teacherPopupError}</div>
+              ) : (
                 <>
                   <div className="admin-academics-split-view">
                     <div className="admin-academics-split-left">
                       <div className="admin-academics-table-wrap">
                         <table className="admin-academics-modal-table">
-                          <thead>
-                            <tr>
-                              <th>Subject</th>
-                              {popupTermRows.map((term) => (
-                                <th key={term.key}>{term.label}</th>
-                              ))}
-                              <th>Total</th>
-                              <th>Grade</th>
-                            </tr>
-                          </thead>
                           <tbody>
-                            {studentPopupAcademics.length === 0 ? (
-                              <tr>
-                                <td colSpan={popupTermRows.length + 3}>No academic data found.</td>
-                              </tr>
-                            ) : (
-                              studentPopupAcademics.map((item, index) => {
-                                const total = getPopupRowTotal(item, popupTermRows);
-                                const grade = getPopupRowGrade(item, popupTermRows);
-                                return (
-                                  <tr key={`${item?.subject || "subject"}-${index}`}>
-                                    <td>{item?.subject || item?.subject_name || item?.name || "-"}</td>
-                                    {popupTermRows.map((term) => (
-                                      <td key={`${item?.subject || index}-${term.key}`}>
-                                        {getPopupMarkForRow(item, term)}
-                                      </td>
-                                    ))}
-                                    <td>{total}</td>
-                                    <td>{grade}</td>
-                                  </tr>
-                                );
-                              })
-                            )}
+                            <tr>
+                              <th>Name</th>
+                              <td>{selectedTeacher.teacher_name || selectedTeacher.name || "-"}</td>
+                            </tr>
+                            <tr>
+                              <th>Designation</th>
+                              <td>{selectedTeacher.designation || selectedTeacher.subject || "-"}</td>
+                            </tr>
+                            <tr>
+                              <th>Phone</th>
+                              <td>{selectedTeacher.phone_no || "-"}</td>
+                            </tr>
+                            <tr>
+                              <th>Email</th>
+                              <td>{selectedTeacher.email || "-"}</td>
+                            </tr>
+                            <tr>
+                              <th>Salary</th>
+                              <td>{teacherPopupSalary?.salary_amount || teacherPopupSalary?.salary || "Loading..."}</td>
+                            </tr>
                           </tbody>
                         </table>
                       </div>
                     </div>
+
                     <div className="admin-academics-split-right">
                       <div className="admin-academics-trend-card">
                         <div className="admin-academics-trend-head">
-                          <strong>{activeTrendTitle}</strong>
-                          {activeTrend.overallDiff !== null ? (
-                            <span
-                              className={
-                                activeTrend.overallDiff > 0
-                                  ? "admin-academics-trend-pill up"
-                                  : activeTrend.overallDiff < 0
-                                    ? "admin-academics-trend-pill down"
-                                    : "admin-academics-trend-pill flat"
-                              }
-                            >
-                              Overall: {activeTrend.overallDiff > 0 ? "+" : ""}
-                              {activeTrend.overallDiff}%
+                          <strong>Teacher Attendance</strong>
+                          {teacherPopupStats.percent !== null ? (
+                            <span className="admin-academics-trend-pill flat">
+                              {teacherPopupStats.percent}%
                             </span>
                           ) : null}
                         </div>
 
-                        <div className="admin-academics-trend-filter-row">
-                          <label htmlFor="trend-subject-select">Subject:</label>
-                          <select
-                            id="trend-subject-select"
-                            className="admin-academics-trend-subject-select"
-                            value={trendSubjectKey}
-                            onChange={(e) => setTrendSubjectKey(e.target.value)}
-                          >
-                            <option value="__all__">All Subjects</option>
-                            {popupSubjectOptions.map((subject) => (
-                              <option key={subject.key} value={subject.key}>
-                                {subject.label}
-                              </option>
-                            ))}
-                          </select>
+                        <div className="admin-academics-trend-transitions">
+                          <span className="admin-academics-trend-transition flat">
+                            Present: {teacherPopupStats.presentDays}
+                          </span>
+                          <span className="admin-academics-trend-transition flat">
+                            Late: {teacherPopupStats.lateDays}
+                          </span>
+                          <span className="admin-academics-trend-transition flat">
+                            Total Days: {teacherPopupStats.totalDays}
+                          </span>
                         </div>
-
-                        {activeTrend.validPoints.length < 2 ? (
-                          <div className="admin-academics-trend-empty">
-                            Add more than one test record to view improvement trend.
-                          </div>
-                        ) : (
-                          <>
-                            <div className="admin-academics-trend-chart-wrap">
-                              <svg viewBox="0 0 560 180" className="admin-academics-trend-chart" preserveAspectRatio="none">
-                                {(() => {
-                                  const values = activeTrend.validPoints.map((point) => Number(point.value));
-                                  const minVal = Math.min(...values);
-                                  const maxVal = Math.max(...values);
-                                  const spread = maxVal - minVal || 1;
-                                  const xStep = activeTrend.validPoints.length > 1 ? 520 / (activeTrend.validPoints.length - 1) : 0;
-                                  const toY = (val) => 16 + ((maxVal - val) / spread) * 128;
-                                  const toX = (idx) => 20 + idx * xStep;
-                                  const polyline = activeTrend.validPoints
-                                    .map((point, idx) => `${toX(idx)},${toY(Number(point.value))}`)
-                                    .join(" ");
-                                  return (
-                                    <>
-                                      <line x1="20" y1="144" x2="540" y2="144" className="admin-academics-trend-axis" />
-                                      <polyline points={polyline} className="admin-academics-trend-line" />
-                                      {activeTrend.validPoints.map((point, idx) => (
-                                        <g key={point.key}>
-                                          <circle cx={toX(idx)} cy={toY(Number(point.value))} r="4.5" className="admin-academics-trend-dot" />
-                                          <text x={toX(idx)} y="165" textAnchor="middle" className="admin-academics-trend-x-label">
-                                            {point.label}
-                                          </text>
-                                          <text x={toX(idx)} y={toY(Number(point.value)) - 8} textAnchor="middle" className="admin-academics-trend-value-label">
-                                            {Number(point.value).toFixed(1)}%
-                                          </text>
-                                        </g>
-                                      ))}
-                                    </>
-                                  );
-                                })()}
-                              </svg>
-                            </div>
-
-                            <div className="admin-academics-trend-transitions">
-                              {activeTrend.transitions.map((item) => (
-                                <span
-                                  key={`${item.from}-${item.to}`}
-                                  className={`admin-academics-trend-transition ${item.improved ? "up" : item.diff < 0 ? "down" : "flat"}`}
-                                >
-                                  {item.from} to {item.to}: {item.status} ({item.diff > 0 ? "+" : ""}
-                                  {item.diff}%)
-                                </span>
-                              ))}
-                            </div>
-                          </>
-                        )}
                       </div>
                     </div>
                   </div>
-                </>
-              ) : studentPopupTab === "attendance" ? (
-                <table className="admin-academics-modal-table">
-                  <thead>
-                    <tr>
-                      <th>Month</th>
-                      <th>Present</th>
-                      <th>Total</th>
-                      <th>Percentage</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {studentPopupAttendance.length === 0 ? (
-                      <tr>
-                        <td colSpan="4">No attendance data found.</td>
-                      </tr>
-                    ) : (
-                      studentPopupAttendance.map((month, index) => {
-                        const present = Number(month?.present || 0);
-                        const total = Number(month?.total || 0);
-                        const percent = total > 0 ? ((present / total) * 100).toFixed(2) : "0.00";
-                        return (
-                          <tr key={`${month?.month || "month"}-${index}`}>
-                            <td>{month?.month} {month?.year}</td>
-                            <td>{present}</td>
-                            <td>{total}</td>
-                            <td>{percent}%</td>
+
+                  <div className="admin-academics-modal-table-wrap" style={{ marginTop: "1rem" }}>
+                    <table className="admin-academics-modal-table">
+                      <thead>
+                        <tr>
+                          <th>Date</th>
+                          <th>Status</th>
+                          <th>Login Time</th>
+                          <th>Logout Time</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {Array.isArray(teacherPopupAttendance) && teacherPopupAttendance.length > 0 ? (
+                          teacherPopupAttendance.map((entry, index) => (
+                            <tr key={`${entry?.date || entry?.attendance_date || index}`}>
+                              <td>{entry?.date || entry?.attendance_date || entry?.created_at || "-"}</td>
+                              <td>{entry?.status || entry?.attendance_status || "-"}</td>
+                              <td>{formatStoredTime(entry?.entry_time || entry?.login_time || "")}</td>
+                              <td>{formatStoredTime(entry?.exit_time || entry?.logout_time || "")}</td>
+                            </tr>
+                          ))
+                        ) : (
+                          <tr>
+                            <td colSpan="4">No attendance data found.</td>
                           </tr>
-                        );
-                      })
-                    )}
-                  </tbody>
-                </table>
-              ) : (
-                <table className="admin-academics-modal-table">
-                  <thead>
-                    <tr>
-                      <th>Category</th>
-                      <th>Description</th>
-                      <th>Grade</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {Object.entries(mockConduct).map(([key, value]) => (
-                      <tr key={key}>
-                        <td>{key}</td>
-                        <td>{value.description}</td>
-                        <td>{value.grade}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
+                </>
               )}
             </div>
           </div>
@@ -1829,6 +2538,7 @@ const AdiminAcademicsNew = () => {
         .admin-academics-tests,
         .admin-academics-footer-cards,
         .admin-academics-metric {
+    
           border-radius: 1.55rem;
           box-shadow: 0 10px 28px rgba(15, 23, 42, 0.12);
           background: #fff;
@@ -2002,7 +2712,7 @@ const AdiminAcademicsNew = () => {
 
         .admin-academics-students-grid {
           display: grid;
-          grid-template-columns: repeat(6, minmax(0, 1fr));
+          grid-template-columns: repeat(5, minmax(0, 1fr));
           gap: 1rem 0.7rem;
           flex: 1;
           min-height: 0;
@@ -2074,7 +2784,7 @@ const AdiminAcademicsNew = () => {
         }
 
         .admin-academics-student-name {
-          font-size: 0.58rem;
+          font-size: 0.67rem;
           font-weight: 700;
           color: #444;
           line-height: 1.15;
@@ -2082,7 +2792,7 @@ const AdiminAcademicsNew = () => {
 
         .admin-academics-student-meta,
         .admin-academics-student-score {
-          font-size: 0.5rem;
+          font-size: 0.6em;
           color: #7a7a7a;
           line-height: 1.15;
         }
@@ -2303,6 +3013,11 @@ const AdiminAcademicsNew = () => {
           grid-template-columns: repeat(3, minmax(0, 1fr));
           gap: 0.6rem;
           align-items: center;
+        }
+
+        .admin-academics-alerts .admin-academics-footer-cards {
+          grid-template-columns: repeat(3, minmax(0, 1fr));
+          gap: 0.6rem;
         }
 
         .admin-academics-test-item,
@@ -2711,7 +3426,7 @@ const AdiminAcademicsNew = () => {
           .admin-academics-top,
           .admin-academics-main,
           .admin-academics-bottom {
-            grid-template-columns: 1fr;
+            // grid-template-columns: 1fr;
           }
 
           .admin-academics-mini-cards,
@@ -2750,21 +3465,87 @@ const AdiminAcademicsNew = () => {
           }
         }
 
-        @media (min-width: 900px) and (max-width: 1200px) {
-          .admin-academics-page .admin-academics-content {
-            min-width: 0 !important;
-            min-height: 0 !important;
-            height: 100% !important;
-            max-height: 100% !important;
-            overflow-y: auto !important;
-            overflow-x: hidden !important;
-            overscroll-behavior: contain !important;
-            padding-right: 0.6rem !important;
-            padding-bottom: 0.5rem !important;
-          }
-        }
+    
+          @media (min-width:1024px) and (max-width: 1200px) {
+
+  .admin-academics-page {
+    height: 120vh !important;
+    overflow: hidden !important;
+  }
+
+  .admin-academics-page .accountant-dashboard-shell,
+  .admin-academics-page .dashboard-shell {
+    height: 100vh !important;
+    overflow: hidden !important;
+  }
+
+  .admin-academics-page .accountant-main-area,
+  .admin-academics-page .dashboard-main {
+    height: calc(100vh - 20px) !important;
+    overflow: hidden !important;
+  }
+
+  .admin-academics-page .admin-academics-content {
+    width: 1050px !important;
+    // height: 660px !important;
+
+    max-width: 100% !important;
+    max-height: 100% !important;
+
+    overflow-y: auto !important;
+    overflow-x: hidden !important;
+
+    padding-right: 10px !important;
+    padding-bottom: 10px !important;
+
+    scrollbar-width: thin;
+  }
+.admin-academics-performance {
+    height: 500px !important;
+    min-height: 360px !important;
+    max-height: 360px !important;
+
+    display: flex !important;
+    flex-direction: column !important;
+
+    overflow: scroll !important;
+}
+    .admin-academics-storepo{
+     height: 500px !important;
+    min-height: 360px !important;
+    max-height: 360px !important;
+
+    display: flex !important;
+    flex-direction: column !important;
+
+    overflow: scroll !important;
+    }
+  .admin-academics-top,
+  .admin-academics-main,
+  .admin-academics-bottom {
+    width: 100% !important;
+  }
+
+  .admin-academics-main {
+    display: grid !important;
+    grid-template-columns: 2fr 1fr !important;
+    gap: 1rem !important;
+  }
+
+  .admin-academics-students-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr)) !important;
+  }
+
+  .admin-academics-po-list,
+  .admin-academics-students-grid {
+    max-height: none !important;
+    overflow: visible !important;
+  }
+}
       `}</style>
     </div>
+
+    
   );
 };
 

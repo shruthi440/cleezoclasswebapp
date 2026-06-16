@@ -356,7 +356,12 @@ const [studentData, setStudentData] = useState(null);
       })
       .filter((row) => row.total > 0 || row.paid > 0 || row.due > 0);
   }, [dynamicFeeKeys, feeStructure, payments]);
-
+useEffect(() => {
+  console.log(
+    "POPUP DATA RECEIVED:==============================================",
+    JSON.stringify(popupData, null, 2)
+  );
+}, [popupData]);
   // Fetch Fee Structure and Payment History
 useEffect(() => {
   console.log("useEffect triggered for selectedStudentId:", selectedStudentId);
@@ -605,6 +610,24 @@ useEffect(() => {
       (popupData?.fees?.uniform?.paidThisTransaction || 0) +
       (popupData?.fees?.others?.paidThisTransaction || 0) +
       (popupData?.fees?.residential?.paidThisTransaction || 0) +
+      console.log("=== CURRENT PAID AMOUNT DEBUG ===");
+console.log("popupData?.paidAmount:", popupData?.paidAmount);
+
+console.log("tuition paidThisTransaction:", popupData?.fees?.tuition?.paidThisTransaction || 0);
+console.log("admission paidThisTransaction:", popupData?.fees?.admission?.paidThisTransaction || 0);
+console.log("exam paidThisTransaction:", popupData?.fees?.exam?.paidThisTransaction || 0);
+console.log("bus paidThisTransaction:", popupData?.fees?.bus?.paidThisTransaction || 0);
+console.log("book paidThisTransaction:", popupData?.fees?.book?.paidThisTransaction || 0);
+console.log("uniform paidThisTransaction:", popupData?.fees?.uniform?.paidThisTransaction || 0);
+console.log("others paidThisTransaction:", popupData?.fees?.others?.paidThisTransaction || 0);
+console.log("residential paidThisTransaction:", popupData?.fees?.residential?.paidThisTransaction || 0);
+
+console.log("popupCustomFeePaidTotal:", popupCustomFeePaidTotal);
+
+console.log("currentPaidAmount:", currentPaidAmount);
+
+console.log("Full popupData:", popupData);
+console.log("================================");
       popupCustomFeePaidTotal;
 
   // Toggle Edit Mode
@@ -779,16 +802,19 @@ const generatePDF = async (currentReceiptNumber) => {
   });
 
   let overallTotalPaid =
-    Number(popupData?.paidAmount) ||
-    (popupData?.fees?.tuition?.paidThisTransaction > 0 ? tuitionPaid : 0) +
-      (popupData?.fees?.admission?.paidThisTransaction > 0 ? admissionPaid : 0) +
-      (popupData?.fees?.exam?.paidThisTransaction > 0 ? examPaid : 0) +
-      (popupData?.fees?.bus?.paidThisTransaction > 0 ? busPaid : 0) +
-      (popupData?.fees?.book?.paidThisTransaction > 0 ? bookPaid : 0) +
-      (popupData?.fees?.uniform?.paidThisTransaction > 0 ? uniformPaid : 0) +
-      (popupData?.fees?.others?.paidThisTransaction > 0 ? othersPaid : 0) +
-      (popupData?.fees?.residential?.paidThisTransaction > 0 ? residentialPaid : 0) +
-      dynamicFeePaidTotal;
+  Number(popupData?.paidAmount) ||
+  (popupData?.fees?.tuition?.paidThisTransaction > 0 ? tuitionPaid : 0) +
+  (popupData?.fees?.admission?.paidThisTransaction > 0 ? admissionPaid : 0) +
+  (popupData?.fees?.exam?.paidThisTransaction > 0 ? examPaid : 0) +
+  (popupData?.fees?.bus?.paidThisTransaction > 0 ? busPaid : 0) +
+  (popupData?.fees?.book?.paidThisTransaction > 0 ? bookPaid : 0) +
+  (popupData?.fees?.uniform?.paidThisTransaction > 0 ? uniformPaid : 0) +
+  (popupData?.fees?.others?.paidThisTransaction > 0 ? othersPaid : 0) +
+  (popupData?.fees?.residential?.paidThisTransaction > 0 ? residentialPaid : 0) +
+  dynamicFeePaidTotal;
+
+console.log("overallTotalPaid =", overallTotalPaid);
+console.log("================================");
 
   console.log("[GenerateBill][paid-breakdown]", {
     popupPaidAmount: Number(popupData?.paidAmount) || 0,
@@ -1045,17 +1071,7 @@ const confirmPrint = async (copies) => {
     dynamicFeeRows.reduce((sum, row) => sum + row.due, 0)
   );
 
-  const overallTotalPaid =
-    Number(popupData?.paidAmount) ||
-    tuitionPaid +
-      admissionPaid +
-      residentialPaid +
-      examPaid +
-      busPaid +
-      bookPaid +
-      uniformPaid +
-      othersPaid +
-      dynamicFeeRows.reduce((sum, row) => sum + row.paid, 0);
+const overallTotalPaid = Number(popupData?.paidAmount || 0);
 
   const remainingAmount = Math.max(overallTotalDue - overallTotalPaid, 0);
 
@@ -1178,12 +1194,11 @@ const printPendingBills = (billsToPrint) => {
                 { label: "Book Fee", amount: printData.bookFee, paid: printData.bookPaid, discount: printData.discounts.bookDiscount },
                 { label: "Uniform Fee", amount: printData.uniformFee, paid: printData.uniformPaid },
                 { label: "Other Fees", amount: printData.othersFee, paid: printData.othersPaid, description: otherDescription },
-                ...dynamicFeeRows.map((row) => ({
-                  label: row.label,
-                  amount: Number(row.total) || 0,
-                  paid: Number(row.paid) || 0,
-                  due: Number(row.due) || 0,
-                })),
+               ...(printData.popupData?.customFees || []).map((fee) => ({
+  label: fee.label,
+  paid: Number(fee.paidThisTransaction) || 0,
+  description: "",
+})),
               ].filter(fee => fee.amount > 0);
 
               // Fees paid in this transaction
@@ -1198,7 +1213,7 @@ const printPendingBills = (billsToPrint) => {
                 { label: "Other Fees", paid: printData.popupData?.fees?.others?.paidThisTransaction || 0, description: otherDescription },
                 ...dynamicFeeRows.map((fee) => ({
                   label: fee.label,
-                  paid: Number(fee.paid) || 0,
+                 paid: Number(fee.paidThisTransaction) || 0,
                   description: "",
                 })),
               ].filter(fee => fee.paid > 0);
@@ -1544,17 +1559,7 @@ const printPendingBills = (billsToPrint) => {
     uniformFee +
     othersFee +
     renderDynamicFeeDueTotal;
-  const overallTotalPaid =
-    Number(popupData?.paidAmount) ||
-    tuitionPaid +
-      admissionPaid +
-      residentialPaid +
-      examPaid +
-      busPaid +
-      bookPaid +
-      uniformPaid +
-      othersPaid +
-      renderDynamicFeePaidTotal;
+const overallTotalPaid = Number(popupData?.paidAmount || 0);
 
   const remainingAmount1 = () => {
     const overallTotalDue =
@@ -1822,8 +1827,13 @@ const printPendingBills = (billsToPrint) => {
                     </p>
 <div style={{ display: 'flex', justifyContent: 'flex-end', fontWeight: 'bold',  padding: '5px 10px' }}>
   <div style={{ display: 'flex', gap: '20px' }}>
-    <div>Total Paid: ₹{overallTotalPaid.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</div>
-    <div>Total Due: ₹{remainingAmount1().toLocaleString('en-IN', { minimumFractionDigits: 2 })}</div>
+  <div>
+  Total Paid by you: ₹
+  {Number(popupData?.paidAmount || 0).toLocaleString("en-IN", {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2
+  })}
+</div>
   </div>
 </div>
                     <div style={{ marginTop: '10px', fontSize: '11px' }}>

@@ -1,29 +1,36 @@
 import { ArrowLeft, Calendar, CheckCircle, ChevronRight, Circle, Download, Share, Star } from 'lucide-react';
-import { Link, useLocation, useNavigate } from 'react-router-dom';
+import { Link, useLocation } from 'react-router-dom';
 import { Pencil, Trash2 } from 'lucide-react';
 import React, { useEffect, useRef, useState } from 'react';
 import Modal from 'react-modal';
 import axios from 'axios';
 import html2canvas from 'html2canvas';
 import jsPDF from 'jspdf';
+import * as XLSX from 'xlsx';
 
 Modal.setAppElement('#root');
 const schoolLogo = "";
 
-const StudentManagementedit = () => {
+const StudentManagementedit = ({ defaultTab = 'Student' } = {}) => {
+  const [activeTab, setActiveTab] = useState(defaultTab);
   const [classes, setClasses] = useState([]);
   const [sections, setSections] = useState([]);
   const [sectionMap, setSectionMap] = useState([]);
   const [selectedClass, setSelectedClass] = useState('');
   const [selectedSection, setSelectedSection] = useState('');
   const [students, setStudents] = useState([]);
+  const [teachers, setTeachers] = useState([]);
+  const [managementUsers, setManagementUsers] = useState([]);
   const [editingStudent, setEditingStudent] = useState(null);
   const [isLoading, setIsLoading] = useState(false);
+  const [teacherLoading, setTeacherLoading] = useState(false);
+  const [managementLoading, setManagementLoading] = useState(false);
   const [error, setError] = useState(null);
   const [schoolCode, setSchoolCode] = useState('');
   const [showPopup, setShowPopup] = useState(false);
   const [deletePopupId, setDeletePopupId] = useState(null);
   const [editFormData, setEditFormData] = useState({
+    user_type: 'student',
     name: '',
     username: '',
     gender: '',
@@ -40,11 +47,24 @@ const StudentManagementedit = () => {
     cbse_reg_no: '',
     photo: '',
     curriculum: '',
+    designation: '',
+    teaches_to_1: '',
+    teaches_to_2: '',
+    teaches_to_3: '',
+    teaches_to_4: '',
+    teaches_to_5: '',
+    teaches_to_6: '',
+    teaches_to_7: '',
+    teaches_to_8: '',
+    teaches_to_9: '',
+    teaches_to_10: '',
+    teaches_to_11: '',
+    teaches_to_12: '',
   });
   const [photoPreview, setPhotoPreview] = useState('');
   const [photoFile, setPhotoFile] = useState(null);
   const fileInputRef = useRef(null);
-  const navigate = useNavigate();
+  const pendingEditTargetRef = useRef(null);
   const location = useLocation();
   const [formData, setFormData] = useState({
     id: '',
@@ -60,7 +80,15 @@ const StudentManagementedit = () => {
   const [selectedDate, setSelectedDate] = useState('');
   const [activePage, setActivePage] = useState(null);
   const [showAttendance, setShowAttendance] = useState(false);
-
+const managementDesignationOptions = [
+  { label: 'Correspondent', value: 'superadmin' },
+  { label: 'Principal', value: 'admin' },
+  { label: 'Campaigning', value: 'marketing' },
+  { label: 'Accountant', value: 'accountant' },
+  { label: 'HR', value: 'hr' },
+  { label: 'Bus Manager', value: 'Bus Manager' },
+  { label: 'Bus Driver', value: 'Bus Driver' },
+];
   const toUpperCaseText = (value) => {
     if (!value) return '';
     return String(value)
@@ -108,7 +136,6 @@ const StudentManagementedit = () => {
     });
   };
   const [hoveredIndex, setHoveredIndex] = useState(null);
-  const [teacherData, setTeacherData] = useState([]);
   const [isAbsent, setIsAbsent] = useState(false);
   const [status, setStatus] = useState('');
   const [successMessage, setSuccessMessage] = useState('');
@@ -123,6 +150,12 @@ const StudentManagementedit = () => {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [classTeachers, setClassTeachers] = useState({});
   const [isAddingStudent, setIsAddingStudent] = useState(false);
+  const [showUploadPanel, setShowUploadPanel] = useState(false);
+  const [excelFile, setExcelFile] = useState(null);
+  const [uploadedData, setUploadedData] = useState([]);
+  const [previewData, setPreviewData] = useState([]);
+  const [showPreview, setShowPreview] = useState(false);
+  const [uploadingExcel, setUploadingExcel] = useState(false);
   const [newStudentFormData, setNewStudentFormData] = useState({
     user_type: 'student',
     name: '',
@@ -141,30 +174,116 @@ const StudentManagementedit = () => {
     cbse_reg_no: '',
     photo: '',
     curriculum: '',
+    designation: '',
+    teaches_to_1: '',
+    teaches_to_2: '',
+    teaches_to_3: '',
+    teaches_to_4: '',
+    teaches_to_5: '',
+    teaches_to_6: '',
+    teaches_to_7: '',
+    teaches_to_8: '',
+    teaches_to_9: '',
+    teaches_to_10: '',
+    teaches_to_11: '',
+    teaches_to_12: '',
   });
 
   const userRole = localStorage.getItem('userRole');
   const [windowWidth, setWindowWidth] = useState(window.innerWidth);
 
   useEffect(() => {
+    setActiveTab(defaultTab);
+  }, [defaultTab]);
+
+  useEffect(() => {
     const params = new URLSearchParams(location.search);
     const shouldOpenAdd =
       (params.get('openAdd') || '').toLowerCase() === 'true' ||
       params.get('openAdd') === '1';
-    if (!shouldOpenAdd) return;
+    const shouldOpenEdit =
+      (params.get('openEdit') || '').toLowerCase() === 'true' ||
+      params.get('openEdit') === '1';
 
-    const requestedUserType = (params.get('userType') || '').toLowerCase();
-    const normalizedUserType =
-      requestedUserType === 'teacher' || requestedUserType === 'management'
-        ? requestedUserType
-        : 'student';
+    if (shouldOpenAdd) {
+      const requestedUserType = (params.get('userType') || '').toLowerCase();
+      const normalizedUserType =
+        requestedUserType === 'teacher' || requestedUserType === 'management'
+          ? requestedUserType
+          : 'student';
 
-    setNewStudentFormData((prev) => ({
-      ...prev,
-      user_type: normalizedUserType,
-    }));
-    setIsAddingStudent(true);
+      setNewStudentFormData((prev) => ({
+        ...prev,
+        user_type: normalizedUserType,
+      }));
+      setIsAddingStudent(true);
+    }
+
+    if (shouldOpenEdit) {
+      const requestedUserType = (params.get('userType') || '').toLowerCase();
+      const normalizedUserType =
+        requestedUserType === 'teacher'
+          ? 'Staff'
+          : requestedUserType === 'management'
+            ? 'Management'
+            : 'Student';
+      const editId = params.get('editId') || '';
+      const className = params.get('class') || '';
+      const section = params.get('section') || '';
+
+      pendingEditTargetRef.current = {
+        editId,
+        userType: normalizedUserType,
+        className,
+        section,
+      };
+
+      setActiveTab(normalizedUserType);
+
+      if (normalizedUserType === 'Student' && className) {
+        setSelectedClass(className);
+      }
+    }
   }, [location.search]);
+
+  useEffect(() => {
+    const pending = pendingEditTargetRef.current;
+    if (!pending || !pending.editId) return;
+
+    if (pending.userType === 'Student') {
+      if (pending.className && selectedClass !== pending.className) return;
+      if (pending.section && selectedSection !== pending.section) {
+        setSelectedSection(pending.section);
+        return;
+      }
+
+      const studentMatch = students.find((student) => String(student.id) === String(pending.editId));
+      if (studentMatch) {
+        handleEditClick(studentMatch);
+        pendingEditTargetRef.current = null;
+      }
+      return;
+    }
+
+    if (pending.userType === 'Staff') {
+      const teacherMatch = teachers.find((teacher) => String(teacher.id) === String(pending.editId));
+      if (teacherMatch) {
+        handleEditClick(teacherMatch);
+        pendingEditTargetRef.current = null;
+      }
+      return;
+    }
+
+    if (pending.userType === 'Management') {
+      const managementMatch = managementUsers.find(
+        (manager) => String(manager.id) === String(pending.editId)
+      );
+      if (managementMatch) {
+        handleEditClick(managementMatch);
+        pendingEditTargetRef.current = null;
+      }
+    }
+  }, [students, teachers, managementUsers, selectedClass, selectedSection]);
 
   const normalizePhotoUrl = (rawPhoto) => {
     if (!rawPhoto) return '';
@@ -322,11 +441,59 @@ const StudentManagementedit = () => {
     fetchStudents();
   }, [selectedClass, selectedSection, schoolCode, newStudentFormData.user_type]);
 
+  const refreshUsersByType = async (userType) => {
+    if (!schoolCode) return [];
+    const response = await axios.post('https://cleezoclass.com:4000/api/users', {
+      schoolCode,
+      user_type: userType,
+    });
+    return Array.isArray(response.data) ? response.data : [];
+  };
+
+  const loadTeacherUsers = async () => {
+    setTeacherLoading(true);
+    try {
+      const data = await refreshUsersByType('teacher');
+      setTeachers(data);
+      setError(null);
+    } catch (err) {
+      console.error('Error fetching teachers:', err);
+      setError('Failed to fetch teachers');
+      setTeachers([]);
+    } finally {
+      setTeacherLoading(false);
+    }
+  };
+
+  const loadManagementUsers = async () => {
+    setManagementLoading(true);
+    try {
+      const data = await refreshUsersByType('management');
+      setManagementUsers(data);
+      setError(null);
+    } catch (err) {
+      console.error('Error fetching management users:', err);
+      setError('Failed to fetch management users');
+      setManagementUsers([]);
+    } finally {
+      setManagementLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    if (!schoolCode) return;
+    if (activeTab === 'Staff') {
+      loadTeacherUsers();
+    } else if (activeTab === 'Management') {
+      loadManagementUsers();
+    }
+  }, [activeTab, schoolCode]);
   const handleEditClick = (student) => {
     const key = `${student.class_name}-${student.section}`;
     const teacherName = classTeachers[key] || '';
     setEditingStudent(student.id);
     setEditFormData({
+      user_type: student.user_type || 'student',
       name: student.name || '',
       username: student.username || '',
       gender: student.gender || '',
@@ -342,7 +509,20 @@ const StudentManagementedit = () => {
       admission_no: student.admission_no || '',
       cbse_reg_no: student.cbse_reg_no || '',
       photo: student.photo || '',
-      curriculum: student.curriculum || ''
+      curriculum: student.curriculum || '',
+      designation: student.designation || '',
+      teaches_to_1: student.teaches_to_1 || '',
+      teaches_to_2: student.teaches_to_2 || '',
+      teaches_to_3: student.teaches_to_3 || '',
+      teaches_to_4: student.teaches_to_4 || '',
+      teaches_to_5: student.teaches_to_5 || '',
+      teaches_to_6: student.teaches_to_6 || '',
+      teaches_to_7: student.teaches_to_7 || '',
+      teaches_to_8: student.teaches_to_8 || '',
+      teaches_to_9: student.teaches_to_9 || '',
+      teaches_to_10: student.teaches_to_10 || '',
+      teaches_to_11: student.teaches_to_11 || '',
+      teaches_to_12: student.teaches_to_12 || '',
     });
     setPhotoPreview(normalizePhotoUrl(student.photo));
     setPhotoFile(null);
@@ -372,6 +552,160 @@ const StudentManagementedit = () => {
     }
   };
 
+  const handleExcelPreview = (file) => {
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      const data = event.target?.result;
+      const workbook = XLSX.read(data, { type: 'binary' });
+      const sheetName = workbook.SheetNames[0];
+      const sheet = workbook.Sheets[sheetName];
+      const jsonData = XLSX.utils.sheet_to_json(sheet);
+      setPreviewData(Array.isArray(jsonData) ? jsonData : []);
+      setShowPreview(true);
+    };
+    reader.readAsBinaryString(file);
+  };
+
+  const getExcelTemplateHeaders = () => {
+    const studentHeaders = [
+      'name',
+      'gender',
+      'dob',
+      'phone_no',
+      'aadhar_no',
+      'father_name',
+      'address',
+      'class_name',
+      'section',
+      'class_teacher',
+      'school_name',
+      'admission_no',
+      'curriculum',
+      'cbse_reg_no',
+    ];
+
+    const teacherHeaders = [
+      'name',
+      'gender',
+      'dob',
+      'phone_no',
+      'aadhar_no',
+      'father_name',
+      'address',
+      'designation',
+      'teaches_to_1',
+      'teaches_to_2',
+      'teaches_to_3',
+      'teaches_to_4',
+      'teaches_to_5',
+      'teaches_to_6',
+      'teaches_to_7',
+      'teaches_to_8',
+      'teaches_to_9',
+      'teaches_to_10',
+      'teaches_to_11',
+      'teaches_to_12',
+    ];
+
+    const managementHeaders = [
+      'name',
+      'gender',
+      'dob',
+      'phone_no',
+      'aadhar_no',
+      'father_name',
+      'address',
+      'designation',
+    ];
+
+    if (activeTab === 'Staff') return teacherHeaders;
+    if (activeTab === 'Management') return managementHeaders;
+    return studentHeaders;
+  };
+
+  const downloadExcelTemplate = () => {
+    const headers = getExcelTemplateHeaders();
+    const workbook = XLSX.utils.book_new();
+    const worksheet = XLSX.utils.aoa_to_sheet([headers]);
+    const sheetName = activeTab === 'Staff' ? 'TeacherTemplate' : `${activeTab}Template`;
+    XLSX.utils.book_append_sheet(workbook, worksheet, sheetName);
+    XLSX.writeFile(
+      workbook,
+      `${activeTab === 'Staff' ? 'teacher' : activeTab.toLowerCase()}_template.xlsx`
+    );
+  };
+
+  const handleExcelFileChange = (e) => {
+    const file = e.target.files?.[0] || null;
+    setExcelFile(file);
+    setUploadedData([]);
+    setShowPreview(false);
+    setPreviewData([]);
+    if (file) {
+      handleExcelPreview(file);
+    }
+  };
+
+  const handleExcelUpload = async () => {
+    if (!excelFile) {
+      alert('Please choose an Excel file first');
+      return;
+    }
+
+    const schoolCodeValue = localStorage.getItem('schoolCode');
+    if (!schoolCodeValue) {
+      alert('School code missing in localStorage.');
+      return;
+    }
+
+    const uploadData = new FormData();
+    uploadData.append('file', excelFile);
+    uploadData.append('school_code', schoolCodeValue);
+
+    const apiCategory = activeTab === 'Staff' ? 'teacher' : activeTab.toLowerCase();
+
+    try {
+      setUploadingExcel(true);
+      const response = await axios.post(
+        `https://cleezoclass.com:4000/api/upload-excel/${apiCategory}`,
+        uploadData,
+        {
+          params: { schoolCode: schoolCodeValue },
+          headers: { 'Content-Type': 'multipart/form-data' },
+        }
+      );
+
+      const insertedRecords = response?.data?.insertedRecords || [];
+      const duplicates = response?.data?.duplicates || [];
+      const replacedRecords = response?.data?.replacedRecords || [];
+      const skippedRows = response?.data?.skippedRows || 0;
+
+      setUploadedData(insertedRecords);
+      alert(
+        `Upload Successful!\nInserted: ${insertedRecords.length}\nReplaced: ${replacedRecords.length || duplicates.length}\nSkipped: ${skippedRows}`
+      );
+      setExcelFile(null);
+      setShowPreview(false);
+      setPreviewData([]);
+
+      if (activeTab === 'Student') {
+        const url = `https://cleezoclass.com:4000/api/users/${selectedClass}`;
+        const params = { user_type: 'student', schoolCode: schoolCodeValue, section: selectedSection };
+        const responseStudents = await axios.get(url, { params });
+        setStudents(responseStudents.data);
+      } else if (activeTab === 'Staff') {
+        await loadTeacherUsers();
+      } else if (activeTab === 'Management') {
+        await loadManagementUsers();
+      }
+    } catch (error) {
+      console.error('Excel upload failed:', error);
+      alert('Excel upload failed');
+    } finally {
+      setUploadingExcel(false);
+    }
+  };
+
   const uploadPhoto = async () => {
     if (!photoFile) return editFormData.photo || newStudentFormData.photo;
     const formData = new FormData();
@@ -390,16 +724,22 @@ const StudentManagementedit = () => {
     }
   };
 
-  const handleDelete = async (studentId) => {
-    if (window.confirm('Are you sure you want to move this student to deleted list?')) {
+  const handleDelete = async (studentId, userType = 'student') => {
+    if (window.confirm(`Are you sure you want to move this ${userType} to deleted list?`)) {
       try {
         await axios.delete(`https://cleezoclass.com:4000/api/users/${studentId}`, {
           params: { schoolCode },
         });
-        const url = `https://cleezoclass.com:4000/api/users/${selectedClass}`;
-        const params = { user_type: 'student', schoolCode, section: selectedSection };
-        const response = await axios.get(url, { params });
-        setStudents(response.data);
+        if (userType === 'teacher') {
+          await loadTeacherUsers();
+        } else if (userType === 'management') {
+          await loadManagementUsers();
+        } else {
+          const url = `https://cleezoclass.com:4000/api/users/${selectedClass}`;
+          const params = { user_type: 'student', schoolCode, section: selectedSection };
+          const response = await axios.get(url, { params });
+          setStudents(response.data);
+        }
       } catch (error) {
         console.error('Error deleting student:', error);
       }
@@ -422,12 +762,24 @@ const StudentManagementedit = () => {
       }, {
         params: { schoolCode }
       });
-      const url = `https://cleezoclass.com:4000/api/users/${selectedClass}`;
-      const params = { user_type: 'student', schoolCode, section: selectedSection };
-      const response = await axios.get(url, { params });
-      setStudents(response.data);
+      if (editFormData.user_type === 'teacher') {
+        await loadTeacherUsers();
+      } else if (editFormData.user_type === 'management') {
+        await loadManagementUsers();
+      } else {
+        const url = `https://cleezoclass.com:4000/api/users/${selectedClass}`;
+        const params = { user_type: 'student', schoolCode, section: selectedSection };
+        const response = await axios.get(url, { params });
+        setStudents(response.data);
+      }
       cancelEdit();
-      setSuccessMessage('✔️ Student details saved successfully!');
+      setSuccessMessage(
+        editFormData.user_type === 'teacher'
+          ? '✔️ Teacher details saved successfully!'
+          : editFormData.user_type === 'management'
+            ? '✔️ Management user saved successfully!'
+            : '✔️ Student details saved successfully!'
+      );
       setShowSuccessOverlay(true);
       setTimeout(() => {
         setShowSuccessOverlay(false);
@@ -565,6 +917,12 @@ const handleAddStudentSubmit = async (e) => {
       setStudents(updatedStudents.data);
     }
 
+    if (submittedUserType === 'teacher') {
+      await loadTeacherUsers();
+    } else if (submittedUserType === 'management') {
+      await loadManagementUsers();
+    }
+
   } catch (error) {
     const apiMessage = error?.response?.data?.message;
     console.error('❌ Error adding user:', error.response?.data || error.message);
@@ -614,9 +972,19 @@ const handleAddStudentSubmit = async (e) => {
     fetchSchoolLogo();
   }, []);
 
-  const [searchQuery, setSearchQuery] = useState('');
+  const [studentSearchQuery, setStudentSearchQuery] = useState('');
+  const [teacherSearchQuery, setTeacherSearchQuery] = useState('');
+  const [managementSearchQuery, setManagementSearchQuery] = useState('');
   const filteredStudents = students.filter(student =>
-    student.name.toLowerCase().includes(searchQuery.toLowerCase())
+    String(student.name || '').toLowerCase().includes(studentSearchQuery.toLowerCase())
+  );
+  const filteredTeachers = teachers.filter((teacher) =>
+    String(teacher.name || '').toLowerCase().includes(teacherSearchQuery.toLowerCase()) ||
+    String(teacher.username || '').toLowerCase().includes(teacherSearchQuery.toLowerCase())
+  );
+  const filteredManagementUsers = managementUsers.filter((manager) =>
+    String(manager.name || '').toLowerCase().includes(managementSearchQuery.toLowerCase()) ||
+    String(manager.username || '').toLowerCase().includes(managementSearchQuery.toLowerCase())
   );
 
   const styles = {
@@ -627,7 +995,7 @@ const handleAddStudentSubmit = async (e) => {
       },
      content: {
   backgroundColor: '#fff',
-  padding: '30px',
+  padding: '18px 22px 22px',
   borderRadius: '14px',
   width: '80vw',
   height: '80vh',
@@ -979,85 +1347,98 @@ const handleAddStudentSubmit = async (e) => {
   const buttonStyle = {
     padding: isMobile ? '12px' : '18px',
     fontSize: isMobile ? '14px' : '18px',
-    backgroundColor: '#e9a0a5',
+    background: 'linear-gradient(135deg, #e9a0a5 0%, #d88b93 100%)',
     color: 'white',
     border: 'none',
     fontWeight: 'bold',
-    borderRadius: '6px',
+    borderRadius: '14px',
     cursor: 'pointer',
     marginBottom: '20px',
     width: '100%',
     maxWidth: '400px',
     display: 'block',
     margin: '0 auto 20px auto',
+    boxShadow: '0 10px 22px rgba(216, 139, 147, 0.28)',
+    letterSpacing: '0.3px',
   };
 
   return (
-    <div>
-   
-      <div className="outer-container">
-        <div className="main-content">
-          <style>
-            {`
-              @media (max-width: 968px) {
-                .main-content div[style*="max-width: 1800px"] {
-                  padding: 10px !important;
-                  width: 100%;
-                  box-sizing: border-box;
-                }
-                div[style*="backgroundColor: #f5f5f5"][style*="display: flex"] {
-                  flex-direction: column !important;
-                  width: 95% !important;
-                  margin-left: auto !important;
-                  margin-right: auto !important;
-                  box-sizing: border-box !important;
-                }
-                div[style*="boxShadow: 0 2px 5px rgba(0,0,0,0.1)"][style*="padding: 20px"] {
-                  width: 100%;
-                  box-sizing: border-box;
-                  padding: 10px !important;
-                }
-                table th, table td {
-                  white-space: nowrap !important;
-                }
-              }
-            `}
-          </style>
+    <div className="student-page-shell" style={{
+      minHeight: '100vh',
+      width: '100%',
+      background: 'linear-gradient(180deg, #f7f8fb 0%, #eef2f7 100%)',
+      boxSizing: 'border-box',
+      padding: '14px 20px 24px',
+      fontFamily: 'Arial, sans-serif',
+    }}>
+      <style>
+        {`
+          @media (max-width: 968px) {
+            .student-page-shell {
+              padding: 10px !important;
+            }
+            .student-page-body {
+              padding: 10px !important;
+            }
+            div[style*="backgroundColor: #f5f5f5"][style*="display: flex"] {
+              flex-direction: column !important;
+              width: 100% !important;
+              box-sizing: border-box !important;
+            }
+            div[style*="boxShadow: 0 2px 5px rgba(0,0,0,0.1)"][style*="padding: 20px"] {
+              width: 100%;
+              box-sizing: border-box;
+              padding: 10px !important;
+            }
+            table th, table td {
+              white-space: nowrap !important;
+            }
+          }
+        `}
+      </style>
 
-          {showSuccessOverlay && (
-            <div style={{
-              position: 'fixed',
-              top: '50%',
-              left: '50%',
-              transform: 'translate(-50%, -50%)',
-              backgroundColor: 'rgba(0, 128, 0, 0.9)',
-              color: '#fff',
-              padding: '20px 30px',
-              borderRadius: '12px',
-              fontSize: '18px',
-              fontWeight: 'bold',
-              zIndex: 9999,
-              textAlign: 'center',
-              boxShadow: '0 2px 10px rgba(0,0,0,0.3)',
-            }}>
-              {successMessage}
-            </div>
-          )}
+      {showSuccessOverlay && (
+        <div style={{
+          position: 'fixed',
+          top: '50%',
+          left: '50%',
+          transform: 'translate(-50%, -50%)',
+          backgroundColor: 'rgba(0, 128, 0, 0.9)',
+          color: '#fff',
+          padding: '20px 30px',
+          borderRadius: '12px',
+          fontSize: '18px',
+          fontWeight: 'bold',
+          zIndex: 9999,
+          textAlign: 'center',
+          boxShadow: '0 2px 10px rgba(0,0,0,0.3)',
+        }}>
+          {successMessage}
+        </div>
+      )}
 
-          <div style={{
-            display: 'flex',
-            justifyContent: 'center',
-            alignItems: 'center',
-            backgroundColor: '#f4f6f9',
-            padding: '20px',
-          }}>
-            <div style={{ padding: '20px', fontFamily: 'Arial, sans-serif', maxWidth: '1800px', margin: '0 auto' }}>
-              <h1 style={headingStyle}>Student Management System</h1>
+      <div className="student-page-body" style={{
+        width: '100%',
+        boxSizing: 'border-box',
+        display: 'flex',
+        flexDirection: 'column',
+        gap: '16px',
+      }}>
+              <h1 style={{
+                ...headingStyle,
+                marginTop: '0',
+                marginBottom: '14px',
+                letterSpacing: '-0.4px',
+              }}>Student Management System</h1>
               <button
-                onClick={() => navigate('/StudentUpload')}
+                onClick={() => setShowUploadPanel((prev) => !prev)}
                 style={buttonStyle}
               >
-                📤 CLICK HERE TO UPLOAD STUDENTS DATA
+                {activeTab === 'Staff'
+                  ? '📤 CLICK HERE TO UPLOAD TEACHERS DATA'
+                  : activeTab === 'Management'
+                    ? '📤 CLICK HERE TO UPLOAD MANAGEMENT DATA'
+                    : '📤 CLICK HERE TO UPLOAD STUDENTS DATA'}
               </button>
               <button
                 onClick={() => setIsAddingStudent(true)}
@@ -1065,71 +1446,258 @@ const handleAddStudentSubmit = async (e) => {
               >
                 ✚ ADD NEW USER
               </button>
-              <div style={styles.filterGroup}>
-                <label htmlFor="search-student" style={styles.filterLabel}>Search by Name:</label>
-                <input
-                  id="search-student"
-                  type="text"
-                  placeholder="Enter student name..."
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  style={styles.select}
-                />
-              </div>
+              {showUploadPanel && (
+                <div style={{
+                  background: 'linear-gradient(180deg, #ffffff 0%, #fafbff 100%)',
+                  border: '1px solid #dfe5ee',
+                  borderRadius: '20px',
+                  padding: '24px',
+                  marginBottom: '20px',
+                  boxShadow: '0 18px 45px rgba(15, 23, 42, 0.08)',
+                  minHeight: '280px',
+                }}>
+                  <h2 style={{
+                    marginTop: 0,
+                    marginBottom: '8px',
+                    color: '#1f2937',
+                    fontSize: '26px',
+                    letterSpacing: '-0.3px',
+                  }}>
+                    {activeTab === 'Staff' ? 'Teacher' : activeTab} Excel Upload
+                  </h2>
+                  <p style={{ marginTop: 0, marginBottom: '18px', color: '#6b7280' }}>
+                    Choose an Excel file, preview it here, and upload without leaving this page.
+                  </p>
+
+                  <div style={{
+                    display: 'flex',
+                    flexWrap: 'wrap',
+                    gap: '14px',
+                    alignItems: 'center',
+                    marginBottom: '18px',
+                  }}>
+                    <label style={{
+                      padding: '12px 18px',
+                      borderRadius: '12px',
+                      background: '#f8fafc',
+                      border: '1px solid #d6dde8',
+                      cursor: 'pointer',
+                      fontWeight: 700,
+                      color: '#1f2937',
+                      boxShadow: '0 4px 12px rgba(15, 23, 42, 0.04)',
+                    }}>
+                      Choose Excel File
+                      <input
+                        type="file"
+                        accept=".xlsx,.xls"
+                        hidden
+                        onChange={handleExcelFileChange}
+                      />
+                    </label>
+                    <div style={{ color: '#444', fontSize: '14px' }}>
+                      {excelFile ? excelFile.name : 'No file selected'}
+                    </div>
+                    <button
+                      type="button"
+                      onClick={downloadExcelTemplate}
+                      style={{
+                        padding: '12px 18px',
+                        borderRadius: '12px',
+                        background: 'linear-gradient(135deg, #5a7488 0%, #40566b 100%)',
+                        color: '#fff',
+                        border: 'none',
+                        cursor: 'pointer',
+                        fontWeight: 700,
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: '8px',
+                      }}
+                    >
+                      <Download size={16} />
+                      Download Template
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleExcelUpload}
+                      disabled={!excelFile || uploadingExcel}
+                      style={{
+                        padding: '12px 18px',
+                        borderRadius: '12px',
+                        background: !excelFile || uploadingExcel
+                          ? '#9ca3af'
+                          : 'linear-gradient(135deg, #5a7488 0%, #40566b 100%)',
+                        color: '#fff',
+                        border: 'none',
+                        cursor: !excelFile || uploadingExcel ? 'not-allowed' : 'pointer',
+                        fontWeight: 700,
+                        boxShadow: !excelFile || uploadingExcel
+                          ? 'none'
+                          : '0 10px 24px rgba(64, 86, 107, 0.22)',
+                      }}
+                    >
+                      {uploadingExcel ? 'Uploading...' : 'Submit Excel'}
+                    </button>
+                    {uploadedData.length > 0 && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const wb = XLSX.utils.book_new();
+                          const ws = XLSX.utils.json_to_sheet(uploadedData);
+                          XLSX.utils.book_append_sheet(wb, ws, 'UploadedData');
+                          XLSX.writeFile(wb, `${activeTab.toLowerCase()}_data.xlsx`);
+                        }}
+                        style={{
+                          padding: '12px 18px',
+                          borderRadius: '12px',
+                          background: 'linear-gradient(135deg, #2f855a 0%, #256d4a 100%)',
+                          color: '#fff',
+                          border: 'none',
+                          cursor: 'pointer',
+                          fontWeight: 700,
+                          boxShadow: '0 10px 24px rgba(47, 133, 90, 0.22)',
+                        }}
+                      >
+                        Download Uploaded Data
+                      </button>
+                    )}
+                  </div>
+
+                  {showPreview && previewData.length > 0 && (
+                    <div style={{
+                      overflowX: 'auto',
+                      backgroundColor: '#fff',
+                      border: '1px solid #e5e7eb',
+                      borderRadius: '16px',
+                      padding: '12px',
+                    }}>
+                      <h3 style={{ marginTop: 0, marginBottom: '12px', color: '#1f2937' }}>Preview</h3>
+                      <table style={{
+                        width: '100%',
+                        borderCollapse: 'collapse',
+                        border: '1px solid #ddd',
+                        minWidth: '800px',
+                      }}>
+                        <thead>
+                          <tr style={{ backgroundColor: '#5a7488', color: '#fff' }}>
+                            {Object.keys(previewData[0]).map((key) => (
+                              <th key={key} style={{ border: '1px solid rgba(255,255,255,0.18)', padding: '10px 12px', textAlign: 'left' }}>
+                                {key}
+                              </th>
+                            ))}
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {previewData.map((row, index) => (
+                            <tr key={index} style={{ backgroundColor: index % 2 === 0 ? '#f9fafb' : '#fff' }}>
+                              {Object.values(row).map((value, idx) => (
+                                <td key={idx} style={{ border: '1px solid #e5e7eb', padding: '10px 12px' }}>
+                                  {String(value ?? '')}
+                                </td>
+                              ))}
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+                </div>
+              )}
               <div style={{
-                backgroundColor: '#f5f5f5',
-                padding: '15px',
-                borderRadius: '5px',
-                marginBottom: '20px',
-                boxShadow: '0 2px 4px rgba(0,0,0,0.1)',
                 display: 'flex',
                 flexWrap: 'wrap',
-                gap: '15px'
+                gap: '10px',
+                justifyContent: 'center',
+                marginBottom: '20px',
+                flex: '0 0 auto'
               }}>
-                <div style={styles.filterGroup}>
-                  <label htmlFor="class-select" style={styles.filterLabel}>Class:</label>
-                  <select
-                    id="class-select"
-                    value={selectedClass}
-                    onChange={(e) => setSelectedClass(e.target.value)}
-                    style={styles.select}
-                    disabled={isLoading}
-                  >
-                    <option value="">-- Select Class --</option>
-                    {sortClassList(classes).map((classItem, index) => {
-                      const classValue = typeof classItem === 'string' ? classItem : classItem?.class_name;
-                      if (!classValue) return null;
-                      return (
-                        <option key={index} value={classValue}>
-                          {classValue}
-                        </option>
-                      );
-                    })}
-                  </select>
-                </div>
-                <div style={styles.filterGroup}>
-                  <label htmlFor="section-select" style={styles.filterLabel}>Section:</label>
-                  <select
-                    id="section-select"
-                    value={selectedSection}
-                    onChange={(e) => setSelectedSection(e.target.value)}
+                {['Student', 'Staff', 'Management'].map((tab) => (
+                  <button
+                    key={tab}
+                    type="button"
+                    onClick={() => setActiveTab(tab)}
                     style={{
-                      ...styles.select,
-                      backgroundColor: !selectedClass ? '#f5f5f5' : 'white',
-                      cursor: !selectedClass ? 'not-allowed' : 'pointer'
+                      padding: '10px 18px',
+                      borderRadius: '999px',
+                      border: activeTab === tab ? '1px solid #e17d8a' : '1px solid #d5d5d5',
+                      backgroundColor: activeTab === tab ? '#ffe3e7' : '#fff',
+                      color: '#222',
+                      fontWeight: 700,
+                      cursor: 'pointer',
                     }}
-                    disabled={!selectedClass || isLoading}
                   >
-                    <option value="">-- Select Section --</option>
-                    {sections.map((sec, index) => (
-                      <option key={index} value={sec}>{sec}</option>
-                    ))}
-                  </select>
-                </div>
+                    {tab}
+                  </button>
+                ))}
               </div>
+              {activeTab === 'Student' && (
+                <div style={{ flex: '1 1 auto', display: 'flex', flexDirection: 'column' }}>
+                  <div style={styles.filterGroup}>
+                    <label htmlFor="search-student" style={styles.filterLabel}>Search by Name:</label>
+                    <input
+                      id="search-student"
+                      type="text"
+                      placeholder="Enter student name..."
+                      value={studentSearchQuery}
+                      onChange={(e) => setStudentSearchQuery(e.target.value)}
+                      style={styles.select}
+                    />
+                  </div>
+                  <div style={{
+                    backgroundColor: '#f5f5f5',
+                    padding: '15px',
+                    borderRadius: '5px',
+                    marginBottom: '20px',
+                    boxShadow: '0 2px 4px rgba(0,0,0,0.1)',
+                    display: 'flex',
+                    flexWrap: 'wrap',
+                    gap: '15px'
+                  }}>
+                    <div style={styles.filterGroup}>
+                      <label htmlFor="class-select" style={styles.filterLabel}>Class:</label>
+                      <select
+                        id="class-select"
+                        value={selectedClass}
+                        onChange={(e) => setSelectedClass(e.target.value)}
+                        style={styles.select}
+                        disabled={isLoading}
+                      >
+                        <option value="">-- Select Class --</option>
+                        {sortClassList(classes).map((classItem, index) => {
+                          const classValue = typeof classItem === 'string' ? classItem : classItem?.class_name;
+                          if (!classValue) return null;
+                          return (
+                            <option key={index} value={classValue}>
+                              {classValue}
+                            </option>
+                          );
+                        })}
+                      </select>
+                    </div>
+                    <div style={styles.filterGroup}>
+                      <label htmlFor="section-select" style={styles.filterLabel}>Section:</label>
+                      <select
+                        id="section-select"
+                        value={selectedSection}
+                        onChange={(e) => setSelectedSection(e.target.value)}
+                        style={{
+                          ...styles.select,
+                          backgroundColor: !selectedClass ? '#f5f5f5' : 'white',
+                          cursor: !selectedClass ? 'not-allowed' : 'pointer'
+                        }}
+                        disabled={!selectedClass || isLoading}
+                      >
+                        <option value="">-- Select Section --</option>
+                        {sections.map((sec, index) => (
+                          <option key={index} value={sec}>{sec}</option>
+                        ))}
+                      </select>
+                    </div>
+                  </div>
+                </div>
+              )}
               {error && <div style={styles.error}>{error}</div>}
               {isLoading && <div style={styles.loading}>Loading...</div>}
-              {selectedClass && (
+              {activeTab === 'Student' && selectedClass && (
                 <div style={styles.resultsContainer}>
                   <h2 style={styles.resultsHeader}>
                     {typeof selectedClass === 'object' ? selectedClass.class_name : String(selectedClass)}
@@ -1251,23 +1819,237 @@ const handleAddStudentSubmit = async (e) => {
                   )}
                 </div>
               )}
-            </div>
-          </div>
-        </div>
+              {activeTab === 'Staff' && (
+                <div style={styles.resultsContainer}>
+                  <h2 style={styles.resultsHeader}>
+                    Teacher Management
+                    <span style={styles.resultCount}>Total: {filteredTeachers.length}</span>
+                  </h2>
+                  <div style={styles.filterGroup}>
+                    <label htmlFor="search-teacher" style={styles.filterLabel}>Search by Name / Username:</label>
+                    <input
+                      id="search-teacher"
+                      type="text"
+                      placeholder="Enter teacher name..."
+                      value={teacherSearchQuery}
+                      onChange={(e) => setTeacherSearchQuery(e.target.value)}
+                      style={styles.select}
+                    />
+                  </div>
+                  {teacherLoading ? (
+                    <div style={styles.emptyState}>Loading teachers...</div>
+                  ) : filteredTeachers.length === 0 ? (
+                    <div style={styles.emptyState}>No teachers found</div>
+                  ) : (
+                    <div style={styles.tableContainer}>
+                      <table style={styles.table}>
+                        <thead>
+                          <tr style={styles.tableHeaderRow}>
+                            <th style={styles.tableHeader}>ID</th>
+                            <th style={styles.tableHeader}>Name</th>
+                            <th style={styles.tableHeader}>Username</th>
+                            <th style={styles.tableHeader}>Phone</th>
+                            <th style={styles.tableHeader}>Designation</th>
+                            <th style={styles.tableHeader}>Teaching</th>
+                            <th style={styles.tableHeader}>Photo</th>
+                            <th style={styles.tableHeader}>Actions</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {filteredTeachers.map((teacher) => (
+                            <tr key={teacher.id} style={styles.tableRow}>
+                              <td style={styles.tableCell}>{teacher.id}</td>
+                              <td style={styles.tableCell}>{toUpperCaseText(teacher.name)}</td>
+                              <td style={styles.tableCell}>{teacher.username || '-'}</td>
+                              <td style={styles.tableCell}>{teacher.phone_no || '-'}</td>
+                              <td style={styles.tableCell}>{teacher.designation || '-'}</td>
+                              <td style={styles.tableCell}>
+                                {[
+                                  teacher.teaches_to_1,
+                                  teacher.teaches_to_2,
+                                  teacher.teaches_to_3,
+                                  teacher.teaches_to_4,
+                                  teacher.teaches_to_5,
+                                  teacher.teaches_to_6,
+                                  teacher.teaches_to_7,
+                                  teacher.teaches_to_8,
+                                  teacher.teaches_to_9,
+                                  teacher.teaches_to_10,
+                                  teacher.teaches_to_11,
+                                  teacher.teaches_to_12,
+                                ].filter(Boolean).join(', ') || '-'}
+                              </td>
+                              <td style={styles.tableCell}>
+                                {teacher.photo ? (
+                                  <img
+                                    src={normalizePhotoUrl(teacher.photo)}
+                                    alt={`${teacher.name}'s photo`}
+                                    style={styles.studentPhoto}
+                                    onError={(e) => {
+                                      e.target.onerror = null;
+                                      e.target.style.display = 'none';
+                                    }}
+                                  />
+                                ) : (
+                                  <div style={styles.photoPlaceholder}>No Photo</div>
+                                )}
+                              </td>
+                              <td style={styles.tableCell}>
+                                <div style={{ display: 'flex', gap: '10px' }}>
+                                  <button
+                                    onClick={() => handleEditClick(teacher)}
+                                    style={styles.iconButton}
+                                    disabled={teacherLoading}
+                                    title="Edit"
+                                  >
+                                    <Pencil size={18} />
+                                  </button>
+                                  <button
+                                    onClick={() => setDeletePopupId(teacher.id)}
+                                    style={styles.iconButtonDanger}
+                                    disabled={teacherLoading}
+                                    title="Delete"
+                                  >
+                                    <Trash2 size={18} />
+                                  </button>
+                                </div>
+                                {deletePopupId === teacher.id && (
+                                  <div style={styles.overlay} onClick={() => setDeletePopupId(null)}>
+                                    <div style={styles.popup} onClick={(e) => e.stopPropagation()}>
+                                      <p>Are you sure you want to delete this teacher?</p>
+                                      <div style={styles.popupButtons}>
+                                        <button onClick={() => handleDelete(teacher.id, 'teacher')} style={styles.confirmButton}>Delete</button>
+                                        <button onClick={() => setDeletePopupId(null)} style={styles.cancelButton}>Cancel</button>
+                                      </div>
+                                    </div>
+                                  </div>
+                                )}
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+                </div>
+              )}
+              {activeTab === 'Management' && (
+                <div style={styles.resultsContainer}>
+                  <h2 style={styles.resultsHeader}>
+                    Management Users
+                    <span style={styles.resultCount}>Total: {filteredManagementUsers.length}</span>
+                  </h2>
+                  <div style={styles.filterGroup}>
+                    <label htmlFor="search-management" style={styles.filterLabel}>Search by Name / Username:</label>
+                    <input
+                      id="search-management"
+                      type="text"
+                      placeholder="Enter management name..."
+                      value={managementSearchQuery}
+                      onChange={(e) => setManagementSearchQuery(e.target.value)}
+                      style={styles.select}
+                    />
+                  </div>
+                  {managementLoading ? (
+                    <div style={styles.emptyState}>Loading management users...</div>
+                  ) : filteredManagementUsers.length === 0 ? (
+                    <div style={styles.emptyState}>No management users found</div>
+                  ) : (
+                    <div style={styles.tableContainer}>
+                      <table style={styles.table}>
+                        <thead>
+                          <tr style={styles.tableHeaderRow}>
+                            <th style={styles.tableHeader}>ID</th>
+                            <th style={styles.tableHeader}>Name</th>
+                            <th style={styles.tableHeader}>Username</th>
+                            <th style={styles.tableHeader}>Phone</th>
+                            <th style={styles.tableHeader}>Designation</th>
+                            <th style={styles.tableHeader}>Photo</th>
+                            <th style={styles.tableHeader}>Actions</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {filteredManagementUsers.map((manager) => (
+                            <tr key={manager.id} style={styles.tableRow}>
+                              <td style={styles.tableCell}>{manager.id}</td>
+                              <td style={styles.tableCell}>{toUpperCaseText(manager.name)}</td>
+                              <td style={styles.tableCell}>{manager.username || '-'}</td>
+                              <td style={styles.tableCell}>{manager.phone_no || '-'}</td>
+                              <td style={styles.tableCell}>{manager.designation || '-'}</td>
+                              <td style={styles.tableCell}>
+                                {manager.photo ? (
+                                  <img
+                                    src={normalizePhotoUrl(manager.photo)}
+                                    alt={`${manager.name}'s photo`}
+                                    style={styles.studentPhoto}
+                                    onError={(e) => {
+                                      e.target.onerror = null;
+                                      e.target.style.display = 'none';
+                                    }}
+                                  />
+                                ) : (
+                                  <div style={styles.photoPlaceholder}>No Photo</div>
+                                )}
+                              </td>
+                              <td style={styles.tableCell}>
+                                <div style={{ display: 'flex', gap: '10px' }}>
+                                  <button
+                                    onClick={() => handleEditClick(manager)}
+                                    style={styles.iconButton}
+                                    disabled={managementLoading}
+                                    title="Edit"
+                                  >
+                                    <Pencil size={18} />
+                                  </button>
+                                  <button
+                                    onClick={() => setDeletePopupId(manager.id)}
+                                    style={styles.iconButtonDanger}
+                                    disabled={managementLoading}
+                                    title="Delete"
+                                  >
+                                    <Trash2 size={18} />
+                                  </button>
+                                </div>
+                                {deletePopupId === manager.id && (
+                                  <div style={styles.overlay} onClick={() => setDeletePopupId(null)}>
+                                    <div style={styles.popup} onClick={(e) => e.stopPropagation()}>
+                                      <p>Are you sure you want to delete this management user?</p>
+                                      <div style={styles.popupButtons}>
+                                        <button onClick={() => handleDelete(manager.id, 'management')} style={styles.confirmButton}>Delete</button>
+                                        <button onClick={() => setDeletePopupId(null)} style={styles.cancelButton}>Cancel</button>
+                                      </div>
+                                    </div>
+                                  </div>
+                                )}
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+                </div>
+              )} 
       </div>
 
-      {/* Edit Student Modal */}
+  {/* Edit User Modal */}
       <Modal
         isOpen={!!editingStudent}
         onRequestClose={cancelEdit}
-        contentLabel="Edit Student"
+        contentLabel="Edit User"
         style={{
           overlay: styles.editModal.overlay,
           content: styles.editModal.content,
         }}
       >
         <form onSubmit={handleSubmit} style={styles.editForm}>
-          <h3 style={styles.editFormHeader}>Edit Student Details (ID: {editFormData.id})</h3>
+          <h3 style={styles.editFormHeader}>
+            Edit {editFormData.user_type === 'teacher'
+              ? 'Teacher'
+              : editFormData.user_type === 'management'
+                ? 'Management User'
+                : 'Student'} Details (ID: {editFormData.id})
+          </h3>
           <div style={styles.formSection}>
             <div style={styles.formGrid}>
               <div style={styles.formGroup}>
@@ -1429,108 +2211,161 @@ const handleAddStudentSubmit = async (e) => {
               </div>
             </div>
           </div>
-          <div style={styles.formSection}>
-            <h4 style={styles.sectionHeader}>Academic Information</h4>
-            <div style={styles.formGrid}>
-              <div style={styles.formGroup}>
-                <label style={styles.formLabel}>Class*</label>
-                <select
-                  name="class_name"
-                  value={editFormData.class_name}
-                  onChange={(e) =>
-                    setEditFormData((prev) => ({
-                      ...prev,
-                      class_name: e.target.value,
-                      section: '',
-                    }))
-                  }
-                  style={styles.formInput}
-                >
-                  <option value="">-- Select Class --</option>
-                  {sortClassList(classes).map((classItem, index) => {
-                    const classValue = typeof classItem === 'string' ? classItem : classItem?.class_name;
-                    if (!classValue) return null;
-                    return (
-                      <option key={index} value={classValue}>
-                        {classValue}
-                      </option>
-                    );
-                  })}
-                </select>
+          {editFormData.user_type === 'student' && (
+            <>
+              <div style={styles.formSection}>
+                <h4 style={styles.sectionHeader}>Enrollment Information</h4>
+                <div style={styles.formGrid}>
+                  <div style={styles.formGroup}>
+                    <label style={styles.formLabel}>Class*</label>
+                    <select
+                      name="class_name"
+                      value={editFormData.class_name}
+                      onChange={(e) =>
+                        setEditFormData((prev) => ({
+                          ...prev,
+                          class_name: e.target.value,
+                          section: '',
+                        }))
+                      }
+                      style={styles.formInput}
+                    >
+                      <option value="">-- Select Class --</option>
+                      {sortClassList(classes).map((classItem, index) => {
+                        const classValue = typeof classItem === 'string' ? classItem : classItem?.class_name;
+                        if (!classValue) return null;
+                        return (
+                          <option key={index} value={classValue}>
+                            {classValue}
+                          </option>
+                        );
+                      })}
+                    </select>
+                  </div>
+                  <div style={styles.formGroup}>
+                    <label style={styles.formLabel}>Section</label>
+                    <select
+                      name="section"
+                      value={editFormData.section}
+                      onChange={handleFormChange}
+                      style={styles.formInput}
+                      disabled={!editFormData.class_name}
+                    >
+                      <option value="">-- Select Section --</option>
+                      {getSectionsForClass(editFormData.class_name).map((sec) => (
+                        <option key={sec} value={sec}>{sec}</option>
+                      ))}
+                    </select>
+                  </div>
+                  <div style={styles.formGroup}>
+                    <label style={styles.formLabel}>Class Teacher</label>
+                    <input
+                      type="text"
+                      name="class_teacher"
+                      value={editFormData.class_teacher}
+                      onChange={handleFormChange}
+                      style={styles.formInput}
+                    />
+                  </div>
+                  <div style={styles.formGroup}>
+                    <label style={styles.formLabel}>School Name</label>
+                    <input
+                      type="text"
+                      name="school_name"
+                      value={editFormData.school_name}
+                      onChange={handleFormChange}
+                      style={styles.formInput}
+                    />
+                  </div>
+                </div>
               </div>
-              <div style={styles.formGroup}>
-                <label style={styles.formLabel}>Section</label>
-                <select
-                  name="section"
-                  value={editFormData.section}
-                  onChange={handleFormChange}
-                  style={styles.formInput}
-                  disabled={!editFormData.class_name}
-                >
-                  <option value="">-- Select Section --</option>
-                  {getSectionsForClass(editFormData.class_name).map((sec) => (
-                    <option key={sec} value={sec}>{sec}</option>
-                  ))}
-                </select>
+              <div style={styles.formSection}>
+                <h4 style={styles.sectionHeader}>Academic IDs</h4>
+                <div style={styles.formGrid}>
+                  <div style={styles.formGroup}>
+                    <label style={styles.formLabel}>Admission No.</label>
+                    <input
+                      type="text"
+                      name="admission_no"
+                      value={editFormData.admission_no}
+                      onChange={handleFormChange}
+                      style={styles.formInput}
+                    />
+                  </div>
+                  <div style={styles.formGroup}>
+                    <label style={styles.formLabel}>Curriculum</label>
+                    <input
+                      type="text"
+                      name="curriculum"
+                      value={editFormData.curriculum || ''}
+                      onChange={handleFormChange}
+                      placeholder="e.g. CBSE / ICSE / State Board"
+                      style={styles.formInput}
+                    />
+                  </div>
+                  <div style={styles.formGroup}>
+                    <label style={styles.formLabel}>CBSE Reg No.</label>
+                    <input
+                      type="text"
+                      name="cbse_reg_no"
+                      value={editFormData.cbse_reg_no}
+                      onChange={handleFormChange}
+                      style={styles.formInput}
+                    />
+                  </div>
+                </div>
               </div>
-              <div style={styles.formGroup}>
-                <label style={styles.formLabel}>Class Teacher</label>
-                <input
-                  type="text"
-                  name="class_teacher"
-                  value={editFormData.class_teacher}
-                  onChange={handleFormChange}
-                  style={styles.formInput}
-                />
-              </div>
-              <div style={styles.formGroup}>
-                <label style={styles.formLabel}>School Name</label>
-                <input
-                  type="text"
-                  name="school_name"
-                  value={editFormData.school_name}
-                  onChange={handleFormChange}
-                  style={styles.formInput}
-                />
+            </>
+          )}
+          {(editFormData.user_type === 'teacher' || editFormData.user_type === 'management') && (
+            <div style={styles.formSection}>
+              <h4 style={styles.sectionHeader}>Staff Details</h4>
+              <div style={styles.formGrid}>
+<div style={styles.formGroup}>
+  <label style={styles.formLabel}>Designation</label>
+  {editFormData.user_type === 'management' ? (
+    <select
+      name="designation"
+      value={editFormData.designation || ''}
+      onChange={handleFormChange}
+      style={styles.formInput}
+    >
+      <option value="">-- Select Designation --</option>
+      {managementDesignationOptions.map((option) => (
+        <option key={option.value} value={option.value}>
+          {option.label}
+        </option>
+      ))}
+    </select>
+  ) : (
+    <input
+      type="text"
+      name="designation"
+      value={editFormData.designation || ''}
+      onChange={handleFormChange}
+      style={styles.formInput}
+    />
+  )}
+</div>
+                {editFormData.user_type === 'teacher' && (
+                  <>
+                    {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12].map((num) => (
+                      <div style={styles.formGroup} key={num}>
+                        <label style={styles.formLabel}>Teaches to Class {num}</label>
+                        <input
+                          type="text"
+                          name={`teaches_to_${num}`}
+                          value={editFormData[`teaches_to_${num}`] || ''}
+                          onChange={handleFormChange}
+                          style={styles.formInput}
+                        />
+                      </div>
+                    ))}
+                  </>
+                )}
               </div>
             </div>
-          </div>
-          <div style={styles.formSection}>
-            <h4 style={styles.sectionHeader}>Academic IDs</h4>
-            <div style={styles.formGrid}>
-              <div style={styles.formGroup}>
-                <label style={styles.formLabel}>Admission No.</label>
-                <input
-                  type="text"
-                  name="admission_no"
-                  value={editFormData.admission_no}
-                  onChange={handleFormChange}
-                  style={styles.formInput}
-                />
-              </div>
-              <div style={styles.formGroup}>
-                <label style={styles.formLabel}>Curriculum</label>
-                <input
-                  type="text"
-                  name="curriculum"
-                  value={editFormData.curriculum || ''}
-                  onChange={handleFormChange}
-                  placeholder="e.g. CBSE / ICSE / State Board"
-                  style={styles.formInput}
-                />
-              </div>
-              <div style={styles.formGroup}>
-                <label style={styles.formLabel}>CBSE Reg No.</label>
-                <input
-                  type="text"
-                  name="cbse_reg_no"
-                  value={editFormData.cbse_reg_no}
-                  onChange={handleFormChange}
-                  style={styles.formInput}
-                />
-              </div>
-            </div>
-          </div>
+          )}
           <div style={styles.formActions}>
             <button type="submit" style={styles.saveButton} disabled={isLoading}>
               {isLoading ? 'Saving...' : 'Save Changes'}
@@ -1834,16 +2669,32 @@ const handleAddStudentSubmit = async (e) => {
       <div style={styles.formSection}>
         <h4 style={styles.sectionHeader}>Designation</h4>
         <div style={styles.formGrid}>
-          <div style={styles.formGroup}>
-            <label style={styles.formLabel}>Designation</label>
-            <input
-              type="text"
-              name="designation"
-              value={newStudentFormData.designation || ''}
-              onChange={(e) => handleNewStudentFormChange(e, 'designation')}
-              style={styles.formInput}
-            />
-          </div>
+         <div style={styles.formGroup}>
+  <label style={styles.formLabel}>Designation</label>
+  {newStudentFormData.user_type === 'management' ? (
+    <select
+      name="designation"
+      value={newStudentFormData.designation || ''}
+      onChange={(e) => handleNewStudentFormChange(e, 'designation')}
+      style={styles.formInput}
+    >
+      <option value="">-- Select Designation --</option>
+      {managementDesignationOptions.map((option) => (
+        <option key={option.value} value={option.value}>
+          {option.label}
+        </option>
+      ))}
+    </select>
+  ) : (
+    <input
+      type="text"
+      name="designation"
+      value={newStudentFormData.designation || ''}
+      onChange={(e) => handleNewStudentFormChange(e, 'designation')}
+      style={styles.formInput}
+    />
+  )}
+</div>
         </div>
       </div>
     )}

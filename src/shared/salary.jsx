@@ -383,7 +383,7 @@ const TeacherSalaryTable = () => {
               <i className="fa fa-cog" title="Settings" style={iconStyle}></i>
             </Link>
             <a
-              href="https://nova.tagsol.tech/"
+              href="https://cleezoclass.com//"
               target="_blank"
               rel="noopener noreferrer"
               style={linkStyle}

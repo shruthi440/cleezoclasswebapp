@@ -15,6 +15,7 @@ import "./FrontDesk.css";
 
 import "./FrontDesk_Tickets.css"
 import DashboardLayout from "../components/DashboardLayout.jsx";
+import { resolveInstituteDisplayName } from "../shared/instituteNameUtils";
 
 
 // 1. IMPORT REQUIRED COMPONENTS (Ensure these also have .tsx or index.d.ts files)
@@ -348,6 +349,22 @@ const isAutoImageGalleryItem = (item: any) =>
   String(item?.gallery_type || "").trim().toLowerCase() === "generated" ||
   String(item?.gallery_type || "").trim().toLowerCase() === "template" ||
   String(item?.media_type || "").trim().toLowerCase() === "poster-html";
+
+const getGallerySelectionKey = (item: any) =>
+  String(item?.photoId ?? item?.photo_id ?? item?.id ?? item?.file_path ?? item?.file_name ?? "").trim();
+
+const getNextGalleryItem = (items: any[], currentItem: any) => {
+  const list = Array.isArray(items) ? items : [];
+  if (list.length === 0) return null;
+
+  const currentKey = getGallerySelectionKey(currentItem);
+  if (!currentKey) return null;
+
+  const currentIndex = list.findIndex((item) => getGallerySelectionKey(item) === currentKey);
+  if (currentIndex < 0) return null;
+
+  return list[(currentIndex + 1) % list.length] || null;
+};
 
 type StaffAssignmentSummary = {
   key: string;
@@ -1099,6 +1116,8 @@ type StableCommunicationAssignSectionProps = {
   autoImageDisabled?: boolean;
   onAutoImageDisabledChange?: (disabled: boolean) => void;
   schoolCode?: string;
+  campaignStatusSentLeads: any[];
+  campaignStatusScheduledLeads: any[];
 };
 
 const StableCommunicationAssignSection = React.memo(({
@@ -1110,7 +1129,9 @@ const StableCommunicationAssignSection = React.memo(({
   title,
   autoImageDisabled = false,
   onAutoImageDisabledChange,
-  schoolCode: schoolCodeProp = ""
+  schoolCode: schoolCodeProp = "",
+  campaignStatusSentLeads,
+  campaignStatusScheduledLeads,
 }: StableCommunicationAssignSectionProps) => {
   const [commDate, setCommDate] = useState<string>("");
   const [commTime, setCommTime] = useState<string>("");
@@ -1192,6 +1213,8 @@ const StableCommunicationAssignSection = React.memo(({
   const [sendToTime, setSendToTime] = useState("");
   const [sendAt, setSendAt] = useState("");
   const [sendMode, setSendMode] = useState<"single" | "all" | "auto">("single");
+  const [sendFromNextImage, setSendFromNextImage] = useState(false);
+  const [sendRemainingOnly, setSendRemainingOnly] = useState(false);
   const [sendLeadNames, setSendLeadNames] = useState<string[]>([]);
   const [sendLeadIds, setSendLeadIds] = useState<Array<string | number>>([]);
   const [selectedStaffKeys, setSelectedStaffKeys] = useState<string[]>([]);
@@ -1224,6 +1247,8 @@ const StableCommunicationAssignSection = React.memo(({
     gallerySelectAllActiveRef.current = false;
     setSelectedStaffKeys([]);
     setSendMode("single");
+    setSendFromNextImage(false);
+    setSendRemainingOnly(false);
     setSendStatus("");
     setSendError("");
     setSendLeadNames([]);
@@ -2575,6 +2600,22 @@ const StableCommunicationAssignSection = React.memo(({
     return item.photoId ?? item.photo_id ?? item.id ?? null;
   };
 
+  const remainingLeadIdsForCurrentScope = useMemo(() => {
+    const scope = String(galleryTarget || "").trim().toLowerCase();
+    const statusRows = [...(campaignStatusSentLeads || []), ...(campaignStatusScheduledLeads || [])].filter(
+      (row: any) => {
+        const rowScope = String(row?.campaign_scope || "").trim().toLowerCase();
+        return !rowScope || !scope || rowScope === scope;
+      }
+    );
+    const ids = new Set<string>();
+    statusRows.forEach((row: any) => {
+      const id = String(row?.lead_id ?? row?.id ?? "").trim();
+      if (id) ids.add(id);
+    });
+    return ids;
+  }, [campaignStatusScheduledLeads, campaignStatusSentLeads, galleryTarget]);
+
   const getGalleryMediaSrc = (item: any) => {
     const rawPath = String(item?.file_path || "");
     if (!rawPath) return "";
@@ -2696,6 +2737,7 @@ const StableCommunicationAssignSection = React.memo(({
       });
       setSelectedGallery(null);
       resetGalleryModal();
+      setGalleryDeleteConfirmOpen(false);
       await fetchGallery();
       await fetchAutoImageLibrary();
       return;
@@ -2716,6 +2758,7 @@ const StableCommunicationAssignSection = React.memo(({
       });
       setSelectedGallery(null);
       resetGalleryModal();
+      setGalleryDeleteConfirmOpen(false);
       await fetchGallery();
       await fetchAutoImageLibrary();
     } catch (err: any) {
@@ -2725,12 +2768,57 @@ const StableCommunicationAssignSection = React.memo(({
     }
   };
 
+  const openDeleteGalleryConfirm = () => {
+    if (!selectedGallery) return;
+    setGalleryDeleteConfirmOpen(true);
+  };
+
+  const closeDeleteGalleryConfirm = () => {
+    if (deleteGalleryLoading) return;
+    setGalleryDeleteConfirmOpen(false);
+  };
+
+  const openGalleryDisableConfirm = () => {
+    if (!selectedGallery) return;
+    setGalleryDisableConfirmMode(isGalleryDisabled(selectedGallery) ? "enable" : "disable");
+    setGalleryDisableConfirmOpen(true);
+  };
+
+  const closeGalleryDisableConfirm = () => {
+    setGalleryDisableConfirmOpen(false);
+    setGalleryDisableConfirmMode(null);
+  };
+
+  const handleToggleGalleryDisabled = () => {
+    const photoId = resolveGalleryId(selectedGallery);
+    if (photoId === null || photoId === undefined) return;
+
+    setDisabledGalleryIds((prev) => {
+      const isDisabled = prev.some((id) => String(id) === String(photoId));
+      const next = isDisabled
+        ? prev.filter((id) => String(id) !== String(photoId))
+        : [...prev.filter((id) => String(id) !== String(photoId)), photoId];
+      persistDisabledGalleryIds(next);
+      return next;
+    });
+
+    setSelectedGalleryIds((prev) => prev.filter((id) => String(id) !== String(photoId)));
+    setGallerySelectAllActive(false);
+    gallerySelectAllActiveRef.current = false;
+    setSendMode("single");
+    setSendStatus("");
+    setSendError("");
+    closeGalleryDisableConfirm();
+  };
+
   const handleOpenGalleryModal = (item: any) => {
     setSelectedGallery(item);
     const galleryId = resolveGalleryId(item);
     setSelectedGalleryIds(galleryId !== null && galleryId !== undefined ? [galleryId] : []);
     setGalleryModalOpen(true);
     setSendMode("single");
+    setSendFromNextImage(false);
+    setSendRemainingOnly(false);
     setSendStatus("");
     setSendError("");
   };
@@ -3105,8 +3193,12 @@ const StableCommunicationAssignSection = React.memo(({
       setSendError("From date should be before or equal to To date");
       return;
     }
-    if (sendFromDate > sendToDate) {
-      setSendError("From date should be before or equal to To date");
+    const useNextImage = sendFromNextImage && ensuredSelectedGalleryIds.length === 1;
+    const galleryItemToSend = useNextImage
+      ? getNextGalleryItem(visibleGalleryItems, ensuredSelectedGallery)
+      : ensuredSelectedGallery;
+    if (useNextImage && !galleryItemToSend) {
+      setSendError("No next image available.");
       return;
     }
     setSendError("");
@@ -3165,7 +3257,15 @@ const StableCommunicationAssignSection = React.memo(({
       setSendStatus("");
       return;
     }
-    const targetLeads = resolveCampaignTargetLeads();
+    const baseTargetLeads = resolveCampaignTargetLeads();
+    const targetLeads = sendRemainingOnly
+      ? baseTargetLeads.filter((lead) => !remainingLeadIdsForCurrentScope.has(String(lead.id)))
+      : baseTargetLeads;
+    if (sendRemainingOnly && targetLeads.length === 0) {
+      setSendError("No remaining leads found for this campaign.");
+      setSendStatus("");
+      return;
+    }
     const resolvedLeadIds = targetLeads.map((lead) => lead.id);
     const isAllAssignedStaffSelected =
       galleryTarget === "staff" &&
@@ -3281,6 +3381,9 @@ const StableCommunicationAssignSection = React.memo(({
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data?.error || "Send failed");
+      if (Number(data?.totalLeads || 0) <= 0) {
+        throw new Error("No matching leads were found for the selected campaign filters.");
+      }
 
       // Frontend fallback: if backend sends only media (without caption), schedule text separately.
       // This keeps writeup delivery working on older server versions.
@@ -3357,6 +3460,21 @@ const StableCommunicationAssignSection = React.memo(({
       if (totalTargetLeads === 0) throw new Error("No leads match filters");
 
       const totalLeadChunks = Math.ceil(totalTargetLeads / dailyLeadLimitNumber);
+      const leadChunks = Array.from({ length: totalLeadChunks }, (_, chunkIndex) => {
+        const relativeLeadStart = chunkIndex * dailyLeadLimitNumber;
+        const absoluteLeadStart = selectedLeadStartIndex + relativeLeadStart + 1;
+        const absoluteLeadEnd = Math.min(
+          selectedLeadStartIndex + relativeLeadStart + dailyLeadLimitNumber,
+          selectedLeadEndIndex
+        );
+        return {
+          chunkIndex,
+          relativeLeadStart,
+          absoluteLeadStart,
+          absoluteLeadEnd,
+          chunkLeads: targetLeads.slice(relativeLeadStart, relativeLeadStart + dailyLeadLimitNumber),
+        };
+      });
       let totalFailed = 0;
 
       // If one lead batch is being scheduled, rotate the selected images by day.
@@ -3396,8 +3514,7 @@ const StableCommunicationAssignSection = React.memo(({
         return;
       }
 
-      // When one image is selected, preserve the full chosen date window.
-      // The backend already knows how to schedule that one image from From Date to To Date.
+      // Keep the simplest case fast and explicit.
       if (photoIds.length === 1 && totalLeadChunks === 1) {
         const photoId = photoIds[0];
         const batchStart = getBatchScheduleStart(0);
@@ -3427,21 +3544,18 @@ const StableCommunicationAssignSection = React.memo(({
         return;
       }
 
-      for (let imageIndex = 0; imageIndex < photoIds.length; imageIndex += 1) {
-        const photoId = photoIds[imageIndex];
-        for (let chunkIndex = 0; chunkIndex < totalLeadChunks; chunkIndex += 1) {
-          const relativeLeadStart = chunkIndex * dailyLeadLimitNumber;
-          const absoluteLeadStart = selectedLeadStartIndex + relativeLeadStart + 1;
-          const absoluteLeadEnd = Math.min(
-            selectedLeadStartIndex + relativeLeadStart + dailyLeadLimitNumber,
-            selectedLeadEndIndex
-          );
-          const batchIndex = imageIndex * totalLeadChunks + chunkIndex;
-          const batchStart = getBatchScheduleStart(batchIndex);
-          const chunkDate = batchStart ? formatDateParts(batchStart) : (selectedDate ? addDays(selectedDate, batchIndex) : null);
+      // When there are multiple lead batches, pair images with batches in order.
+      // Example: 2 images + 2 batches means image 1 goes to the first batch and image 2 goes to the remaining batch.
+      if (totalLeadChunks > 1) {
+        for (const chunk of leadChunks) {
+          const photoId = photoIds[Math.min(chunk.chunkIndex, photoIds.length - 1)];
+          const batchStart = getBatchScheduleStart(chunk.chunkIndex);
+          const chunkDate = batchStart
+            ? formatDateParts(batchStart)
+            : selectedDate
+              ? addDays(selectedDate, chunk.chunkIndex)
+              : null;
           const chunkTime = batchStart ? formatTimeParts(batchStart) : selectedTime;
-          const chunkLeads = targetLeads.slice(relativeLeadStart, relativeLeadStart + dailyLeadLimitNumber);
-          const chunkLeadIds = chunkLeads.map((lead) => lead.id);
           const itemForText =
             visibleGalleryItems.find((item) => String(resolveGalleryId(item)) === String(photoId)) ||
             (String(resolveGalleryId(ensuredSelectedGallery)) === String(photoId) ? ensuredSelectedGallery : null);
@@ -3450,16 +3564,29 @@ const StableCommunicationAssignSection = React.memo(({
             scheduleFromDate: chunkDate,
             scheduleToDate: chunkDate,
             scheduleTime: chunkTime,
-            leadFrom: absoluteLeadStart,
-            leadTo: absoluteLeadEnd,
-            leadIdsForWriteup: chunkLeadIds,
+            leadFrom: chunk.absoluteLeadStart,
+            leadTo: chunk.absoluteLeadEnd,
+            leadIdsForWriteup: chunk.chunkLeads.map((lead) => lead.id),
             forcePosterText: forcedPosterText,
           });
           totalFailed += Number(data?.failed || 0);
           setSendStatus(
-            `Scheduled image ${imageIndex + 1} of ${photoIds.length} for leads ${absoluteLeadStart}-${absoluteLeadEnd}.`
+            `Scheduled image ${Math.min(chunk.chunkIndex + 1, photoIds.length)} of ${photoIds.length} for leads ${chunk.absoluteLeadStart}-${chunk.absoluteLeadEnd}.`
           );
         }
+
+        setSendStatus(
+          `Scheduled ${Math.min(photoIds.length, totalLeadChunks)} image${Math.min(photoIds.length, totalLeadChunks) === 1 ? "" : "s"} across ${totalLeadChunks} lead batch${totalLeadChunks === 1 ? "" : "es"}.`
+        );
+        if (photoIds.length > totalLeadChunks) {
+          setSendStatus(
+            `Scheduled the first ${totalLeadChunks} image${totalLeadChunks === 1 ? "" : "s"} across ${totalLeadChunks} lead batch${totalLeadChunks === 1 ? "" : "es"}.`
+          );
+        }
+        if (totalFailed > 0) {
+          setSendError(`Failed for ${totalFailed} items`);
+        }
+        return;
       }
 
       const totalDays = photoIds.length * totalLeadChunks;
@@ -3534,10 +3661,12 @@ const StableCommunicationAssignSection = React.memo(({
         }
       } else {
         const chosenGalleryIds =
-          ensuredSelectedGalleryIds.length > 0
+          useNextImage && resolveGalleryId(galleryItemToSend)
+            ? [resolveGalleryId(galleryItemToSend) as string | number]
+            : ensuredSelectedGalleryIds.length > 0
             ? ensuredSelectedGalleryIds
-            : resolveGalleryId(ensuredSelectedGallery)
-              ? [resolveGalleryId(ensuredSelectedGallery) as string | number]
+            : resolveGalleryId(galleryItemToSend || ensuredSelectedGallery)
+              ? [resolveGalleryId(galleryItemToSend || ensuredSelectedGallery) as string | number]
               : [];
         const activeChosenGalleryIds = chosenGalleryIds.filter(
           (id) => !disabledGalleryIds.some((disabledId) => String(disabledId) === String(id))
@@ -4579,7 +4708,35 @@ const StableCommunicationAssignSection = React.memo(({
           document.body
         )}
 
-      {/* Disable confirmation dialog intentionally hidden */}
+      <ConfirmDialog
+        isOpen={galleryDeleteConfirmOpen}
+        title="Delete Gallery Image"
+        message={
+          selectedGallery
+            ? `Are you sure you want to delete ${String(selectedGallery.file_name || "this image")}?`
+            : "Are you sure you want to delete this image?"
+        }
+        confirmLabel={deleteGalleryLoading ? "Deleting..." : "Delete"}
+        cancelLabel="Cancel"
+        onConfirm={handleDeleteGallery}
+        onCancel={closeDeleteGalleryConfirm}
+      />
+
+      <ConfirmDialog
+        isOpen={galleryDisableConfirmOpen}
+        title={galleryDisableConfirmMode === "enable" ? "Enable Gallery Image" : "Disable Gallery Image"}
+        message={
+          selectedGallery
+            ? galleryDisableConfirmMode === "enable"
+              ? `Do you want to enable ${String(selectedGallery.file_name || "this image")} so it appears in gallery selection again?`
+              : `Do you want to disable ${String(selectedGallery.file_name || "this image")} so it is hidden from gallery selection?`
+            : ""
+        }
+        confirmLabel={galleryDisableConfirmMode === "enable" ? "Enable" : "Disable"}
+        cancelLabel="Cancel"
+        onConfirm={handleToggleGalleryDisabled}
+        onCancel={closeGalleryDisableConfirm}
+      />
 
       {galleryDownloadConfirmOpen &&
         createPortal(
@@ -4741,11 +4898,26 @@ const StableCommunicationAssignSection = React.memo(({
                     >
                       Download
                     </button>
-                    {/* Delete and disable actions intentionally hidden */}
+                    <button
+                      type="button"
+                      className="campaign-modal-preview-action-text"
+                      onClick={openGalleryDisableConfirm}
+                      disabled={!selectedGallery}
+                    >
+                      {selectedGallery && isGalleryDisabled(selectedGallery) ? "Enable" : "Disable"}
+                    </button>
+                    <button
+                      type="button"
+                      className="campaign-modal-preview-action-text campaign-modal-preview-action-text-delete"
+                      onClick={openDeleteGalleryConfirm}
+                      disabled={!selectedGallery || deleteGalleryLoading}
+                    >
+                      {deleteGalleryLoading ? "Deleting..." : "Delete"}
+                    </button>
                   </div>
                   </>
                 ) : (
-                  <div className="campaign-modal-empty-state">Select a poster to preview or delete</div>
+                  <div className="campaign-modal-empty-state">Select a poster to preview, disable, or delete</div>
                 )}
 
                 <div className="campaign-modal-gallery-toolbar-top">
@@ -4834,6 +5006,43 @@ const StableCommunicationAssignSection = React.memo(({
                     </button>
                   );
                 })}
+              </div>
+
+              {/* <div
+                style={{
+                  marginTop: 10,
+                  padding: "10px 12px",
+                  border: "1px solid #e2e8f0",
+                  borderRadius: 10,
+                  background: "#f8fafc",
+                }}
+              >
+                <label style={{ display: "flex", alignItems: "center", gap: 8, cursor: "pointer" }}>
+                  <input
+                    type="checkbox"
+                    checked={sendFromNextImage}
+                    disabled={selectedGalleryIds.length !== 1}
+                    onChange={(e) => setSendFromNextImage(e.target.checked)}
+                  />
+                  <span>Send from next image</span>
+                </label>
+                <div style={{ fontSize: 12, color: "#64748b", marginTop: 4 }}>
+                  Uses the image right after the one you selected. It stays on the same image if only one is available.
+                </div>
+              </div> */}
+
+              <div style={{ marginTop: 8, display: "flex", alignItems: "center", gap: 8 }}>
+                <input
+                  type="checkbox"
+                  checked={sendRemainingOnly}
+                  onChange={(e) => setSendRemainingOnly(e.target.checked)}
+                />
+                <span style={{ fontSize: 13, fontWeight: 600, color: "#0f172a" }}>
+                  Send only remaining leads
+                </span>
+              </div>
+              <div style={{ fontSize: 12, color: "#64748b", marginTop: 4 }}>
+                Skips leads that already appear in sent or scheduled campaign status for this group.
               </div>
 
               <div className="campaign-modal-row campaign-modal-row-leads">
@@ -5078,7 +5287,6 @@ const StableCommunicationAssignSection = React.memo(({
               )}
               {galleryTarget !== "staff" && (sendMode === "all" || selectedGalleryIds.length > 1) && (
                 <div className="campaign-modal-success" style={{ marginTop: 8 }}>
-                  Images will be scheduled one per day, with up to 30 leads per day and a 1 minute gap per lead. Any extra leads move to the next day automatically.
                 </div>
               )}
               {/* <div className="campaign-modal-success" style={{ marginTop: 8 }}>
@@ -7301,6 +7509,8 @@ const CommunicationAssignSection: React.FC<{
   const [sendToTime, setSendToTime] = useState("");
   const [sendAt, setSendAt] = useState("");
   const [sendMode, setSendMode] = useState<"single" | "all" | "auto">("single");
+  const [sendFromNextImage, setSendFromNextImage] = useState(false);
+  const [sendRemainingOnly, setSendRemainingOnly] = useState(false);
   const [sendLeadName, setSendLeadName] = useState("");
   const [sendLeadFrom, setSendLeadFrom] = useState("");
   const [sendLeadTo, setSendLeadTo] = useState("");
@@ -7310,6 +7520,8 @@ const CommunicationAssignSection: React.FC<{
     setGalleryModalOpen(false);
     setSelectedGallery(null);
     setSendMode("single");
+    setSendFromNextImage(false);
+    setSendRemainingOnly(false);
     setSendStatus("");
     setSendError("");
     setSendLeadName("");
@@ -7526,6 +7738,8 @@ const CommunicationAssignSection: React.FC<{
     setSelectedGallery(item);
     setGalleryModalOpen(true);
     setSendMode("single");
+    setSendFromNextImage(false);
+    setSendRemainingOnly(false);
     setSendStatus("");
     setSendError("");
   };
@@ -7542,7 +7756,15 @@ const CommunicationAssignSection: React.FC<{
       setSendError("schoolCode not found");
       return;
     }
-    if (sendMode !== "auto" && !selectedGallery?.id) {
+    const useNextImage = sendFromNextImage && Boolean(selectedGallery);
+    const galleryItemToSend = useNextImage
+      ? getNextGalleryItem(visibleGalleryItems, selectedGallery)
+      : selectedGallery;
+    if (useNextImage && !galleryItemToSend) {
+      setSendError("No next image available.");
+      return;
+    }
+    if (sendMode !== "auto" && !galleryItemToSend?.id) {
       setSendError("Select an image first");
       return;
     }
@@ -7632,6 +7854,9 @@ const CommunicationAssignSection: React.FC<{
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data?.error || "Send failed");
+      if (Number(data?.totalLeads || 0) <= 0) {
+        throw new Error("No matching leads were found for the selected campaign filters.");
+      }
 
       if (posterText) {
         try {
@@ -7739,7 +7964,7 @@ const CommunicationAssignSection: React.FC<{
           setSendError(`Failed for ${data.failed} leads`);
         }
       } else {
-        const data = await sendById(selectedGallery.id);
+        const data = await sendById(galleryItemToSend.id);
         setSendStatus(`Sent to ${data.totalLeads || 0} leads`);
       }
       if (onDigitalScheduleChange) {
@@ -8079,6 +8304,41 @@ upload            </button>
                   </div>
                   <div className="campaign-modal-field" />
                 </div>
+              <div
+                style={{
+                  marginTop: 10,
+                  padding: "10px 12px",
+                  border: "1px solid #e2e8f0",
+                  borderRadius: 10,
+                  background: "#f8fafc",
+                }}
+              >
+                <label style={{ display: "flex", alignItems: "center", gap: 8, cursor: "pointer" }}>
+                  <input
+                    type="checkbox"
+                    checked={sendFromNextImage}
+                    disabled={!selectedGallery}
+                    onChange={(e) => setSendFromNextImage(e.target.checked)}
+                  />
+                  <span>Send from next image</span>
+                </label>
+                <div style={{ fontSize: 12, color: "#64748b", marginTop: 4 }}>
+                  Uses the image right after the one you selected.
+                </div>
+              </div>
+              <div style={{ marginTop: 8, display: "flex", alignItems: "center", gap: 8 }}>
+                <input
+                  type="checkbox"
+                  checked={sendRemainingOnly}
+                  onChange={(e) => setSendRemainingOnly(e.target.checked)}
+                />
+                <span style={{ fontSize: 13, fontWeight: 600, color: "#0f172a" }}>
+                  Send only remaining leads
+                </span>
+              </div>
+              <div style={{ fontSize: 12, color: "#64748b", marginTop: 4 }}>
+                Skips leads that already appear in sent or scheduled campaign status for this group.
+              </div>
               <div className="campaign-modal-row">
                 <label>Lead Name</label>
                 <select value={sendLeadName} onChange={(e) => setSendLeadName(e.target.value)}>
@@ -8479,7 +8739,16 @@ useEffect(() => {
       }
 
       console.log("📂 Institute data received:", data);
-      setSchoolName(data.institute_name || currentDbName);
+      const resolvedSchoolName = resolveInstituteDisplayName({
+        apiInstituteName: data?.institute_name || data?.instituteName || data?.schoolName || data?.name,
+        storedSchoolName: localStorage.getItem("schoolName"),
+        storedInstituteName: localStorage.getItem("instituteName"),
+        schoolCode: currentDbName,
+        fallback: "Unknown School",
+      });
+      setSchoolName(resolvedSchoolName);
+      localStorage.setItem("schoolName", resolvedSchoolName);
+      localStorage.setItem("instituteName", resolvedSchoolName);
       setLogo(data.logo || "/default-logo.png");
       setInstituteAddress(data.address || "Address not available");
 
@@ -8523,7 +8792,15 @@ useEffect(() => {
       if (retriesLeft > 0) {
         return fetchInstituteInfo(retriesLeft - 1);
       }
-      setSchoolName(currentDbName || "Unknown School");
+      const fallbackSchoolName = resolveInstituteDisplayName({
+        storedSchoolName: localStorage.getItem("schoolName"),
+        storedInstituteName: localStorage.getItem("instituteName"),
+        schoolCode: currentDbName,
+        fallback: "Unknown School",
+      });
+      setSchoolName(fallbackSchoolName);
+      localStorage.setItem("schoolName", fallbackSchoolName);
+      localStorage.setItem("instituteName", fallbackSchoolName);
       setLogo("/default-logo.png");
       setInstituteAddress("Address not available");
     }
@@ -9121,6 +9398,8 @@ useEffect(() => {
           autoImageDisabled={autoImageDisabledAuto}
           onAutoImageDisabledChange={(disabled) => updateAutoImageSetting("auto", disabled)}
           schoolCode={schoolCode}
+          campaignStatusSentLeads={campaignStatusSentLeads}
+          campaignStatusScheduledLeads={campaignStatusScheduledLeads}
           onDigitalScheduleChange={() => {
             // Backend-only schedule display in Bulk Uploads.
             // Refresh now and once after a short delay for async DB writes.
@@ -9144,7 +9423,7 @@ useEffect(() => {
           renderAssistantPanel("Lead Predictions", digitalPredictionSummary)
         ) : (
           <Section title="" variant="marketing" className="campaignSection">
-        <div className="campaignstatusHeader">
+<div className="campaignstatusHeader">
 
     <div className="co-filter-title">
       Communication Digital
@@ -9164,11 +9443,14 @@ useEffect(() => {
     </div>
 
 </div>
+            <div className="frontdesk-campaign-status-time">
+              {campaignStatusRangeLabel}
+            </div>
             <div className="co-digital-list">
               {monthDigitalStatusRows.map((lead, index) => {
                 const schedule = effectiveDigitalLeadSchedules[getLeadScheduleKey(lead)] || {};
                 const formattedDate = formatLeadDateLabel(schedule.fromDate || lead.date);
-                const formattedTime = formatLeadTimeLabel(schedule.time || lead.lead_time);
+                const formattedTime = formatLeadTimeLabel(lead.lead_time || schedule.time);
                 const isMail = String(lead.entry_type || "").toLowerCase().includes("mail");
                 const showConnector = index < monthDigitalStatusRows.length - 1;
                 const sourceName = lead.lead_name || lead.refer_by || "-";
@@ -9241,6 +9523,8 @@ useEffect(() => {
           autoImageDisabled={autoImageDisabledAuto}
           onAutoImageDisabledChange={(disabled) => updateAutoImageSetting("auto", disabled)}
           schoolCode={schoolCode}
+          campaignStatusSentLeads={campaignStatusSentLeads}
+          campaignStatusScheduledLeads={campaignStatusScheduledLeads}
         />
       </div>
 
@@ -9269,6 +9553,9 @@ useEffect(() => {
                   </div>
                 </div>
               </div>
+            </div>
+            <div className="frontdesk-campaign-status-time">
+              {campaignStatusRangeLabel}
             </div>
 
             <div className="co-staff-list">

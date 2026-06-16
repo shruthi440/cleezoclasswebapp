@@ -31,7 +31,7 @@
   box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
   margin-bottom: 15px;
   border: 4px solid #ddd;
-  height: 20vh;
+  height: 30vh;
   overflow-y: auto;
   overflow-x: hidden;
   width: 100%;
@@ -51,7 +51,7 @@
 
 /* Keep Campaign Status in Admission tab same height as Registered Leads in Test & Counselling */
 .sectionContainer1.tc-sectionContainer1 {
-  height: 28vh;
+  height: 45vh;
 }
 
 

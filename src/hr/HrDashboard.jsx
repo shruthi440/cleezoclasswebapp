@@ -13,6 +13,7 @@ import BiometricTeacher from "./HR_BiometricTeacher.jsx";
 import Header from "../shared/header.jsx";
     
 import StudentData from '../shared/StudentData.jsx'
+import { Bot, BotIcon, CalendarRange, Fingerprint, UserCog, UserPlus } from "lucide-react";
 
 const ModalContent = ({ route, onClose }) => {
   let content;
@@ -68,7 +69,7 @@ const AdminDashboard = () => {
   // Removed 'useNavigate' since we are using modals instead of navigation
 
   const [isMobile, setIsMobile] = useState(window.innerWidth < 768);
-  const [modalRoute, setModalRoute] = useState(null); // State to hold the route for the modal
+const [activeComponent, setActiveComponent] = useState(null);
   const font = "'Century Gothic', 'AppleGothic', sans-serif";
 
   useEffect(() => {
@@ -77,21 +78,19 @@ const AdminDashboard = () => {
     return () => window.removeEventListener("resize", handleResize);
   }, []);
 
-  const openModal = (route) => {
-    if (route) {
-      setModalRoute(route);
-    }
-  };
+const openComponent = (route) => {
+  setActiveComponent(route);
+};
 
-  const closeModal = () => {
-    setModalRoute(null);
-  };
+const closeComponent = () => {
+  setActiveComponent(null);
+};
 const name=localStorage.getItem('name')
 
   const outerContainer = {
     display: "flex",
     flexDirection: "column",
-    gap: isMobile ? "20px" : "50px",
+    // gap: isMobile ? "20px" : "50px",
     minHeight: "100vh",
     width: "100%",
     padding: isMobile ? "10px" : "20px",
@@ -451,6 +450,33 @@ const logo = {
       link: "/EventAndMeetings",
     },
   ];
+  const sidebarItems = [
+  {
+    title: "Enroll",
+    icon: UserPlus,
+    route: "/StudentData",
+  },
+  {
+    title: "Biometric",
+    icon: Fingerprint,
+    route: "/Biometric",
+  },
+  {
+    title: "HR",
+    icon: UserCog,
+    route: "/BiometricTeacher",
+  },
+  {
+    title: "Assistant",
+    icon: BotIcon,
+    route: "/BiometricTeacher",
+  },
+  {
+    title: "Events",
+    icon: CalendarRange,
+    route: "/EventAndMeetings",
+  },
+];
 
   // Render Card Function
   const renderCard = (title, items, homepageRoute, split = false, customCardStyle = {}) => {
@@ -498,7 +524,7 @@ const logo = {
   <div
     style={listItem}
     key={i.title}
-    onClick={() => openModal(i.link)}   // <--- UPDATED: Open modal for individual item click
+    onClick={() => openComponent(i.link)}   // <--- UPDATED: Open modal for individual item click
   >
     <div style={{ display: "flex", alignItems: "flex-start", gap: "10px", flex: 1, height: "70px" }}>
       {items === ActionItems ? (
@@ -556,7 +582,7 @@ const logo = {
     } else {
       return (
         // <div style={{ ...card, ...customCardStyle }} onClick={() => navigate(homepageRoute)}>  <--- ORIGINAL LINE
-        <div style={{ ...card, ...customCardStyle }} onClick={() => openModal(homepageRoute)}> 
+        <div style={{ ...card, ...customCardStyle }} onClick={() =>openComponent(homepageRoute)}> 
           {items.map(renderItemContent)}
         </div>
       );
@@ -568,73 +594,233 @@ const logo = {
     navigate("/"); 
     alert("Logging out and navigating to root.");
   };
+const renderActiveComponent = () => {
+  switch (activeComponent) {
+    case "/EventAndMeetings":
+      return <EventAndMeetings />;
 
+    case "/Biometric":
+      return <Biometric />;
+
+    case "/BiometricTeacher":
+      return <BiometricTeacher />;
+
+    case "/StudentData":
+      return <StudentData />;
+
+    default:
+      return null;
+  }
+};
   return (
-    <div style={outerContainer}>
-        <div className={modalRoute ? "blur-background-active" : ""}>
-
-      <div style={container}>
-   <Header/>
-   
-    <div
+  <div style={outerContainer}>
+  {/* TOP BAR */}
+      <Header/>
+  <div
     style={{
       display: "flex",
       justifyContent: "space-between",
       alignItems: "center",
-      fontSize: isMobile ? "18px" : "22px",
-      fontWeight: "600",
-      padding: isMobile ? "0 10px" : "0",
-      marginTop:'10px'
+      padding: "10px 15px",
+      background: "#fff",
+      borderRadius: "1px",
+  
     }}
   >
-     <div className="section-header">
-                          {name ? `Welcome ${name}..!` : "Welcome Chief!"}
-                      </div>
-    {/* Icons side by side */}
-     <div style={{ display: "flex", gap: "15px", cursor: "pointer" }}>
-    {/* Class & Student */}
-    <div style={{ display: "flex", gap: "10px", marginBottom: "0" }}>
-  
-        <div className="expense-input-field">
-          <button
+
+    <div className="section-header">
+      {name ? `Welcome ${name}..!` : "Welcome Chief!"}
+    </div>
+
+    <div style={{ display: "flex", gap: "15px", alignItems: "center" }}>
+      <button
         className="btn-dropdown-FeesManagement"
-        style={{ padding: "12px", cursor: "pointer",marginTop:'-1px' }}
         onClick={() => navigate("/TeacherManagement")}
       >
         Student Data
       </button>
-  
-  
-  </div> 
-   
-  
- 
-  
-      {/* BUTTON TO NAVIGATE */}
-  
+
+      <div style={{ position: "relative" }}>
+        <FontAwesomeIcon
+          icon={faBell}
+          style={{
+            fontSize: "24px",
+            color: "#555",
+          }}
+        />
+      </div>
     </div>
-  
-    {/* Notification Icon */}
-    <div style={{ position: "relative" }}>
-      <FontAwesomeIcon icon={faBell} style={{ fontSize: "24px", color: "#555" }} />
+  </div>
+
+  {/* BODY */}
+<div
+  style={{
+    display: "flex",
+    alignItems: "flex-start",
+    width: "100%",
+  }}
+>
+  <div
+  style={{
+    display: "flex",
+    alignItems: "center", // vertical center
+    justifyContent: "center",
+    gap: "25px",
+    width: "100%",
+    minHeight: "calc(100vh - 120px)",
+    backgroundColor:"white"
+  }}
+>
+    {/* SIDEBAR */}
+ <div
+  style={{
+    width: "100px",
+    minWidth: "40px",
+    background: "#f9b1b8",
+    borderRight: "1px solid #e5e7eb",
+    borderRadius:"50px",
+height: "fit-content",
+alignSelf: "center",
+    padding: "15px",
+    display: "flex",
+    flexDirection: "column",
+    gap: "12px",
+    zIndex:"999"
+
+
+  }}
+>
+{sidebarItems.map((item) => {
+  const Icon = item.icon;
+
+  return (
+    <div
+      key={item.title}
+      onClick={() => openComponent(item.route)}
+      style={{
+        display: "flex",
+        alignItems: "center",
+        gap: "12px",
+        padding: "14px 18px",
+        borderRadius: "999px",
+        background: "#f8fafc",
+        cursor: "pointer",
+        border: "1px solid #e2e8f0",
+        width: "60px",
+        overflow: "hidden",
+        whiteSpace: "nowrap",
+        transition: "all 0.3s ease",
+      }}
+      onMouseEnter={(e) => {
+        e.currentTarget.style.width = "180px";
+        e.currentTarget.style.background = "#f9b1b8";
+
+        const text =
+          e.currentTarget.querySelector(".sidebar-title");
+
+        if (text) {
+          text.style.opacity = "1";
+          text.style.width = "auto";
+        }
+      }}
+      onMouseLeave={(e) => {
+        e.currentTarget.style.width = "60px";
+        e.currentTarget.style.background = "#f8fafc";
+
+        const text =
+          e.currentTarget.querySelector(".sidebar-title");
+
+        if (text) {
+          text.style.opacity = "0";
+          text.style.width = "0";
+        }
+      }}
+    >
+      <Icon size={40} />
+
       <span
+        className="sidebar-title"
         style={{
-          position: "absolute",
-          top: "-4px",
-          right: "-4px",
-          width: "10px",
-          height: "10px",
-          borderRadius: "50%",
-          border: "1px solid white",
+          opacity: 0,
+          width: 0,
+          overflow: "hidden",
+          transition: "all 0.3s ease",
+          fontSize: "14px",
+          fontWeight: "600",
         }}
-      ></span>
+      >
+        {item.title}
+      </span>
     </div>
-  </div>
-  </div>
-        {/* Main Grid */}
-        <div style={mainGrid}>
-          {/* Left Column */}
-          <div style={leftColumnContainer}>
+  );
+})}
+</div>
+
+    {/* RIGHT CONTENT */}
+    <div
+      style={{
+        flex: 1,
+        background: "#fff",
+        borderRadius: "1px",
+        padding: "20px",
+        minHeight: "calc(100vh - 140px)",
+        boxShadow: "0 2px 10px rgba(0,0,0,0.08)",
+        overflowY: "auto",
+      }}
+    >
+      {activeComponent ? (
+        <>
+          {/* COMPONENT HEADER */}
+          <div
+            style={{
+              display: "flex",
+              justifyContent: "space-between",
+              alignItems: "center",
+              marginBottom: "20px",
+              paddingBottom: "15px",
+              borderBottom: "1px solid #e5e7eb",
+            }}
+          >
+            <h3
+              style={{
+                margin: 0,
+                color: "#334155",
+              }}
+            >
+              Module View
+            </h3>
+
+            <button
+              onClick={closeComponent}
+              style={{
+                border: "none",
+                background: "#ef4444",
+                color: "#fff",
+                width: "40px",
+                height: "40px",
+                borderRadius: "50%",
+                cursor: "pointer",
+                fontSize: "18px",
+                fontWeight: "bold",
+              }}
+            >
+              ✕
+            </button>
+          </div>
+
+          {renderActiveComponent()}
+        </>
+      ) : (
+        <>
+    
+
+          <div
+            style={{
+              display: "flex",
+              gap: "20px",
+            }}
+          >
+              <div style={leftColumnContainer}>
             {/* Enrollments & Biometrics */}
             <div style={{ flex: 1 }}>
               <div className="title-heading">Enrollments & Biometrics</div>
@@ -670,7 +856,7 @@ const logo = {
               <div style={{ flex: 1 }}>
                 <div className="title-heading">Attendance & Payroll</div>
                 <div
-                  onClick={() => openModal("/BiometricTeacher")} // <--- UPDATED: Open modal for the whole container click
+                  onClick={() => openComponent("/BiometricTeacher")} // <--- UPDATED: Open modal for the whole container click
                   style={{
                     display: "flex",
                     flexDirection: isMobile ? "column" : "row",
@@ -721,14 +907,13 @@ const logo = {
               </div>
             </div>
           </div>
-        </div>
-      </div>
-      </div>
-      {/* Modal Render */}
-      {modalRoute && (
-          <ModalContent route={modalRoute} onClose={closeModal} />
+          </div>
+        </>
       )}
     </div>
+    </div>
+  </div>
+</div> 
   );
 };
 

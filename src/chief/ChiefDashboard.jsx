@@ -714,15 +714,20 @@ const outerContainer = {
         alignItems: "center",
         gap: "10px",
         order: isMobile ? 1 : 0, 
+        maxHeight: isMobile ? "48px" : "56px",
+        overflow: "hidden",
+        flexShrink: 0,
     };
 const logo = {
-  width: "60px",
-  height: "60px",
+  width: isMobile ? "48px" : "56px",
+  height: isMobile ? "48px" : "56px",
+  flexShrink: 0,
   backgroundImage: `url(${abcLogo})`,
   backgroundSize: "contain",
   backgroundRepeat: "no-repeat",
   backgroundPosition: "center",
   borderRadius: "8px",
+  overflow: "hidden",
 };
 
     const logoText = { fontSize: isMobile ? "16px" : "18px", fontWeight: "600" };

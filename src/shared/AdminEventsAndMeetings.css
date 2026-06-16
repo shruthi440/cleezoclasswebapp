@@ -16,10 +16,10 @@
   grid-template-columns: 1fr 1fr 1.28fr;
   gap: 1rem;
 }
-
+/* syam */
 .admin-events-bottom {
   display: grid;
-  grid-template-columns: 1.7fr 0.66fr 1.2fr;
+  /* grid-template-columns: 1.7fr 0.66fr 1.2fr; */
   gap: 1rem;
   align-items: start;
 }
@@ -667,6 +667,7 @@
   margin-top: 0.5rem;
   flex: 1 1 auto;
   min-height: 0;
+  width: 100%;
   overflow-y: auto;
   padding-right: 0.2rem;
 }
@@ -1174,6 +1175,36 @@
 
 .admin-events-livechat {
   min-width: 0;
+}
+
+.admin-events-livechat,
+.admin-events-livechat .accountant-card-header,
+.admin-events-livechat .admin-events-card-header,
+.admin-events-livechat .admin-events-chat-meta,
+.admin-events-livechat .admin-events-chat-section {
+  align-items: flex-start;
+  text-align: left;
+}
+
+.admin-events-livechat .accountant-card-filters {
+  align-self: flex-end;
+}
+
+.admin-events-livechat .admin-events-chat-meta {
+  justify-content: flex-end;
+  margin-left: auto;
+}
+
+.admin-events-livechat .admin-events-chat-count {
+  margin-left: auto;
+  justify-content: flex-end;
+}
+
+.admin-events-chat-section,
+.admin-events-chat-item,
+.admin-events-assistant-item {
+  justify-items: flex-start;
+  text-align: left;
 }
 
 .admin-events-footer-item {

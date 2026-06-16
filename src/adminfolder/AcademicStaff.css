@@ -845,3 +845,31 @@ min-width: 200px;
     align-self: flex-end;
   }
 }
+.staff-compact-page .staff-row-container:first-of-type {
+  display: none;
+}
+
+.staff-compact-page {
+  background: transparent;
+  padding: 0;
+  height: auto;
+  overflow: visible;
+}
+
+.staff-compact-page .footprintsinner {
+  display: none;
+}
+
+.staff-compact-page .staff-scroll-area {
+  padding-top: 0;
+  overflow: visible;
+  max-height: none;
+}
+
+.staff-compact-page .staff-row-container {
+  padding-top: 0;
+}
+
+.staff-compact-page .accountant-footer-brand {
+  display: none;
+}

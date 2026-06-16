@@ -2,7 +2,7 @@
   position: relative;
   height: 100vh;
   padding: 1.2rem;
-  background: #66615d;
+  background: #fff;
   font-family: "Century Gothic", "Segoe UI", sans-serif;
   overflow: hidden;
 }
@@ -67,7 +67,7 @@
   height: 100%;
   display: grid;
   grid-template-columns: 5.65rem minmax(0, 1fr);
-  background: #f5f5f5;
+  background: #fff;
   border: 1px solid #7c7c7c;
   border-radius: 1.55rem;
   overflow: hidden;
@@ -1540,7 +1540,7 @@
 }
 .accountant-progress-ring {
   --size: 2.55rem;
-  --thickness: 4px;
+  /* --thickness: 4px; */
 
   width: var(--size);
   height: var(--size);
@@ -2684,7 +2684,7 @@
 }
 
 /* Academics page override: keep 900px-1200px behaving like desktop */
-@media (min-width: 900px) and (max-width: 1200px) {
+/* @media (min-width: 900px) and (max-width: 1200px) {
   .admin-academics-page.accountant-dashboard-home-page,
   .admin-academics-page.frontdesk-dashboard-page {
     position: relative !important;
@@ -2728,4 +2728,4 @@
     grid-template-columns: inherit !important;
     grid-template-rows: inherit !important;
   }
-}
+} */

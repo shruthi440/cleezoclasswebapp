@@ -148,7 +148,7 @@ function PDFEvaluator() {
         encodeFileToBase64(studentPDF)
       ]);
 
-      const res = await axios.post('https://nova.tagsol.tech:3010/api/evaluate', {
+      const res = await axios.post('https://cleezoclass.com/:3010/api/evaluate', {
         question_pdf_base64: questionPdfBase64,
         answer_pdf_base64: answerPdfBase64,
         student_pdf_base64: studentPdfBase64,

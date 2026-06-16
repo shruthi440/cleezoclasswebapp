@@ -1097,7 +1097,7 @@ const renderDonutChart = (title, data) => (
 
   {/* Nova Web App - Always enabled and visible to all */}
   <a
-    href="https://nova.tagsol.tech/"
+    href="https://cleezoclass.com//"
     target="_blank"
     rel="noopener noreferrer"
     style={linkStyle}

@@ -4,6 +4,7 @@ import "./AccountantDashboardnew.css";
 import "./AccountantReportsPageNew.css";
 import DashboardLayout from "../components/DashboardLayout.jsx";
 import EditableProfileMenu from "../shared/EditableProfileMenu.jsx";
+import { resolveInstituteDisplayName } from "../shared/instituteNameUtils";
 
 import collectFeeIcon from "../assets/collect.png";
 import addFeeIcon from "../assets/Navbar-AddFee.png";
@@ -46,12 +47,29 @@ const AccountantReportsPageNew = () => {
     fetch(`https://cleezoclass.com:4000/api/institute?dbName=${encodeURIComponent(schoolCode)}`)
       .then((res) => res.json().catch(() => ({})))
       .then((data) => {
+        const resolvedInstituteName = resolveInstituteDisplayName({
+          apiInstituteName: data?.institute_name || data?.instituteName || data?.schoolName || data?.name,
+          storedSchoolName: localStorage.getItem("schoolName"),
+          storedInstituteName: localStorage.getItem("instituteName"),
+          schoolCode,
+          fallback: "Institute",
+        });
         setInstituteLogo(data.logo || "/default-logo.png");
-        setInstituteName(data.institute_name || data.schoolName || data.name || schoolCode || "Institute");
+        setInstituteName(resolvedInstituteName);
+        localStorage.setItem("schoolName", resolvedInstituteName);
+        localStorage.setItem("instituteName", resolvedInstituteName);
       })
       .catch(() => {
+        const fallbackInstituteName = resolveInstituteDisplayName({
+          storedSchoolName: localStorage.getItem("schoolName"),
+          storedInstituteName: localStorage.getItem("instituteName"),
+          schoolCode,
+          fallback: "Institute",
+        });
         setInstituteLogo("/default-logo.png");
-        setInstituteName(schoolCode || "Institute");
+        setInstituteName(fallbackInstituteName);
+        localStorage.setItem("schoolName", fallbackInstituteName);
+        localStorage.setItem("instituteName", fallbackInstituteName);
       });
   }, []);
 

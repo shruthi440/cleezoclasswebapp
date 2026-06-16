@@ -6,6 +6,7 @@ import DiscountsPanel from "./Accounatant_FeesManagement_Discounts.jsx";
 import DashboardLayout from "../components/DashboardLayout.jsx";
 import "./FrontDesk_Tickets.css";
 import "./dashboardGlobal.css"
+import { resolveInstituteDisplayName } from "../shared/instituteNameUtils";
 
 import collectFeeIcon from "../assets/collect.png";
 import addFeeIcon from "../assets/Navbar-AddFee.png";
@@ -2192,12 +2193,29 @@ const openCreateFeeTypePopup = useCallback(() => {
       .then((res) => res.json())
       .then((data) => {
         setSchoolLogo(data.logo || "/default-logo.png");
-      setSchoolName(data.institute_name || currentDbName);
+        const resolvedSchoolName = resolveInstituteDisplayName({
+          apiInstituteName: data?.institute_name || data?.instituteName || data?.schoolName || data?.name,
+          storedSchoolName: localStorage.getItem("schoolName"),
+          storedInstituteName: localStorage.getItem("instituteName"),
+          schoolCode,
+          fallback: "School",
+        });
+        setSchoolName(resolvedSchoolName);
+        localStorage.setItem("schoolName", resolvedSchoolName);
+        localStorage.setItem("instituteName", resolvedSchoolName);
         setInstituteAddress(data.address || "Address not available");
       })
       .catch(() => {
         setSchoolLogo("/default-logo.png");
-        setSchoolName("School");
+        const fallbackSchoolName = resolveInstituteDisplayName({
+          storedSchoolName: localStorage.getItem("schoolName"),
+          storedInstituteName: localStorage.getItem("instituteName"),
+          schoolCode,
+          fallback: "School",
+        });
+        setSchoolName(fallbackSchoolName);
+        localStorage.setItem("schoolName", fallbackSchoolName);
+        localStorage.setItem("instituteName", fallbackSchoolName);
         setInstituteAddress("Address not available");
       });
   }, []);
@@ -3668,7 +3686,7 @@ return (
       <div
         className="globalpopup-content accountant-add-fee-popup"
         onClick={(event) => event.stopPropagation()}
-        style={{ width: "58vw", maxWidth: "760px", height: "64vh", overflow: "auto", marginRight: "22vw" }}
+        style={{ width: "72vw", maxWidth: "980px", height: "74vh", overflow: "auto", marginRight: "0" }}
       >
         <div className="globalpopup-header">
           <div className="accountant-create-fee-popup-heading">

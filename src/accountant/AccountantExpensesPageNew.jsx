@@ -10,6 +10,8 @@ import ErrorPopup from "../shared/ErrorPopup";
 import CreateMasterExpenseForm from "./ExpensesAccountant";
 import IncomeForm5 from "../shared/IncomeformTwo.jsx";
 import EditableProfileMenu from "../shared/EditableProfileMenu.jsx";
+import InstituteBrand from "../shared/InstituteBrand.jsx";
+import { resolveInstituteDisplayName } from "../shared/instituteNameUtils";
 
 import collectFeeIcon from "../assets/collect.png";
 import addFeeIcon from "../assets/Navbar-AddFee.png";
@@ -124,6 +126,7 @@ const AccountantExpensesPageNew = () => {
   const [isCreateExpensePopupOpen, setIsCreateExpensePopupOpen] = useState(false);
   const [isAddExpensePopupOpen, setIsAddExpensePopupOpen] = useState(false);
   const [isAddFeesPopupOpen, setIsAddFeesPopupOpen] = useState(false);
+  const [isStudentManagementPopupOpen, setIsStudentManagementPopupOpen] = useState(false);
   const [addFeePreview, setAddFeePreview] = useState({
     className: "",
     section: "",
@@ -157,6 +160,10 @@ const AccountantExpensesPageNew = () => {
   const [ledgerFromDate, setLedgerFromDate] = useState("");
   const [ledgerToDate, setLedgerToDate] = useState("");
   const [expenseSearch, setExpenseSearch] = useState("");
+  const studentManagementPopupUrl =
+    typeof window === "undefined"
+      ? ""
+      : `${window.location.origin}${import.meta.env.BASE_URL}StudentManagement`;
 
   useEffect(() => {
     const schoolCode = String(localStorage.getItem("schoolCode") || "").trim();
@@ -165,12 +172,29 @@ const AccountantExpensesPageNew = () => {
     fetch(`https://cleezoclass.com:4000/api/institute?dbName=${encodeURIComponent(schoolCode)}`)
       .then((res) => res.json().catch(() => ({})))
       .then((data) => {
+        const resolvedInstituteName = resolveInstituteDisplayName({
+          apiInstituteName: data?.institute_name || data?.instituteName || data?.schoolName || data?.name,
+          storedSchoolName: localStorage.getItem("schoolName"),
+          storedInstituteName: localStorage.getItem("instituteName"),
+          schoolCode,
+          fallback: "Institute",
+        });
         setInstituteLogo(data.logo || "/default-logo.png");
-        setInstituteName(data.institute_name || data.schoolName || data.name || schoolCode || "Institute");
+        setInstituteName(resolvedInstituteName);
+        localStorage.setItem("schoolName", resolvedInstituteName);
+        localStorage.setItem("instituteName", resolvedInstituteName);
       })
       .catch(() => {
+        const fallbackInstituteName = resolveInstituteDisplayName({
+          storedSchoolName: localStorage.getItem("schoolName"),
+          storedInstituteName: localStorage.getItem("instituteName"),
+          schoolCode,
+          fallback: "Institute",
+        });
         setInstituteLogo("/default-logo.png");
-        setInstituteName(schoolCode || "Institute");
+        setInstituteName(fallbackInstituteName);
+        localStorage.setItem("schoolName", fallbackInstituteName);
+        localStorage.setItem("instituteName", fallbackInstituteName);
       });
   }, []);
 
@@ -460,58 +484,68 @@ const AccountantExpensesPageNew = () => {
     [filteredLedgerRows]
   );
 
-  const handleSubmitExpense = async () => {
-    const schoolCode = localStorage.getItem("schoolCode");
+const handleSubmitExpense = async () => {
+  const schoolCode = localStorage.getItem("schoolCode");
+  if (!schoolCode) {
+    setPopup({ message: "School code not found!", type: "error" });
+    return;
+  }
 
-    if (!schoolCode) {
-      setPopup({ message: "School code not found!", type: "error" });
-      return;
-    }
+  if (!expenseTransactionForm.expenseType || !expenseTransactionForm.expenseName) {
+    setPopup({ message: "Please select Expense Type and Expense Name.", type: "error" });
+    return;
+  }
 
-    if (!expenseTransactionForm.expenseType || !expenseTransactionForm.expenseName) {
-      setPopup({ message: "Please select Expense Type and Expense Name.", type: "error" });
-      return;
-    }
+  if (!expensePaymentForm.totalAmount || !expensePaymentForm.paidAmount) {
+    setPopup({ message: "Please enter Total Amount and Paid Amount.", type: "error" });
+    return;
+  }
 
-    if (!expensePaymentForm.totalAmount || !expensePaymentForm.paidAmount) {
-      setPopup({ message: "Please enter Total Amount and Paid Amount.", type: "error" });
-      return;
-    }
+  setExpenseSubmitLoading(true);
 
-    setExpenseSubmitLoading(true);
+  try {
+    const payload = {
+      expenseName: expenseTransactionForm.expenseName,
+      expenseType: expenseTransactionForm.expenseType,
+      description: expenseTransactionForm.description,
+      paymentMode: expensePaymentForm.paymentMode,
+      totalAmount: parseFloat(expensePaymentForm.totalAmount) || 0,
+      paidAmount: parseFloat(expensePaymentForm.paidAmount) || 0,
+      balance: parseFloat(expensePaymentForm.balance) || 0,
+      personName: expenseTransactionForm.personName,
+      mobileNumber: expenseTransactionForm.mobileNumber,
+      price: parseFloat(expenseTransactionForm.price) || 0,
+      schoolCode,
+    };
 
-    try {
-      const payload = {
-        expenseName: expenseTransactionForm.expenseName,
-        expenseType: expenseTransactionForm.expenseType,
-        description: expenseTransactionForm.description,
-        paymentMode: expensePaymentForm.paymentMode,
-        totalAmount: parseFloat(expensePaymentForm.totalAmount) || 0,
-        paidAmount: parseFloat(expensePaymentForm.paidAmount) || 0,
-        balance: parseFloat(expensePaymentForm.balance) || 0,
-        personName: expenseTransactionForm.personName,
-        mobileNumber: expenseTransactionForm.mobileNumber,
-        price: parseFloat(expenseTransactionForm.price) || 0,
-        schoolCode,
-      };
+    // Submit the expense
+    await axios.post("https://cleezoclass.com:4000/Accountntdata", payload);
 
-      await axios.post("https://cleezoclass.com:4000/Accountntdata", payload);
-      await fetchExpenseRows();
-      setActiveRightPanel("transactions");
-      setPopup({ message: "Expense created successfully!", type: "success" });
-      setIsAddExpensePopupOpen(false);
-      resetAddExpenseFlow();
-    } catch (error) {
-      console.error("Error submitting expense:", error);
-      setPopup({
-        message: error?.response?.data?.message || "Failed to create expense!",
-        type: "error",
-      });
-    } finally {
-      setExpenseSubmitLoading(false);
-    }
-  };
+    // Refetch the expense rows immediately after submission
+    const nextExpenseRows = await fetchCombinedExpenseRows(schoolCode);
+    setExpenseRows(nextExpenseRows);
 
+    // Update the assistant lists as well
+    setAssistantSalaryRows(nextExpenseRows.filter(row => row.final_salary || row.salary_amount || row.base_salary));
+
+    // Reset the form and close the popup
+    setPopup({ message: "Expense created successfully!", type: "success" });
+    setIsAddExpensePopupOpen(false);
+    resetAddExpenseFlow();
+  } catch (error) {
+    console.error("Error submitting expense:", error);
+    setPopup({
+      message: error?.response?.data?.message || "Failed to create expense!",
+      type: "error",
+    });
+  } finally {
+    setExpenseSubmitLoading(false);
+  }
+};
+const isFormValid =
+  expenseTransactionForm.expenseType &&
+  expenseTransactionForm.expenseName &&
+  expenseTransactionForm.description.trim();
   return (
     <div className="accountant-dashboard-page accountant-fees-page accountant-expenses-page">
       <div className="accountant-dashboard-shell">
@@ -558,9 +592,9 @@ const AccountantExpensesPageNew = () => {
             <span>Add Fees</span>
           </div>
 
-          <div className="accountant-sidebar-item"
-
-              onClick={() => navigate("/StudentManagement")}
+          <div
+            className={`accountant-sidebar-item ${isStudentManagementPopupOpen ? "accountant-sidebar-item-active" : ""}`.trim()}
+            onClick={() => setIsStudentManagementPopupOpen(true)}
           >
             <div className="accountant-sidebar-item-icon">
               <img src={addStudentIcon} alt="" />
@@ -625,10 +659,11 @@ const AccountantExpensesPageNew = () => {
             </nav>
 
             <div className="accountant-topbar-center">
-              <div className="accountant-school-brand">
-                <img src={instituteLogo || logoab} alt={instituteName || "Institute"} className="accountant-school-logo" />
-                <span className="accountant-school-name">{instituteName}</span>
-              </div>
+              <InstituteBrand
+                logoSrc={instituteLogo || logoab}
+                logoAlt={instituteName || "Institute"}
+                instituteName={instituteName}
+              />
             </div>
 
             <div className="accountant-topbar-right">
@@ -1395,15 +1430,16 @@ const AccountantExpensesPageNew = () => {
                         Cancel
                       </button>
                       <button
-                        type="button"
-                        className="accountant-expense-popup-action accountant-expense-popup-action-active"
-                        onClick={() => {
-                          if (!expenseTransactionForm.expenseType || !expenseTransactionForm.expenseName) return;
-                          setAddExpenseStep(2);
-                        }}
-                      >
-                        Next: Add Payment
-                      </button>
+  type="submit"
+  className="btn-solid"
+  disabled={!isFormValid}
+  style={{
+    opacity: isFormValid ? 1 : 0.5,
+    cursor: isFormValid ? "pointer" : "not-allowed"
+  }}
+>
+  Next: Add Payment
+</button>
                     </div>
                   </>
                 ) : (
@@ -1499,7 +1535,7 @@ const AccountantExpensesPageNew = () => {
           <div
             className="globalpopup-content accountant-add-fee-popup"
             onClick={(event) => event.stopPropagation()}
-            style={{ width: "58vw", maxWidth: "760px", height: "64vh", overflow: "auto", marginRight: "22vw" }}
+            style={{ width: "72vw", maxWidth: "980px", height: "74vh", overflow: "auto", marginRight: "0" }}
           >
             <div className="globalpopup-header">
               <div className="accountant-create-fee-popup-heading">
@@ -1521,6 +1557,40 @@ const AccountantExpensesPageNew = () => {
               onFeeStructurePreviewChange={setAddFeePreview}
               embeddedInPopup
             />
+          </div>
+        </div>
+      )}
+      {isStudentManagementPopupOpen && (
+        <div
+          className="globalpopup-overlay accountant-student-management-popup-overlay"
+          onClick={() => setIsStudentManagementPopupOpen(false)}
+          style={{ zIndex: 3200 }}
+        >
+          <div
+            className="globalpopup-content accountant-student-management-popup"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div className="globalpopup-header accountant-student-management-popup-header">
+              <div>
+                <div className="Heading">Add Student</div>
+                <div className="normalText">Open the student form inside a popup</div>
+              </div>
+              <button
+                type="button"
+                className="globalpopup-close-btn accountant-student-management-close-btn"
+                onClick={() => setIsStudentManagementPopupOpen(false)}
+                aria-label="Close add student popup"
+              >
+                ×
+              </button>
+            </div>
+            <div className="accountant-student-management-popup-body">
+              <iframe
+                title="Student Management Add Popup"
+                src={studentManagementPopupUrl}
+                className="accountant-student-management-iframe"
+              />
+            </div>
           </div>
         </div>
       )}

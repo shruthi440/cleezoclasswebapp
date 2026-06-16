@@ -20,18 +20,12 @@ const PayementDemo = ({
   className: propClassName,
   sectionName: propSectionName,
   popupOnly = false,
+  popupTheme = "payment",
   initialStudentId = null,
   initialStudentName = "",
   onPopupClose = null,
   onPaymentSuccess = null,
 }) => {
-  console.log("[Payment][props]", {
-    propClassName,
-    propSectionName,
-    popupOnly,
-    initialStudentId,
-    initialStudentName,
-  });
   // CORRECTED: Added useLocation hook call
   const location = useLocation();
 
@@ -77,6 +71,7 @@ const [section, setSection] = useState(
   }, [location.state]);
 
   const [showInstallments, setShowInstallments] = useState(false);
+  const [activeInstallmentPopup, setActiveInstallmentPopup] = useState(null);
 
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
   //   const logoSrc = schoolLogo || "/default-logo.png";
@@ -94,6 +89,7 @@ const [section, setSection] = useState(
     completeFee: 0,
   });const [installments, setInstallments] = useState({});
   const [selectedStudentFeeDetails, setSelectedStudentFeeDetails] = useState(null);
+  const [refreshFeeData, setRefreshFeeData] = useState(0);
  // Convert number → "1,23,456.00"
 const formatAmount = (value) => {
   if (value === "" || value === null || isNaN(value)) return "";
@@ -102,6 +98,17 @@ const formatAmount = (value) => {
     maximumFractionDigits: 2,
   });
 };
+
+const getStudentLookupId = (student = {}) =>
+  String(
+    student?.id ||
+      student?.studentId ||
+      student?.student_id ||
+      student?._id ||
+      student?.StudentId ||
+      student?.Student_ID ||
+      ""
+  ).trim();
 
 const unformatAmount = (value) => {
   if (!value) return "";
@@ -226,22 +233,7 @@ useEffect(() => {
   const selectedClass = String(className || "").trim();
   const selectedSection = String(section || "").trim();
 
-  console.log("[Payment][student-fee-details] request", {
-    schoolCode,
-    selectedName,
-    selectedClass,
-    selectedSection,
-    selectedStudentId,
-    initialStudentId,
-  });
-
   if (!schoolCode || !selectedName || !selectedClass || !selectedSection) {
-    console.log("[Payment][student-fee-details] skipped - missing selection", {
-      hasSchoolCode: Boolean(schoolCode),
-      hasSelectedName: Boolean(selectedName),
-      hasSelectedClass: Boolean(selectedClass),
-      hasSelectedSection: Boolean(selectedSection),
-    });
     setSelectedStudentFeeDetails(null);
     return;
   }
@@ -316,10 +308,6 @@ useEffect(() => {
       if (isCancelled) return;
 
       const payload = res?.data;
-      console.log("[Payment][student-fee-details] raw response", {
-        isArray: Array.isArray(payload),
-        topLevelKeys: payload && !Array.isArray(payload) ? Object.keys(payload) : [],
-      });
       const normalizedSelectedName = normalizeStudentName(selectedName);
       const resolvedDetails = Array.isArray(payload)
         ? pickBestStudentFeeRow(payload)
@@ -336,22 +324,8 @@ useEffect(() => {
             return candidateName === normalizedSelectedName ? candidate : null;
           })();
 
-      console.log("[Payment][student-fee-details] resolved", {
-        normalizedSelectedName,
-        normalizedSelectedId: normalizeStudentId(selectedStudentId || initialStudentId),
-        hasMatch: Boolean(resolvedDetails),
-        resolvedKeys: resolvedDetails ? Object.keys(resolvedDetails) : [],
-        resolvedStudentName:
-          resolvedDetails?.StudentName || resolvedDetails?.studentName || resolvedDetails?.name || null,
-        resolvedStudentId: resolvedDetails?.id || resolvedDetails?.studentId || resolvedDetails?.StudentId || resolvedDetails?.student_id || null,
-        score: resolvedDetails ? getStudentFeeScore(resolvedDetails) : 0,
-        uniform:
-          resolvedDetails?.uniform ??
-          resolvedDetails?.uniformFee ??
-          resolvedDetails?.Uniform_Fee ??
-          null,
-      });
       setSelectedStudentFeeDetails(resolvedDetails);
+
     })
     .catch((error) => {
       console.error("[Payment][student-fee-details] fetch failed", error?.response?.data || error?.message || error);
@@ -361,23 +335,8 @@ useEffect(() => {
   return () => {
     isCancelled = true;
   };
-}, [className, initialStudentName, section, selectedStudent]);
+}, [className, initialStudentName, section, selectedStudent,refreshFeeData]);
 
-useEffect(() => {
-  console.log("[Payment][student-fee-details] state update", {
-    resolvedStudentName:
-      selectedStudentFeeDetails?.StudentName ||
-      selectedStudentFeeDetails?.studentName ||
-      selectedStudentFeeDetails?.name ||
-      null,
-    uniform:
-      selectedStudentFeeDetails?.uniform ??
-      selectedStudentFeeDetails?.uniformFee ??
-      selectedStudentFeeDetails?.Uniform_Fee ??
-      null,
-    snapshot: selectedStudentFeeDetails,
-  });
-}, [selectedStudentFeeDetails]);
   const [showReceipt, setShowReceipt] = useState(false);
 const [showPaymentPopup, setShowPaymentPopup] = useState(false);
 // Save receipt number to DB
@@ -689,6 +648,174 @@ const feeLabelToKey = {
  "Other Fees": "other",
 };
 
+const formatPaymentAmount = (value) =>
+  Number(value || 0).toLocaleString("en-IN", {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  });
+
+const getInstallmentChoicesForFee = (fee) => {
+  const label = String(fee?.label || "");
+  const normalizedLabel = normalizeFeeFieldName(label);
+  const remaining = Math.max(Number(fee?.remaining) || 0, 0);
+  const paidAmount = Math.max(Number(fee?.paid) || 0, 0);
+
+  const isSequentiallySelectable = (id, paidIds) => {
+    const normalizedId = Number(id);
+    const paidSet = new Set((paidIds || []).map((item) => Number(item)));
+
+    if (paidSet.has(normalizedId)) return false;
+
+    for (let step = 1; step < normalizedId; step += 1) {
+      if (!paidSet.has(step)) return false;
+    }
+
+    return true;
+  };
+
+  if (remaining <= 0) return [];
+
+  if (normalizedLabel === normalizeFeeFieldName("Tuition Fee")) {
+    if (!installmentOptions?.length) return [];
+
+    const sortedInstallmentOptions = [...installmentOptions].sort(
+      (a, b) => Number(a.installment ?? a.id) - Number(b.installment ?? b.id)
+    );
+    const cumulativePaidIds = [];
+    let unappliedPaid = paidAmount;
+    let selectableAssigned = false;
+
+    return sortedInstallmentOptions
+      .map((inst) => {
+        const original = Math.max(Number(inst.amount) || 0, 0);
+        const installmentNo = Number(inst.installment ?? inst.id);
+        const paid = Math.max(Math.min(unappliedPaid, original), 0);
+        unappliedPaid = Math.max(unappliedPaid - original, 0);
+
+        const available = Math.max(original - paid, 0);
+        const isPaid = available <= 0;
+
+        if (isPaid) cumulativePaidIds.push(installmentNo);
+
+        const isSelectable =
+          !isPaid &&
+          !selectableAssigned &&
+          isSequentiallySelectable(installmentNo, cumulativePaidIds);
+
+        if (isSelectable) selectableAssigned = true;
+
+        return {
+          id: inst.installment,
+          label: `Installment ${inst.installment}`,
+          amount: available,
+          paid,
+          originalAmount: original,
+          isPaid,
+          isSelectable,
+          lockReason: isPaid
+            ? "Already paid"
+            : isSelectable
+              ? ""
+              : "Pay the previous installment first",
+        };
+      })
+      .filter((option) => option.amount > 0);
+  }
+
+  const installmentCount = Math.max(1, Number(fee?.installments) || 1);
+  if (installmentCount <= 1) return [];
+
+  const baseAmount = Math.floor((Math.max(Number(fee?.total) || 0, 0) / installmentCount) * 100) / 100;
+  let balance = Number(Math.max(Number(fee?.total) || 0, 0).toFixed(2));
+  let unappliedPaid = paidAmount;
+  let selectableAssigned = false;
+
+  return Array.from({ length: installmentCount }, (_, index) => {
+    const amount =
+      index === installmentCount - 1 ? Number(balance.toFixed(2)) : Number(baseAmount.toFixed(2));
+    balance = Number((balance - amount).toFixed(2));
+
+    const paid = Math.max(Math.min(unappliedPaid, amount), 0);
+    unappliedPaid = Math.max(unappliedPaid - amount, 0);
+
+    const available = Math.max(amount - paid, 0);
+    const installmentId = index + 1;
+    const isPaid = available <= 0;
+    const isSelectable = !isPaid && !selectableAssigned;
+
+    if (isSelectable) selectableAssigned = true;
+
+    return {
+      id: installmentId,
+      label: `Installment ${installmentId}`,
+      amount: available,
+      paid,
+      originalAmount: amount,
+      isPaid,
+      isSelectable,
+      lockReason: isPaid
+        ? "Already paid"
+        : isSelectable
+          ? ""
+          : "Pay the previous installment first",
+    };
+  }).filter((option) => option.amount > 0);
+};
+
+const openInstallmentPopupForFee = (fee, idx) => {
+  const choices = getInstallmentChoicesForFee(fee);
+  if (!choices.length) return;
+
+  setActiveInstallmentPopup({
+    rowIndex: idx,
+    feeKey: fee.key,
+    feeLabel: fee.label,
+    choices,
+  });
+};
+
+const selectInstallmentChoice = (fee, idx, option) => {
+  if (!fee || !option) return;
+  if (option.isPaid) {
+    displayToast("This installment is already paid.", "error");
+    return;
+  }
+  if (!option.isSelectable) {
+    displayToast("Please pay the previous installment first.", "error");
+    return;
+  }
+
+  const typeKey = feeLabelToKey[fee.label] || fee.key;
+  const amount = Number(option.amount) || 0;
+
+  setFeeEntries((prev) => {
+    const next = [...prev];
+    next[idx] = {
+      ...(next[idx] || {}),
+      type: typeKey,
+      amount,
+      raw: formatPaymentAmount(amount),
+      installmentId: option.id,
+      installmentLabel: option.label,
+    };
+    return next;
+  });
+
+  setDynamicFeeValues((prev) => ({
+    ...prev,
+    [fee.key]: String(amount),
+  }));
+
+  if (typeKey) {
+    setFees((prev) => ({
+      ...prev,
+      [typeKey]: amount,
+    }));
+  }
+
+  setActiveInstallmentPopup(null);
+};
+
 const normalizeFeeColumnBase = (feeName) => {
   const normalized = String(feeName || "")
     .trim()
@@ -704,6 +831,16 @@ const normalizeFeeColumnBase = (feeName) => {
 
 const normalizeFeeFieldName = (key = "") =>
   String(key).toLowerCase().replace(/[\s_]+/g, "");
+
+const parseLooseNumber = (value) => {
+  if (value === null || value === undefined || value === "") return NaN;
+  if (typeof value === "number") return value;
+  const cleaned = String(value)
+    .replace(/[₹,\s]/g, "")
+    .replace(/[^0-9.-]/g, "");
+  if (!cleaned) return NaN;
+  return Number(cleaned);
+};
 
 const isStaticOrMetaFeeField = (key = "") => {
   const normalized = normalizeFeeFieldName(key);
@@ -792,12 +929,27 @@ const getFeeKeyAliases = (key = "") => {
     addAll("sport", "sports");
   }
 
+  if (normalized === "transport" || normalized === "transportation" || normalized === "transportfee") {
+    addAll(
+      "transport",
+      "transportation",
+      "transport_fee",
+      "transportfee",
+      "bus",
+      "bus_fee"
+    );
+  }
+
   if (normalized === "guide" || normalized === "guides") {
     addAll("guide", "guides");
   }
 
   if (normalized === "book" || normalized === "books") {
     addAll("book", "books");
+  }
+
+  if (normalized === "hostel" || normalized === "hostal") {
+    addAll("hostel", "hostal", "hostel_fee", "hostal_fee");
   }
 
   if (normalized === "tie" || normalized === "tiefee") {
@@ -822,6 +974,45 @@ const readFirstNumericValue = (source, keys = []) => {
 
     for (const [sourceKey, raw] of entries) {
       if (normalizeFeeFieldName(sourceKey) !== normalizedKey) continue;
+      if (raw === undefined || raw === null || raw === "") continue;
+      const value = parseLooseNumber(raw);
+      if (Number.isFinite(value)) return value;
+    }
+  }
+
+  return 0;
+};
+
+const mergeDynamicFeeSources = (...sources) =>
+  sources.reduce((acc, source) => {
+    if (!source || typeof source !== "object") return acc;
+    return {
+      ...acc,
+      ...source,
+      ...(source.dynamicFeeTotals || {}),
+      ...(source.dynamicFeePaidTotals || {}),
+      ...(source.dynamicFeeDiscounts || {}),
+      ...(source.studentDetails || {}),
+      ...(source.feeStructure || {}),
+    };
+  }, {});
+
+const getDirectNumericValue = (source, keys = []) => {
+  if (!source) return 0;
+
+  for (const key of keys) {
+    if (!key) continue;
+
+    const directCandidates = [
+      key,
+      String(key).trim(),
+      String(key).toLowerCase(),
+      normalizeFeeFieldName(key),
+      String(key).replace(/[\s_]+/g, "_"),
+    ].filter(Boolean);
+
+    for (const candidate of directCandidates) {
+      const raw = source?.[candidate];
       if (raw === undefined || raw === null || raw === "") continue;
       const value = Number(raw);
       if (Number.isFinite(value)) return value;
@@ -868,52 +1059,59 @@ const readFeeDiscountValue = (source, feeKey = "", feeLabel = "") => {
   return readFirstNumericValue(source, Array.from(new Set(discountKeys)));
 };
 
-const DYNAMIC_FEE_TRANSACTION_FIELD_MAP = {
-  stationary: {
-    totalKeys: ["stationary"],
-    paidKeys: ["amount_paid", "stationary_paid"],
-    dueKeys: ["stationary_due"],
-    totalField: "stationary",
-    paidField: "stationary_paid",
-    dueField: "stationary_due",
-    discountField: "stationary_discount",
-  },
-  sports: {
-    totalKeys: ["sports"],
-    paidKeys: ["amount_paid", "sports_paid"],
-    dueKeys: ["sports_due"],
-    totalField: "sports",
-    paidField: "sports_paid",
-    dueField: "sports_due",
-    discountField: "sports_discount",
-  },
-  guides: {
-    totalKeys: ["guides"],
-    paidKeys: ["amount_paid", "guides_paid"],
-    dueKeys: ["guides_due"],
-    totalField: "guides",
-    paidField: "guides_paid",
-    dueField: "guides_due",
-    discountField: "guides_discount",
-  },
-  belt: {
-    totalKeys: ["belt"],
-    paidKeys: ["amount_paid", "belt_paid"],
-    dueKeys: ["belt_due"],
-    totalField: "belt",
-    paidField: "belt_paid",
-    dueField: "belt_due",
-    discountField: "belt_discount",
-  },
-  tie: {
-    totalKeys: ["tie_fee", "tie"],
-    paidKeys: ["amount_paid", "tie_fee_paid", "tie_paid"],
-    dueKeys: ["tie_fee_due", "tie_due"],
-    totalField: "tie_fee",
-    paidField: "tie_fee_paid",
-    dueField: "tie_fee_due",
-    discountField: "tie_fee_discount",
-  },
+const getIndividualFeeTotalFromSource = (source = {}) => {
+  if (!source || typeof source !== "object") return 0;
+
+  const entries = [
+    ...(Array.isArray(source.individualFeeAssignments) ? source.individualFeeAssignments : []),
+    ...(Array.isArray(source.dynamicFeeBreakdown)
+      ? source.dynamicFeeBreakdown.filter((entry) => {
+          const scope = String(entry?.scope || entry?.source || entry?.feeScope || "").trim().toLowerCase();
+          return scope === "individual";
+        })
+      : []),
+  ];
+
+  return entries.reduce((sum, entry) => {
+    const amount = parseLooseNumber(
+      entry?.amount ??
+        entry?.total ??
+        entry?.assignedAmount ??
+        entry?.feeAmount ??
+        entry?.value ??
+        0
+    );
+    return sum + (Number.isFinite(amount) ? Math.max(amount, 0) : 0);
+  }, 0);
+};
+
+const getFilteredCompleteFee = (source = {}, ...fallbackSources) => {
+  const candidates = [source, ...fallbackSources].filter(Boolean);
+  const baseSource =
+    candidates.find((candidate) =>
+      Number.isFinite(
+        parseLooseNumber(candidate?.complete_fee ?? candidate?.CompleteFee ?? candidate?.completeFee ?? 0)
+      ) && parseLooseNumber(candidate?.complete_fee ?? candidate?.CompleteFee ?? candidate?.completeFee ?? 0) > 0
+    ) || source;
+  const rawCompleteFee = parseLooseNumber(
+    baseSource?.complete_fee ?? baseSource?.CompleteFee ?? baseSource?.completeFee ?? 0
+  );
+  return Math.max(Number.isFinite(rawCompleteFee) ? rawCompleteFee : 0, 0);
+};
+
+const findMatchingSourceKey = (source = {}, keys = []) => {
+  const sourceKeys = Object.keys(source || {});
+
+  for (const key of keys) {
+    if (!key) continue;
+    const normalizedKey = normalizeFeeFieldName(key);
+    const match = sourceKeys.find(
+      (sourceKey) => normalizeFeeFieldName(sourceKey) === normalizedKey
+    );
+    if (match) return match;
+  }
+
+  return "";
 };
 
 const mergePaymentDataWithDynamicTransactions = (paymentData = {}, rows = []) => {
@@ -922,29 +1120,56 @@ const mergePaymentDataWithDynamicTransactions = (paymentData = {}, rows = []) =>
 
   rows.forEach((row) => {
     const rawFeeType = String(
-      row?.fee_type || row?.feeType || row?.FeeType || row?.feeName || ""
+      row?.fee_type || row?.feeType || row?.FeeType || row?.feeName || row?.fee_name || ""
     ).trim();
-    const normalizedFeeType = normalizeFeeFieldName(rawFeeType);
-    const feeConfig = DYNAMIC_FEE_TRANSACTION_FIELD_MAP[normalizedFeeType];
+    const feeAliases = getFeeKeyAliases(rawFeeType);
+    const totalField =
+      findMatchingSourceKey(row, [...feeAliases, normalizeFeeColumnBase(rawFeeType)]) ||
+      normalizeFeeColumnBase(rawFeeType) ||
+      normalizeFeeFieldName(rawFeeType);
+    const paidField =
+      findMatchingSourceKey(
+        row,
+        [
+          ...feeAliases.flatMap((alias) => [`${alias}_paid`, `${alias}Paid`]),
+          "amount_paid",
+          "Paid_Amount",
+          "paid_amount",
+        ]
+      ) ||
+      `${totalField}_paid`;
+    const dueField =
+      findMatchingSourceKey(
+        row,
+        [...feeAliases.flatMap((alias) => [`${alias}_due`, `${alias}Due`])]
+      ) ||
+      `${totalField}_due`;
+    const discountField =
+      findMatchingSourceKey(
+        row,
+        [...feeAliases.flatMap((alias) => [`${alias}_discount`, `${alias}Discount`])]
+      ) ||
+      `${totalField}_discount`;
+    const normalizedFeeKey = normalizeFeeFieldName(totalField || rawFeeType);
 
-    if (!feeConfig) return;
+    if (!normalizedFeeKey) return;
 
-    const total = readFirstNumericValue(row, feeConfig.totalKeys);
-    const paid = readFirstNumericValue(row, feeConfig.paidKeys);
-    const due = readFirstNumericValue(row, feeConfig.dueKeys);
-    const discount = readFeeDiscountValue(row, feeConfig.totalField, rawFeeType);
+    const total = readFirstNumericValue(row, [totalField, ...feeAliases]);
+    const paid = readFirstNumericValue(row, [paidField, "amount_paid", "Paid_Amount", "paid_amount"]);
+    const due = readFirstNumericValue(row, [dueField]);
+    const discount = readFeeDiscountValue(row, totalField || rawFeeType, rawFeeType);
 
-    const bucketKey = feeConfig.paidField;
+    const bucketKey = normalizedFeeKey;
     if (!aggregateByPaidField[bucketKey]) {
       aggregateByPaidField[bucketKey] = {
-        totalField: feeConfig.totalField,
-        paidField: feeConfig.paidField,
-        dueField: feeConfig.dueField,
-        discountField: feeConfig.discountField || `${feeConfig.totalField}_discount`,
-        total: Number(merged?.[feeConfig.totalField]) || 0,
+        totalField: totalField || normalizedFeeKey,
+        paidField,
+        dueField,
+        discountField,
+        total: Number(merged?.[totalField || normalizedFeeKey]) || 0,
         paidFromRows: 0,
-        dueFromRows: Number(merged?.[feeConfig.dueField]) || 0,
-        discountFromRows: Number(merged?.[feeConfig.discountField || `${feeConfig.totalField}_discount`]) || 0,
+        dueFromRows: Number(merged?.[dueField]) || 0,
+        discountFromRows: Number(merged?.[discountField]) || 0,
       };
     }
 
@@ -1032,17 +1257,35 @@ useEffect(() => {
 }, []);
  // Reset function
 const resetPopup = () => {
-  setFeeEntries([]);            
+  setFeeEntries([{ type: "", amount: "" }]);            
   setShowInstallments(false);    
+  setActiveInstallmentPopup(null);
+  setDiscountAmount(0);
+  setTransactionId("");
   setPaymentMode("");           
   setCashAmount(0);              
   setOnlineAmount(0);            
+};
+
+const refreshPaymentData = () => {
+  setRefreshFeeData((prev) => prev + 1);
 };
 
 // Close handler
 const handleClosePopup = () => {
   resetPopup();
   setShowPopup(false);
+  refreshPaymentData();
+  if (popupOnly && typeof onPopupClose === "function") {
+    onPopupClose();
+  }
+};
+
+const handleClosePaidPopup = () => {
+  setShowPaidPopup(false);
+  setPaidPageData(null);
+  resetPopup();
+  refreshPaymentData();
   if (popupOnly && typeof onPopupClose === "function") {
     onPopupClose();
   }
@@ -1322,14 +1565,6 @@ useEffect(() => {
     selected?.name || initialStudentName || selectedStudent || "";
   const selectedSection = selected?.section || section || "A";
 
-  console.log("[Payment][feeChain:start]", {
-    selectedStudentId,
-    selectedFoundInStudents: Boolean(selected),
-    selectedName,
-    selectedSection,
-    className,
-  });
-
   setStudentData((prev) => ({
     ...(prev || {}),
     name: selectedName,
@@ -1352,29 +1587,12 @@ useEffect(() => {
       schoolCode,
     })
     .then((busFeeRes) => {
-      console.log("[Payment][feeChain:busFee]", {
-        selectedStudentId,
-        selectedName,
-        busFeeResponse: busFeeRes.data,
-      });
-
       liveBusFee = parseFloat(busFeeRes.data?.Bus_fees) || 0;
-
-      console.log("[Payment][feeChain:paymentRequest]", {
-        selectedStudentId,
-        schoolCode,
-        url: `https://cleezoclass.com:4000/api/payment/${selectedStudentId}?schoolCode=${schoolCode}`,
-      });
       return axios.get(
         `https://cleezoclass.com:4000/api/payment/${selectedStudentId}?schoolCode=${schoolCode}`
       );
     })
     .then((paymentRes) => {
-      console.log("[Payment][feeChain:paymentResponse]", {
-        selectedStudentId,
-        paymentRes: paymentRes.data,
-      });
-
       const basePaymentData = paymentRes.data.payments || {};
       const hasDynamicFields = [
         "sports",
@@ -1419,35 +1637,18 @@ useEffect(() => {
             transactionRows
           );
 
-          console.log("[Payment][dynamicTransactionBackfill]", {
-            selectedStudentId,
-            selectedName,
-            transactionCount: transactionRows.length,
-            mergedDynamicFields: {
-              sports: Number(mergedPaymentData.sports) || 0,
-              sports_paid: Number(mergedPaymentData.sports_paid) || 0,
-              sports_due: Number(mergedPaymentData.sports_due) || 0,
-              stationary: Number(mergedPaymentData.stationary) || 0,
-              stationary_paid: Number(mergedPaymentData.stationary_paid) || 0,
-              stationary_due: Number(mergedPaymentData.stationary_due) || 0,
-              guides: Number(mergedPaymentData.guides) || 0,
-              guides_paid: Number(mergedPaymentData.guides_paid) || 0,
-              guides_due: Number(mergedPaymentData.guides_due) || 0,
-              belt: Number(mergedPaymentData.belt) || 0,
-              belt_paid: Number(mergedPaymentData.belt_paid) || 0,
-              belt_due: Number(mergedPaymentData.belt_due) || 0,
-              tie_fee: Number(mergedPaymentData.tie_fee) || 0,
-              tie_fee_paid: Number(mergedPaymentData.tie_fee_paid) || 0,
-              tie_fee_due: Number(mergedPaymentData.tie_fee_due) || 0,
-            },
-          });
-
           return { paymentData: mergedPaymentData };
         })
         .catch((dynamicError) => {
+          const backfillError =
+            dynamicError?.response?.data ||
+            dynamicError?.message ||
+            dynamicError;
           console.error(
             "[Payment] Failed to backfill dynamic fee transactions:",
-            dynamicError?.response?.data || dynamicError?.message
+            typeof backfillError === "object"
+              ? JSON.stringify(backfillError, null, 2)
+              : backfillError
           );
           return { paymentData: basePaymentData };
         });
@@ -1456,10 +1657,7 @@ useEffect(() => {
       setPayments(paymentData);
 
       // ---------- BASE ----------
-      const completeFee =
-        getClassFeeValue("CompleteFee", "completeFee") ||
-        parseFloat(paymentData.completeFee) ||
-        0;
+      const completeFee = getFilteredCompleteFee(paymentData, selectedStudentFeeDetails, payments);
       const examFee =
         getClassFeeValue("Exam_fees", "Exam_Fees", "examFee") ||
         parseFloat(paymentData.examFee) ||
@@ -1566,7 +1764,8 @@ useEffect(() => {
         finalOthersFee +
         admissionFee +
         examFee +
-        residentialFee;
+        residentialFee +
+        individualFeeRowsTotal;
 
       const totalPaid =
         tuitionPaid +
@@ -1586,80 +1785,6 @@ useEffect(() => {
 
       const finalRemaining =
         totalAmount - totalPaid - totalDiscount;
-
-      console.log("[Payment][calculation-breakdown]", {
-        studentName: paymentData.studentName || selectedStudent || initialStudentName || "",
-        className: paymentData.class || className,
-        sectionName: paymentData.section || section,
-        completeFee,
-        completeFeeAlreadyIncludesDynamic:
-          completeFee > 0 &&
-          completeFee ===
-            (
-              finalTuitionFee +
-              admissionFee +
-              examFee +
-              finalBusFee +
-              finalBookFee +
-              uniformFee +
-              finalOthersFee +
-              residentialFee +
-              (Number(paymentData.sports) || 0) +
-              (Number(paymentData.stationary) || 0) +
-              (Number(paymentData.guides) || 0) +
-              (Number(paymentData.belt) || 0) +
-              (Number(paymentData.tie_fee || paymentData.tie) || 0)
-            ),
-        staticBreakdown: {
-          tuitionFeeBase,
-          finalTuitionFee,
-          tuitionPaid,
-          tuitionDiscount,
-          admissionFee,
-          admissionPaid,
-          examFee,
-          examPaid,
-          finalBusFee,
-          busPaid,
-          busDiscount,
-          finalBookFee,
-          bookPaid,
-          bookDiscount,
-          uniformFee,
-          uniformPaid,
-          finalOthersFee,
-          othersPaid,
-          residentialFee,
-          residentialPaid,
-        },
-        dynamicBreakdown: {
-          sports: Number(paymentData.sports) || 0,
-          sports_paid: Number(paymentData.sports_paid) || 0,
-          sports_due: Number(paymentData.sports_due) || 0,
-          stationary: Number(paymentData.stationary) || 0,
-          stationary_paid: Number(paymentData.stationary_paid) || 0,
-          stationary_due: Number(paymentData.stationary_due) || 0,
-          guides: Number(paymentData.guides) || 0,
-          guides_paid: Number(paymentData.guides_paid) || 0,
-          guides_due: Number(paymentData.guides_due) || 0,
-          belt: Number(paymentData.belt) || 0,
-          belt_paid: Number(paymentData.belt_paid) || 0,
-          belt_due: Number(paymentData.belt_due) || 0,
-          tie_fee: Number(paymentData.tie_fee || paymentData.tie) || 0,
-          tie_fee_paid: Number(paymentData.tie_fee_paid || paymentData.tie_paid) || 0,
-          tie_fee_due: Number(paymentData.tie_fee_due || paymentData.tie_due) || 0,
-          dynamicFeePaidTotal: Number(paymentData.dynamicFeePaidTotal) || 0,
-          dynamicFeeDueTotal: Number(paymentData.dynamicFeeDueTotal) || 0,
-        },
-        totals: {
-          totalAmount,
-          totalPaid,
-          totalDiscount,
-          finalRemaining,
-          paymentDataTotalRemaining: Number(paymentData.totalRemaining) || 0,
-        },
-        rawPaymentData: paymentData,
-      });
 
 
       // ================= SET STATES =================
@@ -1703,7 +1828,7 @@ useEffect(() => {
       console.error("Error in Fee Chain:", err.response?.data || err.message);
     });
 
-}, [selectedStudentId, className, section, students, initialStudentName, selectedStudent]);
+}, [selectedStudentId, className, section, students, initialStudentName, selectedStudent, refreshFeeData]);
 
   // Function to handle changes in tuition installment amount
 const handleTuitionInstallmentAmountChange = (index, installmentId, newAmountPaid) => {
@@ -1912,38 +2037,13 @@ const fetchLastReceiptNumber = async () => {
 };
 
 useEffect(() => {
-  fetchLastReceiptNumber(); // ✅ Call from useEffect
+  fetchLastReceiptNumber();
+  setRefreshFeeData((prev)=>prev+1) // ✅ Call from useEffect
 }, []);
 
 const handlePaymentSubmission = async (e) => {
   e.preventDefault();
   setIsLoading(true);
-
-  console.log("[Payment][submit] starting", {
-    selectedStudentId,
-    selectedStudent,
-    className,
-    section,
-    paymentDate,
-    paymentMode,
-    receiptNumber,
-    tuitionFee,
-    examFee,
-    busFee,
-    bookFee,
-    uniformFee,
-    othersFee,
-    admissionFee,
-    residentialFee,
-    tuitionPaid,
-    examPaid,
-    busPaid,
-    bookPaid,
-    uniformPaid,
-    othersPaid,
-    admissionPaid,
-    residentialPaid,
-  });
 
   const schoolCode = localStorage.getItem("schoolCode");
   if (!schoolCode) {
@@ -2000,14 +2100,18 @@ const handlePaymentSubmission = async (e) => {
     other: 0,
     residential: 0,
   };
-
+console.log(
+  "FEE ENTRIES =================",
+  feeEntries
+);
   const customFeeEntries = dynamicFeeTypes
     .map((fee) => {
-      const amount = parseFloat(dynamicFeeValues[fee.columnBase] || 0);
-      const feeRow = dynamicFeeRows.find((row) => row.key === fee.columnBase);
+      const feeKey = fee.key || fee.columnBase || normalizeFeeColumnBase(fee.feeName || fee.feesType || "");
+      const amount = parseFloat(dynamicFeeValues[feeKey] || dynamicFeeValues[fee.columnBase] || 0);
+      const feeRow = dynamicFeeRows.find((row) => normalizeFeeFieldName(row.key || row.label) === normalizeFeeFieldName(feeKey));
       return {
         type: fee.feeName,
-        columnBase: fee.columnBase,
+        columnBase: feeKey,
         amount: Number.isFinite(amount) ? amount : 0,
         total: feeRow?.total || 0,
         paid: feeRow?.paid || 0,
@@ -2016,12 +2120,12 @@ const handlePaymentSubmission = async (e) => {
     })
     .filter((entry) => entry.amount > 0);
 
-  console.log("[Payment][submit] customFeeEntries", customFeeEntries);
-  console.log("[Payment][submit] feeEntries", feeEntries);
-
   let currentTransactionTotal = 0;
   let tuitionInstallmentIdBeingPaid = null;
-
+console.log(
+  "FEE ENTRIES =================",
+  feeEntries
+);
   // Add fee validation and accumulate amounts
   for (let i = 0; i < feeEntries.length; i++) {
     const entry = feeEntries[i];
@@ -2057,28 +2161,32 @@ const handlePaymentSubmission = async (e) => {
       }
     }
   }
+console.log("Before custom fees:", currentTransactionTotal);
+console.log("customFeeEntries:", customFeeEntries);
+for (const entry of customFeeEntries) {
+  const remaining = Math.max(Number(entry.remaining) || 0, 0);
 
-  for (const entry of customFeeEntries) {
-    const remaining = Math.max(Number(entry.remaining) || 0, 0);
-    console.log("[Payment][submit] validating custom fee", {
-      type: entry.type,
-      columnBase: entry.columnBase,
-      amount: entry.amount,
-      total: entry.total,
-      paid: entry.paid,
-      remaining,
-    });
-    if (entry.total > 0 && entry.amount > remaining + 0.001) {
-      showPopupMessage(
-        `Payment for ${entry.type} exceeds the remaining fee. Total ${entry.type} Fee: Rs. ${entry.total.toFixed(2)}. Already Paid: Rs. ${(entry.paid || 0).toFixed(2)}.`,
-        "error"
-      );
-      setIsLoading(false);
-      return;
-    }
-
-    currentTransactionTotal += entry.amount;
+  if (entry.total > 0 && entry.amount > remaining + 0.001) {
+    showPopupMessage(
+      `Payment for ${entry.type} exceeds the remaining fee. Total ${entry.type} Fee: Rs. ${entry.total.toFixed(
+        2
+      )}. Already Paid: Rs. ${(entry.paid || 0).toFixed(2)}.`,
+      "error"
+    );
+    setIsLoading(false);
+    return;
   }
+
+  const alreadyAddedInFeeEntries = feeEntries.some(
+    (feeEntry) =>
+      String(feeEntry?.type || "").toLowerCase() ===
+      String(entry.columnBase || "").toLowerCase()
+  );
+
+  if (!alreadyAddedInFeeEntries) {
+    currentTransactionTotal += Number(entry.amount || 0);
+  }
+}
 
   // Filter feeEntries to include only those with a non-zero amount
   const submittedFeeEntries = feeEntries.filter(
@@ -2093,7 +2201,32 @@ const handlePaymentSubmission = async (e) => {
     setIsLoading(false);
     return;
   }
+const totalCustomPayment = customFeeEntries.reduce(
+  (sum, item) => sum + Number(item.amount || 0),
+  0
+);
 
+let remainingToAdjust = totalCustomPayment;
+
+const adjustedInstallments = installmentOptions.map((inst) => {
+  const installmentDue =
+    Number(inst.originalAmount || inst.amount || 0) -
+    Number(inst.paid || 0);
+
+  let extraPaid = 0;
+
+  if (remainingToAdjust > 0) {
+    extraPaid = Math.min(installmentDue, remainingToAdjust);
+    remainingToAdjust -= extraPaid;
+  }
+
+  return {
+    id: inst.id,
+    amount: inst.amount,
+    originalAmount: inst.originalAmount,
+    paid: Number(inst.paid || 0) + extraPaid,
+  };
+});
   // Prepare payment data
   const paymentData = {
     studentId: selectedStudentId,
@@ -2116,12 +2249,7 @@ const handlePaymentSubmission = async (e) => {
     receiptNumber,
     paymentMode,
     transactionId,
-    adjustedInstallments: installmentOptions.map((inst) => ({
-      id: inst.id,
-      amount: inst.amount,
-      paid: inst.paid,
-      originalAmount: inst.originalAmount,
-    })),
+adjustedInstallments,
     feeDescriptions: feeEntries
       .filter(entry => entry !== undefined)
       .map((entry) => ({
@@ -2134,9 +2262,6 @@ const handlePaymentSubmission = async (e) => {
     allowDuplicate: false,
   };
   const currentSignature = buildPaymentSignature(paymentData);
-
-  console.log("[Payment][submit] paymentData", paymentData);
-  console.log("[Payment][submit] signature", currentSignature);
 
 try {
   const duplicateCheckResponse = await fetch(
@@ -2202,7 +2327,6 @@ try {
 
   if ((response.ok && data.success !== false) || data.success === true) {
     const usedReceiptNumber = data?.receiptNumber || receiptNumber;
-    console.log("[Payment][submit] success response", data);
     setReceiptNumber(usedReceiptNumber);
     currentReceiptNumberRef.current = usedReceiptNumber;
 
@@ -2273,10 +2397,22 @@ try {
       })),
       submittedFeeEntries,
     };
+    console.log("===== PAID POPUP DATA =====");
+console.log("currentTransactionTotal:", currentTransactionTotal);
+console.log("customFeeEntries:", customFeeEntries);
+console.log("feeTypesPaid:", feeTypesPaid);
+console.log("paidPopupData:", paidPopupData);
+console.log("===========================");
 
-    setPaidPageData(paidPopupData);
+ console.log(
+  "SETTING PAID PAGE DATA:",
+  JSON.stringify(paidPopupData, null, 2)
+);
+
+setPaidPageData(paidPopupData);
     setShowPopup(false);
     setShowPaidPopup(true);
+    refreshPaymentData();
 
     showPopupMessage(data.message || "Payment submitted successfully!", "success");
 
@@ -2307,15 +2443,13 @@ try {
     setShowModal(false);
     const refreshStudentId = selectedStudentId;
     if (refreshStudentId !== null && refreshStudentId !== undefined) {
-      console.log("[Payment][submit] refreshing student data after payment", {
-        refreshStudentId,
-      });
       setSelectedStudentId(null);
       setTimeout(() => {
         setSelectedStudentId(refreshStudentId);
       }, 0);
     }
     await fetchLastReceiptNumber();
+
   } else {
     // Show backend message even if response.ok is false
     showPopupMessage(data.message || "Payment submission failed. Please try again.", "error");
@@ -2585,7 +2719,7 @@ const fetchTotals = async () => {
   // Refetch totals whenever selections change
   useEffect(() => {
     fetchTotals();
-  }, [className, section, studentName]);
+  }, [className, section, studentName, refreshFeeData]);
   
  const isLaptop = window.innerWidth >= 1024; 
 useEffect(() => {
@@ -2596,6 +2730,22 @@ useEffect(() => {
 const [classFeeData, setClassFeeData] = useState({});
   const [studentFeesMap, setStudentFeesMap] = useState({});
 
+  useEffect(() => {
+  }, [
+    classFeeData,
+    className,
+    dynamicFeeTypes,
+    initialStudentId,
+    initialStudentName,
+    payments,
+    section,
+    selectedClassSection,
+    selectedStudent,
+    selectedStudentFeeDetails,
+    selectedStudentId,
+    studentFeesMap,
+  ]);
+
 
   // --------------------------------------------
   // STEP 1 → Fetch CLASS fee when dropdown changes
@@ -2604,13 +2754,6 @@ const [classFeeData, setClassFeeData] = useState({});
     if (!selectedClassSection) return;
 
     const [cls, sec] = selectedClassSection.split("_");
-    console.log("[Payment][selectedClassSection]", {
-      selectedClassSection,
-      cls,
-      sec,
-      className,
-      section,
-    });
     setClassName(cls);
     setSection(sec);
 
@@ -2620,16 +2763,12 @@ const [classFeeData, setClassFeeData] = useState({});
   const fetchClassFee = async (cls, sec) => {
     try {
       const schoolCode = localStorage.getItem("schoolCode");
-      console.log("[Payment][fetchClassFee] request", { cls, sec, schoolCode });
 
       const res = await axios.get(`https://cleezoclass.com:4000/feeStructure/${cls}`, {
         params: { className: cls, section: sec, schoolCode },
       });
 
       const resolvedFeeDetail = res.data.feeStructure || {};
-      console.log("[Payment][fetchClassFee] response", res.data);
-      console.log("[Payment][fetchClassFee] resolved keys", Object.keys(resolvedFeeDetail || {}));
-      console.log("[Payment][fetchClassFee] resolved values", resolvedFeeDetail);
 
       setClassFeeData(resolvedFeeDetail);
     } catch (error) {
@@ -2652,10 +2791,6 @@ useEffect(() => {
     if (initialStudentName) {
       setSelectedStudent(initialStudentName);
     }
-    console.log("[Payment][initialStudentSync]", {
-      initialStudentId,
-      initialStudentName,
-    });
   }, [initialStudentId, initialStudentName]);
 
   useEffect(() => {
@@ -2701,13 +2836,6 @@ useEffect(() => {
     });
 
     if (resolvedStudent) {
-      console.log("[Payment][resolvedStudentByName]", {
-        initialStudentId,
-        selectedStudentId,
-        initialStudentName,
-        selectedStudent,
-        resolvedStudent,
-      });
       setSelectedStudentId(resolvedStudent.id);
       setSelectedStudent(resolvedStudent.name);
     }
@@ -2715,9 +2843,11 @@ useEffect(() => {
 
 useEffect(() => {
   if (popupOnly) {
+    resetPopup();
+    setShowPaidPopup(false);
     setShowPopup(true);
   }
-}, [popupOnly]);
+}, [popupOnly, initialStudentId, initialStudentName, className, section]);
 
   useEffect(() => {
     const fetchDynamicFeeTypes = async () => {
@@ -2782,13 +2912,6 @@ useEffect(() => {
         `https://cleezoclass.com:4000/api/studentsNameAccountant/${className}?schoolCode=${schoolCode}&section=${section}`
       )
       .then((res) => {
-        console.log("[Payment][studentsNameAccountant] response", {
-          className,
-          section,
-          count: res.data?.students?.length || 0,
-          initialStudentId,
-          initialStudentName,
-        });
         setStudents(res.data?.students || []);
       })
       .catch(() => {
@@ -2799,8 +2922,120 @@ useEffect(() => {
   // 🚀 fetch immediately after popup closes
   fetchStudents();
   return undefined;
-}, [showPopup, className, section, popupOnly, initialStudentId, initialStudentName]);
+}, [showPopup, className, section, popupOnly, initialStudentId, initialStudentName, refreshFeeData]);
 
+useEffect(() => {
+  if (!students.length || !className || !section) {
+    setStudentFeesMap({});
+    return;
+  }
+
+  const schoolCode = localStorage.getItem("schoolCode");
+  if (!schoolCode) return;
+
+  let isCancelled = false;
+
+  const normalizeCompositeKey = (name, cls, sec) =>
+    [
+      String(name || "").trim().toLowerCase(),
+      String(cls || "").trim().toLowerCase(),
+      String(sec || "").trim().toLowerCase(),
+    ].join("|");
+
+  const summarizePaymentPayload = (payload = {}) => {
+    const rows = [
+      ...(Array.isArray(payload?.dynamicFeeBreakdown) ? payload.dynamicFeeBreakdown : []),
+      ...(Array.isArray(payload?.individualFeeAssignments) ? payload.individualFeeAssignments : []),
+    ];
+    const individualRows = rows.filter((row) => {
+      const scope = String(row?.source || row?.scope || row?.feeScope || "").trim().toLowerCase();
+      return scope === "individual" || String(row?.key || row?.label || "").trim().toLowerCase() === "pg";
+    });
+
+    const totalAmount = individualRows.reduce((sum, row) => {
+      const amount = Number(row?.total ?? row?.amount ?? row?.amountTotal ?? row?.completeFee ?? 0);
+      return sum + (Number.isFinite(amount) ? Math.max(amount, 0) : 0);
+    }, 0);
+
+    const paidAmount = individualRows.reduce((sum, row) => {
+      const paid = Number(row?.paid ?? row?.paidAmount ?? row?.amountPaid ?? row?.paid_total ?? 0);
+      return sum + (Number.isFinite(paid) ? Math.max(paid, 0) : 0);
+    }, 0);
+
+    const discountAmount = individualRows.reduce((sum, row) => {
+      const discount = Number(row?.discount ?? row?.discountAmount ?? row?.amountDiscount ?? 0);
+      return sum + (Number.isFinite(discount) ? Math.max(discount, 0) : 0);
+    }, 0);
+
+    const remainingAmount = individualRows.reduce((sum, row) => {
+      const explicitRemaining = Number(row?.remaining ?? row?.due ?? row?.dueAmount ?? 0);
+      if (Number.isFinite(explicitRemaining) && explicitRemaining > 0) {
+        return sum + explicitRemaining;
+      }
+      const amount = Number(row?.total ?? row?.amount ?? row?.amountTotal ?? row?.completeFee ?? 0);
+      const paid = Number(row?.paid ?? row?.paidAmount ?? row?.amountPaid ?? row?.paid_total ?? 0);
+      const discount = Number(row?.discount ?? row?.discountAmount ?? row?.amountDiscount ?? 0);
+      return sum + Math.max(
+        (Number.isFinite(amount) ? amount : 0) -
+          (Number.isFinite(paid) ? paid : 0) -
+          (Number.isFinite(discount) ? discount : 0),
+        0
+      );
+    }, 0);
+
+    return {
+      totalAmount,
+      paidAmount,
+      discountAmount,
+      remainingAmount,
+      individualRowsCount: individualRows.length,
+    };
+  };
+
+  Promise.all(
+    students.map(async (student) => {
+      const studentId = getStudentLookupId(student);
+      const studentName = student?.name || student?.studentName || student?.StudentName || "";
+      const studentClass = student?.class_name || student?.className || student?.class || className || "";
+      const studentSection = student?.section || student?.sectionName || student?.Section || section || "";
+      if (studentId === undefined || studentId === null || studentId === "") return null;
+      try {
+        const response = await axios.get(`https://cleezoclass.com:4000/api/payment/${studentId}`, {
+          params: { schoolCode },
+        });
+        const payload = response?.data?.payments || response?.data?.payment || response?.data || {};
+        const summary = summarizePaymentPayload(payload);
+        return [
+          String(studentId),
+          {
+            ...summary,
+            studentName: payload?.studentName || studentName,
+            className: payload?.class || payload?.className || studentClass,
+            section: payload?.section || payload?.sectionName || studentSection,
+          },
+        ];
+      } catch {
+        return [String(studentId), null];
+      }
+    })
+  ).then((entries) => {
+    if (isCancelled) return;
+    const nextMap = {};
+    entries.forEach(([key, summary]) => {
+      if (!key || !summary) return;
+      nextMap[key] = summary;
+      const compositeKey = normalizeCompositeKey(summary.studentName, summary.className, summary.section);
+      if (compositeKey.replace(/\|/g, "").trim()) {
+        nextMap[compositeKey] = summary;
+      }
+    });
+    setStudentFeesMap(nextMap);
+  });
+
+  return () => {
+    isCancelled = true;
+  };
+}, [students, className, section, refreshFeeData]);
 
 
 
@@ -2873,10 +3108,25 @@ const classFeeSource = React.useMemo(
 );
 
 const dynamicFeeRows = React.useMemo(() => {
+  const backendDynamicBreakdown = [
+    ...(Array.isArray(selectedStudentFeeDetails?.dynamicFeeBreakdown) ? selectedStudentFeeDetails.dynamicFeeBreakdown : []),
+    ...(Array.isArray(payments?.dynamicFeeBreakdown) ? payments.dynamicFeeBreakdown : []),
+  ];
+  const paymentDynamicTotals = payments?.dynamicFeeTotals || {};
+  const paymentDynamicPaidTotals = payments?.dynamicFeePaidTotals || {};
+  const paymentDynamicDiscounts = payments?.dynamicFeeDiscounts || {};
+  const paymentDynamicDueTotals = payments?.dynamicFeeDueTotals || {};
+  const studentDynamicTotals = selectedStudentFeeDetails?.dynamicFeeTotals || {};
+  const studentDynamicPaidTotals = selectedStudentFeeDetails?.dynamicFeePaidTotals || {};
+  const studentDynamicDiscounts = selectedStudentFeeDetails?.dynamicFeeDiscounts || {};
+  const studentDynamicDueTotals = selectedStudentFeeDetails?.dynamicFeeDueTotals || {};
   const source = {
     ...(classFeeSource || {}),
     ...(payments || {}),
+    ...(selectedStudentFeeDetails?.studentDetails || {}),
+    ...(selectedStudentFeeDetails?.feeStructure || {}),
   };
+  const dynamicSource = mergeDynamicFeeSources(payments, selectedStudentFeeDetails, selectedStudentFeeDetails?.studentDetails, selectedStudentFeeDetails?.feeStructure);
   const selectedStudentNameNormalized = String(
     selectedStudent || initialStudentName || payments?.studentName || payments?.StudentName || ""
   )
@@ -2884,18 +3134,15 @@ const dynamicFeeRows = React.useMemo(() => {
     .toLowerCase()
     .replace(/\s+/g, " ");
   const selectedStudentIdNormalized = String(selectedStudentId || initialStudentId || "").trim();
-  const individualAssignments = Array.isArray(payments?.individualFeeAssignments)
-    ? payments.individualFeeAssignments
-    : [];
-  console.log("[Payment][dynamicFeeRows] source keys", Object.keys(source || {}));
-  console.log("[Payment][dynamicFeeRows] selection context", {
-    selectedStudent,
-    initialStudentName,
-    selectedStudentId,
-    initialStudentId,
-    selectedStudentNameNormalized,
-    selectedStudentIdNormalized,
-    individualAssignmentCount: individualAssignments.length,
+  const individualAssignments = [
+    ...(Array.isArray(selectedStudentFeeDetails?.individualFeeAssignments) ? selectedStudentFeeDetails.individualFeeAssignments : []),
+    ...(Array.isArray(payments?.individualFeeAssignments) ? payments.individualFeeAssignments : []),
+  ];
+  const backendRowMap = new Map();
+  backendDynamicBreakdown.forEach((fee) => {
+    const normalizedKey = normalizeFeeFieldName(fee?.key || fee?.label || "");
+    if (!normalizedKey) return;
+    backendRowMap.set(normalizedKey, fee);
   });
   const normalizedDynamicTypes = dynamicFeeTypes.length
     ? dynamicFeeTypes
@@ -2917,7 +3164,18 @@ const dynamicFeeRows = React.useMemo(() => {
       const feeScope = String(fee.scope || "").trim().toLowerCase();
       const sourceAliases = getFeeKeyAliases(sourceKey);
       const labelAliases = getFeeKeyAliases(fee.feeName);
-      const allAliases = Array.from(new Set([sourceKey, fee.feeName, ...sourceAliases, ...labelAliases]));
+      const allAliases = Array.from(
+        new Set([
+          `${sourceKey}_total`,
+          `${sourceKey}_amount`,
+          `${fee.feeName}_total`,
+          `${fee.feeName}_amount`,
+          sourceKey,
+          fee.feeName,
+          ...sourceAliases,
+          ...labelAliases,
+        ])
+      );
       const paidKeys = allAliases.flatMap((key) => [`${key}_paid`, `${key}_Paid`]);
       const dueKeys = allAliases.flatMap((key) => [`${key}_due`, `${key}_Due`]);
 
@@ -2944,33 +3202,93 @@ const dynamicFeeRows = React.useMemo(() => {
           entryKey === normalizeFeeFieldName(fee.feeName)
         );
       });
-      const selectedStudentFeeSource =
-        selectedStudentFeeDetails?.feeStructure ||
-        selectedStudentFeeDetails?.studentDetails ||
-        selectedStudentFeeDetails ||
-        {};
-      const studentSpecificDynamicAmount = readFirstNumericValue(selectedStudentFeeSource, allAliases);
+      const backendFeeRow = backendRowMap.get(normalizeFeeFieldName(sourceKey)) || backendRowMap.get(normalizeFeeFieldName(fee.feeName)) || null;
+      const explicitBackendTotal = Number(backendFeeRow?.total) || Number(backendFeeRow?.amount) || 0;
+      const explicitBackendPaid = Number(backendFeeRow?.paid) || Number(backendFeeRow?.paidAmount) || 0;
+      const explicitBackendDue = Number(backendFeeRow?.remaining) || Number(backendFeeRow?.due) || 0;
+      const explicitBackendDiscount = Number(backendFeeRow?.discount) || Number(backendFeeRow?.discountAmount) || 0;
+      const explicitStudentTotal =
+        Number(studentDynamicTotals?.[sourceKey]) ||
+        Number(studentDynamicTotals?.[fee.feeName]) ||
+        Number(studentDynamicTotals?.[normalizeFeeFieldName(sourceKey)]) ||
+        0;
+      const explicitPaymentTotal =
+        Number(paymentDynamicTotals?.[sourceKey]) ||
+        Number(paymentDynamicTotals?.[fee.feeName]) ||
+        Number(paymentDynamicTotals?.[normalizeFeeFieldName(sourceKey)]) ||
+        0;
+      const explicitStudentPaid =
+        Number(studentDynamicPaidTotals?.[sourceKey]) ||
+        Number(studentDynamicPaidTotals?.[fee.feeName]) ||
+        Number(studentDynamicPaidTotals?.[normalizeFeeFieldName(sourceKey)]) ||
+        0;
+      const explicitPaymentPaid =
+        Number(paymentDynamicPaidTotals?.[sourceKey]) ||
+        Number(paymentDynamicPaidTotals?.[fee.feeName]) ||
+        Number(paymentDynamicPaidTotals?.[normalizeFeeFieldName(sourceKey)]) ||
+        0;
+      const explicitStudentDue =
+        Number(studentDynamicDueTotals?.[sourceKey]) ||
+        Number(studentDynamicDueTotals?.[fee.feeName]) ||
+        Number(studentDynamicDueTotals?.[normalizeFeeFieldName(sourceKey)]) ||
+        0;
+      const explicitPaymentDue =
+        Number(paymentDynamicDueTotals?.[sourceKey]) ||
+        Number(paymentDynamicDueTotals?.[fee.feeName]) ||
+        Number(paymentDynamicDueTotals?.[normalizeFeeFieldName(sourceKey)]) ||
+        0;
+      const explicitStudentDiscount =
+        Number(studentDynamicDiscounts?.[sourceKey]) ||
+        Number(studentDynamicDiscounts?.[fee.feeName]) ||
+        Number(studentDynamicDiscounts?.[normalizeFeeFieldName(sourceKey)]) ||
+        0;
+      const explicitPaymentDiscount =
+        Number(paymentDynamicDiscounts?.[sourceKey]) ||
+        Number(paymentDynamicDiscounts?.[fee.feeName]) ||
+        Number(paymentDynamicDiscounts?.[normalizeFeeFieldName(sourceKey)]) ||
+        0;
+      const studentSpecificDynamicAmount =
+        explicitBackendTotal ||
+        explicitStudentTotal ||
+        explicitPaymentTotal ||
+        getDirectNumericValue(dynamicSource, [
+          `${sourceKey}_total`,
+          `${sourceKey}_amount`,
+          `${fee.feeName}_total`,
+          `${fee.feeName}_amount`,
+          sourceKey,
+          fee.feeName,
+        ]) ||
+        readFirstNumericValue(dynamicSource, allAliases) ||
+        Number(backendFeeRow?.total) ||
+        Number(backendFeeRow?.amount) ||
+        0;
+      const studentSpecificDynamicPaid =
+        explicitBackendPaid ||
+        explicitStudentPaid ||
+        explicitPaymentPaid ||
+        getDirectNumericValue(dynamicSource, paidKeys) ||
+        readFirstNumericValue(dynamicSource, paidKeys) ||
+        Number(backendFeeRow?.paid) ||
+        0;
+      const studentSpecificDynamicDue =
+        explicitBackendDue ||
+        explicitStudentDue ||
+        explicitPaymentDue ||
+        getDirectNumericValue(dynamicSource, dueKeys) ||
+        readFirstNumericValue(dynamicSource, dueKeys) ||
+        Number(backendFeeRow?.remaining) ||
+        0;
       const individualDiscount =
-        readFeeDiscountValue(selectedStudentFeeSource, sourceKey, fee.feeName) ||
+        explicitBackendDiscount ||
+        explicitStudentDiscount ||
+        explicitPaymentDiscount ||
+        readFeeDiscountValue(dynamicSource, sourceKey, fee.feeName) ||
         readFeeDiscountValue(classFeeSource, sourceKey, fee.feeName) ||
         readFeeDiscountValue(payments, sourceKey, fee.feeName);
 
-      console.log("[Payment][dynamicFeeRows] fee evaluation", {
-        feeName: fee.feeName,
-        sourceKey,
-        feeScope,
-        hasMatchingIndividualAssignment: Boolean(matchingIndividualAssignment),
-        studentSpecificDynamicAmount,
-        matchingStudentName: matchingIndividualAssignment?.studentName || matchingIndividualAssignment?.StudentName || null,
-        matchingStudentId: matchingIndividualAssignment?.studentId || matchingIndividualAssignment?.student_id || null,
-      });
-
       if (feeScope === "individual" && !matchingIndividualAssignment) {
         if (!studentSpecificDynamicAmount) {
-          console.log("[Payment][dynamicFeeRows] skipping unmatched individual fee", {
-            feeName: fee.feeName,
-            sourceKey,
-          });
           return null;
         }
       }
@@ -2981,39 +3299,41 @@ const dynamicFeeRows = React.useMemo(() => {
           Number(
             matchingIndividualAssignment?.amount ??
               matchingIndividualAssignment?.total ??
-              source?.[sourceKey] ??
-              source?.[fee.feeName] ??
+              studentSpecificDynamicAmount ??
               0
           ) || 0
         );
         const paid = Math.max(
           0,
-          Number(matchingIndividualAssignment?.paid ?? matchingIndividualAssignment?.paidAmount ?? 0) || 0
+          Number(
+            matchingIndividualAssignment?.paid ??
+              matchingIndividualAssignment?.paidAmount ??
+              studentSpecificDynamicPaid ??
+              0
+          ) || 0
         );
         const netTotal = Math.max(amount - individualDiscount, 0);
         const remaining = Math.max(netTotal - paid, 0);
 
-        return {
-          key: sourceKey,
-          label: fee.feeName,
-          total: netTotal,
-          paid,
-          remaining,
-          discount: individualDiscount,
-          isCustom: true,
-          source: "individual",
-        };
+      return {
+        key: sourceKey,
+        label: fee.feeName,
+        total: netTotal,
+        paid,
+        remaining,
+        discount: individualDiscount,
+        installments: Math.max(Number(fee.installments) || 1, 1),
+        isCustom: true,
+        source: "individual",
+      };
       }
 
       if (feeScope === "individual" && studentSpecificDynamicAmount) {
-        const paid = Math.max(
-          0,
-          readFirstNumericValue(selectedStudentFeeSource, paidKeys) ||
-            readFirstNumericValue(selectedStudentFeeSource, [`${sourceKey}_paid`, `${sourceKey}_Paid`]) ||
-            0
-        );
+        const paid = Math.max(0, studentSpecificDynamicPaid || 0);
         const netTotal = Math.max(studentSpecificDynamicAmount - individualDiscount, 0);
-        const remaining = Math.max(netTotal - paid, 0);
+        const remaining = studentSpecificDynamicDue > 0
+          ? Math.max(studentSpecificDynamicDue - individualDiscount, 0)
+          : Math.max(netTotal - paid, 0);
 
         return {
           key: sourceKey,
@@ -3022,20 +3342,30 @@ const dynamicFeeRows = React.useMemo(() => {
           paid,
           remaining,
           discount: individualDiscount,
+          installments: Math.max(Number(fee.installments) || 1, 1),
           isCustom: true,
           source: "student",
         };
       }
 
+      const backendDiscount = Number(backendFeeRow?.discount) || 0;
       const discount =
+        explicitBackendDiscount ||
+        explicitStudentDiscount ||
+        explicitPaymentDiscount ||
         readFeeDiscountValue(classFeeSource, sourceKey, fee.feeName) ||
-        readFeeDiscountValue(payments, sourceKey, fee.feeName);
+        readFeeDiscountValue(payments, sourceKey, fee.feeName) ||
+        backendDiscount;
       const classTotalByKey = readFirstNumericValue(classFeeSource, allAliases);
       const classTotalByLabel = readFirstNumericValue(classFeeSource, [fee.feeName]);
-      const studentTotal = readFirstNumericValue(payments, allAliases);
-      const rawTotal = studentTotal || classTotalByKey || classTotalByLabel || 0;
+      const studentTotal = explicitBackendTotal || explicitStudentTotal || readFirstNumericValue(dynamicSource, allAliases);
+      const studentPaid = explicitBackendPaid || explicitStudentPaid || readFirstNumericValue(dynamicSource, paidKeys);
+      const studentDue = explicitBackendDue || explicitStudentDue || readFirstNumericValue(dynamicSource, dueKeys);
+      const paymentTotal = explicitBackendTotal || explicitPaymentTotal || readFirstNumericValue(dynamicSource, allAliases);
+      const backendTotal = explicitBackendTotal || Number(backendFeeRow?.total) || 0;
+      const rawTotal = studentTotal || paymentTotal || backendTotal || classTotalByKey || classTotalByLabel || 0;
       const total = Math.max(rawTotal - discount, 0);
-      const studentPaidLower = readFirstNumericValue(payments, paidKeys);
+      const studentPaidLower = studentPaid || readFirstNumericValue(payments, paidKeys);
       const studentPaidUpper = 0;
       const classPaidLower = readFirstNumericValue(classFeeSource, paidKeys);
       const classPaidUpper = 0;
@@ -3045,61 +3375,27 @@ const dynamicFeeRows = React.useMemo(() => {
         classPaidLower ||
         classPaidUpper ||
         0;
-      const remaining = Math.max(total - paid, 0);
-
-      console.log("[Payment][dynamicFeeSourceResolution]", {
-        feeName: fee.feeName,
-        sourceKey,
-        feeScope,
-        classSource: {
-          totalByKey: classTotalByKey,
-          totalByLabel: classTotalByLabel,
-          paidLower: classPaidLower,
-          paidUpper: classPaidUpper,
-          dueLower: Number(classFeeSource?.[`${sourceKey}_due`]) || 0,
-          dueUpper: Number(classFeeSource?.[`${sourceKey}_Due`]) || 0,
-        },
-        studentSource: {
-          total: studentTotal,
-          paidLower: studentPaidLower,
-          paidUpper: studentPaidUpper,
-        },
-        chosen: {
-          total,
-          paid,
-          remaining,
-          totalSource: studentTotal
-            ? "student"
-            : classTotalByKey || classTotalByLabel
-              ? "class"
-              : "none",
-          remainingSource: "calculated_from_total_minus_paid",
-        },
-      });
+      const remaining = studentDue > 0
+        ? Math.max(studentDue - discount, 0)
+        : Math.max(total - paid, 0);
 
       return {
         key: sourceKey,
         label: fee.feeName,
         total,
-        paid,
-        remaining,
+        paid: Number.isFinite(Number(paid)) ? paid : Number(backendFeeRow?.paid) || 0,
+        remaining: Number.isFinite(Number(remaining)) ? remaining : Math.max(total - (Number(backendFeeRow?.paid) || 0), 0),
         discount,
+        installments: Math.max(Number(fee.installments) || 1, 1),
         isCustom: true,
       };
     })
     .filter(Boolean)
     .filter((fee) => {
       const keep = Number(fee.total) > 0;
-      console.log("[Payment][dynamicFeeRows] post-filter", {
-        feeLabel: fee?.label || null,
-        total: fee?.total,
-        paid: fee?.paid,
-        remaining: fee?.remaining,
-        keep,
-      });
       return keep;
     });
-}, [classFeeSource, dynamicFeeTypes, payments]);
+}, [classFeeSource, dynamicFeeTypes, payments, selectedStudentFeeDetails]);
 
 const individualFeeRows = React.useMemo(() => {
   const selectedStudentNameNormalized = String(
@@ -3111,10 +3407,26 @@ const individualFeeRows = React.useMemo(() => {
   const selectedStudentIdNormalized = String(selectedStudentId || initialStudentId || "").trim();
 
   const rawAssignments = [
+    ...(Array.isArray(selectedStudentFeeDetails?.individualFeeAssignments) ? selectedStudentFeeDetails.individualFeeAssignments : []),
     ...(Array.isArray(payments?.individualFeeAssignments) ? payments.individualFeeAssignments : []),
-    ...(Array.isArray(payments?.feeDescriptions) ? payments.feeDescriptions : []),
-    ...(Array.isArray(payments?.feeEntries) ? payments.feeEntries : []),
   ];
+
+  const selectedStudentAssignments = rawAssignments.filter((entry) => {
+    const studentId = String(
+      entry?.studentId || entry?.student_id || entry?.StudentId || entry?.Student_ID || ""
+    ).trim();
+    const studentName = String(
+      entry?.studentName || entry?.StudentName || entry?.name || entry?.student || ""
+    )
+      .trim()
+      .toLowerCase()
+      .replace(/\s+/g, " ");
+
+    return (
+      (selectedStudentIdNormalized && studentId && selectedStudentIdNormalized === studentId) ||
+      (selectedStudentNameNormalized && studentName && selectedStudentNameNormalized === studentName)
+    );
+  });
 
   const existingRowKeys = new Set(
     dynamicFeeRows.flatMap((row) => [
@@ -3123,42 +3435,58 @@ const individualFeeRows = React.useMemo(() => {
     ])
   );
 
-  return rawAssignments
+  return selectedStudentAssignments
     .map((entry, index) => {
-      const studentId = String(
-        entry?.studentId || entry?.student_id || entry?.StudentId || entry?.Student_ID || ""
-      ).trim();
-      const studentName = String(
-        entry?.studentName || entry?.StudentName || entry?.name || entry?.student || ""
-      )
-        .trim()
-        .toLowerCase()
-        .replace(/\s+/g, " ");
-      const isSelectedStudentAssignment =
-        (selectedStudentIdNormalized && studentId && selectedStudentIdNormalized === studentId) ||
-        (selectedStudentNameNormalized && studentName && selectedStudentNameNormalized === studentName);
-
-      if (!isSelectedStudentAssignment) return null;
-
       const scope = String(entry?.scope || "").trim().toLowerCase();
       if (scope && scope !== "individual") return null;
-
-      const amount = Math.max(
-        0,
-        Number(entry?.amount ?? entry?.total ?? entry?.feeAmount ?? entry?.value ?? 0) || 0
-      );
-      const paid = Math.max(
-        0,
-        Number(entry?.paid ?? entry?.amount_paid ?? entry?.paidAmount ?? 0) || 0
-      );
-      const due = Math.max(
-        0,
-        Number(entry?.remaining ?? entry?.due ?? entry?.amount_due ?? amount - paid) || 0
-      );
 
       const keyBase = String(entry?.type || entry?.feeName || entry?.label || `individual-${index}`).trim();
       const normalizedKey = normalizeFeeFieldName(keyBase);
       if (!normalizedKey || existingRowKeys.has(normalizedKey)) return null;
+
+      const matchingAssignment = selectedStudentAssignments.find((candidate) => {
+        const candidateKey = normalizeFeeFieldName(
+          candidate?.type || candidate?.feeName || candidate?.label || ""
+        );
+        return candidateKey === normalizedKey;
+      });
+
+      const amount = Math.max(
+        0,
+        Number(
+          matchingAssignment?.amount ??
+            matchingAssignment?.total ??
+            entry?.amount ??
+            entry?.total ??
+            entry?.feeAmount ??
+            entry?.value ??
+            0
+        ) || 0
+      );
+      const paid = Math.max(
+        0,
+        Number(
+          matchingAssignment?.paid ??
+            matchingAssignment?.amount_paid ??
+            matchingAssignment?.paidAmount ??
+            entry?.paid ??
+            entry?.amount_paid ??
+            entry?.paidAmount ??
+            0
+        ) || 0
+      );
+      const due = Math.max(
+        0,
+        Number(
+          matchingAssignment?.remaining ??
+            matchingAssignment?.due ??
+            matchingAssignment?.amount_due ??
+            entry?.remaining ??
+            entry?.due ??
+            entry?.amount_due ??
+            amount - paid
+        ) || 0
+      );
 
       const label = String(entry?.feeName || entry?.label || entry?.type || "Individual Fee").replace(
         /_/g,
@@ -3172,6 +3500,7 @@ const individualFeeRows = React.useMemo(() => {
         paid,
         remaining: due,
         discount: Math.max(0, Number(entry?.discount || entry?.discountAmount || 0) || 0),
+        installments: Math.max(Number(entry?.installments || entry?.installmentCount || 1) || 1, 1),
         isCustom: false,
         source: "individual",
       };
@@ -3179,34 +3508,69 @@ const individualFeeRows = React.useMemo(() => {
     .filter(Boolean);
 }, [dynamicFeeRows, initialStudentId, initialStudentName, payments, selectedStudent, selectedStudentId]);
 
+const individualFeeRowsTotal = React.useMemo(
+  () =>
+    [...dynamicFeeRows, ...individualFeeRows]
+      .filter((row) => String(row?.source || "").trim().toLowerCase() === "individual")
+      .reduce((sum, row) => {
+        const amount = Number(row?.total || 0);
+        return sum + (Number.isFinite(amount) ? Math.max(amount, 0) : 0);
+      }, 0),
+  [dynamicFeeRows, individualFeeRows]
+);
+
 const staticFeeRows = React.useMemo(() => {
   const studentFeeSource = selectedStudentFeeDetails?.feeStructure || selectedStudentFeeDetails || {};
   const studentDetailsSource = selectedStudentFeeDetails?.studentDetails || selectedStudentFeeDetails || {};
 
-  console.log("[Payment][staticFeeRows] source snapshot", {
-    hasSelectedStudentFeeDetails: Boolean(selectedStudentFeeDetails),
-    studentFeeKeys: Object.keys(studentFeeSource || {}),
-    studentDetailsKeys: Object.keys(studentDetailsSource || {}),
-  });
-
   const resolveFeeAmount = (...keys) => {
     const value =
       readFirstNumericValue(studentFeeSource, keys) ||
-      readFirstNumericValue(studentDetailsSource, keys);
+      readFirstNumericValue(studentDetailsSource, keys) ||
+      readFirstNumericValue(payments, keys) ||
+      readFirstNumericValue(classFeeSource, keys);
     return Number.isFinite(value) && value > 0 ? value : 0;
   };
 
-  const resolveFeePaid = (...keys) => {
+  const resolveStudentOnlyFeeAmount = (...keys) => {
     const value =
+      readFirstNumericValue(studentFeeSource, keys) ||
+      readFirstNumericValue(studentDetailsSource, keys) ||
+      readFirstNumericValue(payments, keys);
+    return Number.isFinite(value) && value > 0 ? value : 0;
+  };
+
+  const resolveStudentOnlyFeePaid = (...keys) => {
+    const value =
+      readFirstNumericValue(payments, keys) ||
       readFirstNumericValue(studentDetailsSource, keys) ||
       readFirstNumericValue(studentFeeSource, keys);
     return Number.isFinite(value) && value >= 0 ? value : 0;
   };
 
-  const resolveFeeDiscount = (...keys) => {
+  const resolveStudentOnlyFeeDiscount = (...keys) => {
     const value =
+      readFirstNumericValue(payments, keys) ||
       readFirstNumericValue(studentDetailsSource, keys) ||
       readFirstNumericValue(studentFeeSource, keys);
+    return Number.isFinite(value) && value > 0 ? value : 0;
+  };
+
+  const resolveFeePaid = (...keys) => {
+    const value =
+      readFirstNumericValue(payments, keys) ||
+      readFirstNumericValue(studentDetailsSource, keys) ||
+      readFirstNumericValue(studentFeeSource, keys) ||
+      readFirstNumericValue(classFeeSource, keys);
+    return Number.isFinite(value) && value >= 0 ? value : 0;
+  };
+
+  const resolveFeeDiscount = (...keys) => {
+    const value =
+      readFirstNumericValue(payments, keys) ||
+      readFirstNumericValue(studentDetailsSource, keys) ||
+      readFirstNumericValue(studentFeeSource, keys) ||
+      readFirstNumericValue(classFeeSource, keys);
     return Number.isFinite(value) && value > 0 ? value : 0;
   };
 
@@ -3214,11 +3578,6 @@ const staticFeeRows = React.useMemo(() => {
     "Tuition_Discount",
     "tuition_discount",
     "tuitionDiscount"
-  );
-  const admissionDiscountValue = resolveFeeDiscount(
-    "Admission_Discount",
-    "admission_discount",
-    "admissionDiscount"
   );
   const examDiscountValue = resolveFeeDiscount(
     "Exam_Discount",
@@ -3270,26 +3629,31 @@ const staticFeeRows = React.useMemo(() => {
         paid,
         remaining: Math.max(netTotal - paid, 0),
         discount,
+        installments: Math.max(Number(installmentOptions?.length) || 1, 1),
         isCustom: false,
       };
     })(),
-    {
-      key: "admission",
-      label: "Admission Fee",
-      total: Math.max(
-        (resolveFeeAmount("Admission_Fee", "Admission_fees", "admissionFee") || Number(admissionFee) || 0) -
-          admissionDiscountValue,
-        0
-      ),
-      paid: resolveFeePaid("admission_paid", "Admission_paid", "admissionPaid") || Number(admissionPaid) || 0,
-      remaining: Math.max(
-        (resolveFeeAmount("Admission_Fee", "Admission_fees", "admissionFee") || Number(admissionFee) || 0) -
-          admissionDiscountValue -
-          (resolveFeePaid("admission_paid", "Admission_paid", "admissionPaid") || Number(admissionPaid) || 0),
-        0
-      ),
-      isCustom: false,
-    },
+    (() => {
+      const admissionBaseAmount =
+        resolveStudentOnlyFeeAmount("Admission_Fee", "Admission_fees", "admissionFee");
+      const admissionPaidAmount =
+        resolveStudentOnlyFeePaid("admission_paid", "Admission_paid", "admissionPaid");
+      const admissionDiscountAmount =
+        resolveStudentOnlyFeeDiscount("Admission_Discount", "admission_discount", "admissionDiscount");
+
+      if (!admissionBaseAmount && !admissionPaidAmount && !admissionDiscountAmount) {
+        return null;
+      }
+
+      return {
+        key: "admission",
+        label: "Admission Fee",
+        total: Math.max(admissionBaseAmount - admissionDiscountAmount, 0),
+        paid: admissionPaidAmount,
+        remaining: Math.max(admissionBaseAmount - admissionDiscountAmount - admissionPaidAmount, 0),
+        isCustom: false,
+      };
+    })(),
     {
       key: "exam",
       label: "Exam Fee",
@@ -3395,7 +3759,9 @@ const staticFeeRows = React.useMemo(() => {
     },
   ];
 
-  return rowDefs.filter((row) => Number(row.total) > 0 || Number(row.paid) > 0 || Number(row.remaining) > 0);
+  return rowDefs
+    .filter(Boolean)
+    .filter((row) => Number(row.total) > 0 || Number(row.paid) > 0 || Number(row.remaining) > 0);
 }, [
   admissionFee,
   admissionPaid,
@@ -3418,17 +3784,20 @@ const staticFeeRows = React.useMemo(() => {
   tuitionFee,
   tuitionPaid,
   tuitionRemaining,
+  installmentOptions,
   uniformFee,
   uniformPaid,
   uniformRemaining,
   selectedStudentFeeDetails,
+  classFeeSource,
+  payments,
 ]);
 
 const displayFeeRows = React.useMemo(() => {
   const merged = [];
   const seen = new Set();
 
-  [...staticFeeRows, ...dynamicFeeRows, ...individualFeeRows].forEach((row) => {
+  [...staticFeeRows, ...individualFeeRows, ...dynamicFeeRows].forEach((row) => {
     const key = normalizeFeeFieldName(row?.key || row?.label || "");
     if (!key || seen.has(key)) return;
     seen.add(key);
@@ -3438,18 +3807,41 @@ const displayFeeRows = React.useMemo(() => {
   return merged;
 }, [dynamicFeeRows, individualFeeRows, staticFeeRows]);
 
-useEffect(() => {
-  console.log("[Payment][classFeeSource] keys", Object.keys(classFeeSource || {}));
-  console.log(
-    "[Payment][dynamicFeeTypes]",
-    (dynamicFeeTypes || []).map((fee) => ({
-      id: fee.id,
-      feeName: fee.feeName,
-      columnBase: fee.columnBase,
-    }))
-  );
-  console.log("[Payment][dynamicFeeValues]", dynamicFeeValues);
-}, [classFeeSource, dynamicFeeTypes, dynamicFeeValues]);
+const selectedStudentFeeSummary = React.useMemo(
+  () =>
+    displayFeeRows.reduce(
+      (summary, row) => {
+        const total = Number(row?.total || 0);
+        const paid = Number(row?.paid || 0);
+        const remaining = Number(row?.remaining || 0);
+        summary.total += Number.isFinite(total) ? Math.max(total, 0) : 0;
+        summary.paid += Number.isFinite(paid) ? Math.max(paid, 0) : 0;
+        summary.remaining += Number.isFinite(remaining) ? Math.max(remaining, 0) : 0;
+        return summary;
+      },
+      { total: 0, paid: 0, remaining: 0 }
+    ),
+  [displayFeeRows]
+);
+
+const selectedStudentIndividualFeeSummary = React.useMemo(
+  () =>
+    displayFeeRows
+      .filter((row) => String(row?.source || "").trim().toLowerCase() === "individual")
+      .reduce(
+        (summary, row) => {
+          const total = Number(row?.total || 0);
+          const paid = Number(row?.paid || 0);
+          const remaining = Number(row?.remaining || 0);
+          summary.total += Number.isFinite(total) ? Math.max(total, 0) : 0;
+          summary.paid += Number.isFinite(paid) ? Math.max(paid, 0) : 0;
+          summary.remaining += Number.isFinite(remaining) ? Math.max(remaining, 0) : 0;
+          return summary;
+        },
+        { total: 0, paid: 0, remaining: 0 }
+      ),
+  [displayFeeRows]
+);
 
 const handleDynamicFeeAmountChange = useCallback((feeKey, value, maxAmount = null) => {
   let sanitized = String(value ?? "").replace(/[^0-9.]/g, "");
@@ -3458,21 +3850,9 @@ const handleDynamicFeeAmountChange = useCallback((feeKey, value, maxAmount = nul
 
   const numericValue = parts[0] ? parseFloat(sanitized) : 0;
   if (maxAmount !== null && Number.isFinite(maxAmount) && maxAmount > 0 && numericValue > maxAmount) {
-    console.log("[Payment][dynamicFeeChange] blocked over max", {
-      feeKey,
-      attemptedValue: sanitized,
-      maxAmount,
-    });
     return;
   }
 
-  console.log("[Payment][dynamicFeeChange]", {
-    feeKey,
-    rawValue: value,
-    sanitized,
-    numericValue,
-    maxAmount,
-  });
   setDynamicFeeValues((prev) => ({
     ...prev,
     [feeKey]: sanitized,
@@ -3498,21 +3878,15 @@ useEffect(() => {
         res.data.feeDetail  ||      // fallback
         null;
 
-      console.log("[Payment][feeDetailsByClassSection] request", {
-        className,
-        sectionName,
-        schoolCode,
-      });
-      console.log("[Payment][feeDetailsByClassSection] response", res.data);
-      console.log("[Payment][feeDetailsByClassSection] resolved values", resolvedFeeDetail);
-
       setFeeDetail(resolvedFeeDetail);
 
-      const configuredCompleteFee = Number(
-        normalizedClassFeeStructure.CompleteFee ||
-        normalizedClassFeeStructure.complete_fee ||
-        0
-      );
+      const configuredCompleteFee = getFilteredCompleteFee(
+        normalizedClassFeeStructure,
+        resolvedFeeDetail,
+        classFeeData,
+        selectedStudentFeeDetails,
+        payments
+      ) + individualFeeRowsTotal;
       const hasCustomFeeColumns = Object.keys(resolvedFeeDetail || {}).some((key) => {
         if (isStaticOrMetaFeeField(key)) return false;
         const normalized = normalizeFeeFieldName(key);
@@ -3530,7 +3904,7 @@ useEffect(() => {
       setFeeDetail(null);
       setFeeError("Unable to fetch fee details");
   });
-}, [selectedClassSection, normalizedClassFeeStructure]);
+}, [individualFeeRowsTotal, selectedClassSection, normalizedClassFeeStructure]);
 
 const getClassFeeValue = useCallback(
   (...keys) => {
@@ -3614,13 +3988,68 @@ if (popupOnly) {
   return (
     <>
       {showPopup && (
-        <div className="income-modal-overlay" onClick={(e) => e.target === e.currentTarget && handleClosePopup()}>
-          <div
-            className="payment-modal-content "
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="payment-modal-body">
-              <div className="payment-fee-table-container">
+        <div
+          className={`income-modal-overlay${popupTheme === "dashboard" ? " payment-dashboard-overlay" : ""}`}
+          onClick={(e) => e.target === e.currentTarget && handleClosePopup()}
+        >
+        <div
+  className={`payment-modal-content${popupTheme === "dashboard" ? " payment-dashboard-modal" : ""}`}
+  onClick={(e) => e.stopPropagation()}
+>
+
+  <div
+    style={{
+      display: "flex",
+      justifyContent: "space-between",
+      alignItems: "center",
+      padding: "16px 20px",
+      borderBottom: "1px solid #e5e7eb",
+      background: "#f8fafc",
+    }}
+  >
+    <div>
+      <h3
+        style={{
+          margin: 0,
+          fontSize: "20px",
+          fontWeight: "700",
+        }}
+      >
+        {selectedStudent}
+      </h3>
+
+      <div
+        style={{
+          marginTop: "4px",
+          color: "#64748b",
+          fontSize: "14px",
+        }}
+      >
+        Class {className} | Section {section}
+      </div>
+    </div>
+
+    {/* <div
+      style={{
+        background: "#fee2e2",
+        color: "#dc2626",
+        padding: "10px 16px",
+        borderRadius: "10px",
+        fontWeight: "700",
+      }}
+    >
+      Due ₹
+      {Math.max(
+        displayFeeRows.reduce(
+          (sum, fee) => sum + (Number(fee.remaining) || 0),
+          0
+        ),
+        0
+      ).toLocaleString("en-IN")}
+    </div> */}
+  </div>
+            <div className={`payment-modal-body${popupTheme === "dashboard" ? " payment-dashboard-body" : ""}`}>
+              <div className={`payment-fee-table-container${popupTheme === "dashboard" ? " payment-dashboard-fee-table-container" : ""}`}>
                 <table className="payment-fee-table">
                   <thead>
                     <tr>
@@ -3633,76 +4062,13 @@ if (popupOnly) {
                   <tbody>
                     {displayFeeRows.map((fee, idx) => {
                       const remaining = Math.max(Number(fee.remaining) || 0, 0);
+                      const installmentChoices = getInstallmentChoicesForFee(fee);
+                      const hasInstallmentChoices = installmentChoices.length > 0;
 
                       return (
-                        <tr
-                          key={idx}
-                          onMouseEnter={() => fee.label === "Tuition Fee" && setShowInstallments(true)}
-                          onMouseLeave={() => setShowInstallments(false)}
-                          style={{ position: "relative" }}
-                        >
-                          <td style={{ border: "1px solid #ccc", padding: "5px", position: "relative" }}>
+                        <tr key={idx} style={{ position: "relative" ,borderRadius:"10px"}}>
+                          <td style={{ border: "1px solid #ccc", padding: "5px", position: "relative", }}>
                             {fee.label}
-
-                            {fee.label === "Tuition Fee" && showInstallments && (
-                              <div
-                                style={{
-                                  position: "absolute",
-                                  top: "100%",
-                                  right: -300,
-                                  background: "#fff",
-                                  border: "1px solid #ccc",
-                                  padding: "8px",
-                                  fontSize: "10px",
-                                  borderRadius: "8px",
-                                  width: "200px",
-                                  boxShadow: "0 2px 10px rgba(0,0,0,0.2)",
-                                  zIndex: 999,
-                                }}
-                              >
-                                <strong>Select Installment</strong>
-                                <ul style={{ paddingLeft: 0, marginTop: 8, listStyle: "none" }}>
-                                  {installmentOptions.map((inst) => {
-                                    const original = Number(inst.amount);
-                                    const paid = Number(installments[`installment${inst.installment}`] || 0);
-                                    const remainingAmt = original - paid;
-                                    const isPaid = remainingAmt <= 0;
-
-                                    return (
-                                      <li
-                                        key={inst.installment}
-                                        onClick={() => {
-                                          if (isPaid) return;
-
-                                          const newEntries = [...feeEntries];
-                                          newEntries[idx] = {
-                                            ...newEntries[idx],
-                                            type: feeLabelToKey["Tuition Fee"],
-                                            installmentId: inst.installment,
-                                            amount: remainingAmt,
-                                          };
-
-                                          setFeeEntries(newEntries);
-                                          setShowInstallments(false);
-                                        }}
-                                        style={{
-                                          padding: "6px 8px",
-                                          borderBottom: "1px solid #eee",
-                                          cursor: isPaid ? "not-allowed" : "pointer",
-                                          color: isPaid ? "#a0a0a0" : "#000",
-                                          background: isPaid ? "#f5f5f5" : "transparent",
-                                          opacity: isPaid ? 0.6 : 1,
-                                        }}
-                                      >
-                                        {isPaid
-                                          ? `Installment ${inst.installment} — Paid`
-                                          : `Installment ${inst.installment} — Rs. ${remainingAmt.toFixed(2)}`}
-                                      </li>
-                                    );
-                                  })}
-                                </ul>
-                              </div>
-                            )}
                             {fee.label === "Other Fees" && (
                               <input
                                 value={feeEntries[idx]?.description || ""}
@@ -3734,66 +4100,230 @@ if (popupOnly) {
                                 {formatPopupAmount(remaining) ? `Rs. ${formatPopupAmount(remaining)}` : ""}
                               </span>
                             ) : fee.isCustom ? (
-                              <input
-                                type="text"
-                                value={dynamicFeeValues[fee.key] || ""}
-                                onChange={(e) =>
-                                  handleDynamicFeeAmountChange(
-                                    fee.key,
-                                    e.target.value,
-                                    remaining
-                                  )
-                                }
-                                placeholder="Enter Amount"
-                                style={{ width: "100px", padding: "5px", textAlign: "right" }}
-                              />
+                              <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: "6px", position: "relative" }}>
+                                <input
+                                  type="text"
+                                  value={dynamicFeeValues[fee.key] || ""}
+                                  onChange={(e) =>
+                                    handleDynamicFeeAmountChange(
+                                      fee.key,
+                                      e.target.value,
+                                      remaining
+                                    )
+                                  }
+                                  placeholder="Enter Amount"
+                                  style={{ width: "100px", padding: "5px", textAlign: "right" }}
+                                />
+                                {hasInstallmentChoices && (
+                                  <button
+                                    type="button"
+                                    onClick={() => openInstallmentPopupForFee(fee, idx)}
+                                    style={{
+                                      border: "1px solid #000000",
+                                      background: "#fe9797aa",
+                                      color: "#ffffff",
+                                      borderRadius: "999px",
+                                      fontSize: "14px",
+                                      padding: "4px 8px",
+                                      cursor: "pointer",
+                                    }}
+                                  >
+                                    Installments
+                                  </button>
+                                )}
+                                {activeInstallmentPopup?.rowIndex === idx && hasInstallmentChoices && (
+                                  <div
+                                    style={{
+                                      position: "fixed",
+                                      top: "50%",
+                                      left: "50%",
+                                      transform: "translate(-50%, -50%)",
+                                      width: "280px",
+                                      maxWidth: "calc(100vw - 32px)",
+                                      background: "#fff",
+                                      border: "1px solid #cbd5e1",
+                                      borderRadius: "10px",
+                                      boxShadow: "0 10px 25px rgba(0,0,0,0.18)",
+                                      zIndex: 10000,
+                                      padding: "10px",
+                                    }}
+                                  >
+                                  <div
+  style={{
+    display: "flex",
+    justifyContent: "space-between",
+    alignItems: "center",
+    marginBottom: "0px",
+  }}
+>
+  <div
+    style={{
+      fontSize: "12px",
+      fontWeight: 700,
+    }}
+  >
+    Select Installment
+  </div>
+
+  <button
+    type="button"
+    onClick={() => setActiveInstallmentPopup(null)}
+    style={{
+      border: "none",
+      background: "transparent",
+      color: "#ef4444",
+      fontSize: "18px",
+      fontWeight: "bold",
+      cursor: "pointer",
+      lineHeight: 1,
+      padding: 0,
+    }}
+  >
+    x
+  </button>
+</div>
+                                    <div style={{ display: "flex", flexDirection: "column", gap: "6px", maxHeight: "180px", overflowY: "auto" }}>
+                                      {installmentChoices.map((option) => (
+                                        <button
+                                          key={option.id}
+                                          type="button"
+                                          disabled={!option.isSelectable}
+                                          onClick={() => selectInstallmentChoice(fee, idx, option)}
+                                          style={{
+                                            textAlign: "left",
+                                            border: "1px solid #e5e7eb",
+                                            background: option.isSelectable ? "#f9fafb" : "#f1f5f9",
+                                            padding: "8px 10px",
+                                            borderRadius: "8px",
+                                            cursor: option.isSelectable ? "pointer" : "not-allowed",
+                                            opacity: option.isSelectable ? 1 : 0.55,
+                                          }}
+                                        >
+                                          {option.label} - Rs. {formatPaymentAmount(option.amount)}
+                                          {option.isPaid ? " (Paid)" : option.isSelectable ? "" : " (Pay previous first)"}
+                                        </button>
+                                      ))}
+                                    </div>
+                                  </div>
+                                )}
+                              </div>
                             ) : (
-                              <input
-                                type="text"
-                                value={feeEntries[idx]?.raw || ""}
-                                onChange={(e) => {
-                                  let val = e.target.value;
-                                  val = val.replace(/[^0-9.]/g, "");
-                                  const parts = val.split(".");
-                                  if (parts.length > 2) return;
+                              <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: "6px", position: "relative" }}>
+                                <input
+                                  type="text"
+                                  value={feeEntries[idx]?.raw || ""}
+                                  onChange={(e) => {
+                                    let val = e.target.value;
+                                    val = val.replace(/[^0-9.]/g, "");
+                                    const parts = val.split(".");
+                                    if (parts.length > 2) return;
 
-                                  const num = parts[0] ? parseFloat(val) : 0;
-                                  if (fee.label !== "Other Fees") {
-                                    if (num > fee.total - fee.paid) return;
-                                  }
+                                    const num = parts[0] ? parseFloat(val) : 0;
+                                    if (fee.label !== "Other Fees") {
+                                      if (num > fee.total - fee.paid) return;
+                                    }
 
-                                  const updated = [...feeEntries];
-                                  updated[idx] = {
-                                    ...(updated[idx] || {}),
-                                    raw: val,
-                                    amount: num,
-                                    type: feeLabelToKey[fee.label],
-                                  };
+                                    const updated = [...feeEntries];
+                                    updated[idx] = {
+                                      ...(updated[idx] || {}),
+                                      raw: val,
+                                      amount: num,
+                                      type: feeLabelToKey[fee.label],
+                                    };
 
-                                  setFeeEntries(updated);
+                                    setFeeEntries(updated);
 
-                                  const typeKey = feeLabelToKey[fee.label];
-                                  if (typeKey) {
-                                    setFees((prev) => ({
-                                      ...prev,
-                                      [typeKey]: num
-                                    }));
-                                  }
-                                }}
-                                onBlur={() => {
-                                  const updated = [...feeEntries];
-                                  if (!updated[idx]) return;
+                                    const typeKey = feeLabelToKey[fee.label];
+                                    if (typeKey) {
+                                      setFees((prev) => ({
+                                        ...prev,
+                                        [typeKey]: num
+                                      }));
+                                    }
+                                  }}
+                                  onBlur={() => {
+                                    const updated = [...feeEntries];
+                                    if (!updated[idx]) return;
 
-                                  const num = updated[idx].amount || 0;
-                                  updated[idx].raw = num.toLocaleString("en-IN", {
-                                    minimumFractionDigits: 2,
-                                    maximumFractionDigits: 2,
-                                  });
-                                  setFeeEntries(updated);
-                                }}
-                                placeholder="Enter Amount"
-                                style={{ width: "100px", padding: "5px", textAlign: "right" }}
-                              />
+                                    const num = updated[idx].amount || 0;
+                                    updated[idx].raw = num.toLocaleString("en-IN", {
+                                      minimumFractionDigits: 2,
+                                      maximumFractionDigits: 2,
+                                    });
+                                    setFeeEntries(updated);
+                                  }}
+                                  placeholder="Enter Amount"
+                                  style={{ width: "100px", padding: "5px", textAlign: "right" }}
+                                />
+                                {hasInstallmentChoices && (
+                                  <button
+                                    type="button"
+                                    onClick={() => openInstallmentPopupForFee(fee, idx)}
+                                    style={{
+                                      border: "1px solid #c7d2fe",
+                                      background: "#eef2ff",
+                                      color: "#3730a3",
+                                      borderRadius: "999px",
+                                      fontSize: "11px",
+                                      padding: "4px 8px",
+                                      cursor: "pointer",
+                                    }}
+                                  >
+                                    Installments
+                                  </button>
+                                )}
+                          {activeInstallmentPopup?.rowIndex === idx && hasInstallmentChoices && (
+  <>
+    <div
+      onClick={() => setActiveInstallmentPopup(null)}
+      style={{
+        position: "fixed",
+        inset: 0,
+        zIndex: 10000,
+      }}
+    />
+
+    <div
+      style={{
+                                      position: "absolute",
+                                      top: "calc(100% + 8px)",
+                                      right: 0,
+                                      width: "220px",
+                                      background: "#fff",
+                                      border: "1px solid #cbd5e1",
+                                      borderRadius: "10px",
+                                      boxShadow: "0 10px 25px rgba(0,0,0,0.18)",
+                                      zIndex: 9999,
+                                      padding: "10px",
+                                    }}
+                                    onMouseLeave={() => setActiveInstallmentPopup(null)}
+                                  >
+                                    <div style={{ fontSize: "12px", fontWeight: 700, marginBottom: "8px" }}>
+                                      Select Installment
+                                    </div>
+                                    <div style={{ display: "flex", flexDirection: "column", gap: "6px", maxHeight: "180px", overflowY: "auto" }}>
+                                      {installmentChoices.map((option) => (
+                                        <button
+                                          key={option.id}
+                                          type="button"
+                                          onClick={() => selectInstallmentChoice(fee, idx, option)}
+                                          style={{
+                                            textAlign: "left",
+                                            border: "1px solid #e5e7eb",
+                                            background: "#f9fafb",
+                                            padding: "8px 10px",
+                                            borderRadius: "8px",
+                                            cursor: "pointer",
+                                          }}
+                                        >
+                                          {option.label} - Rs. {formatPaymentAmount(option.amount)}
+                                        </button>
+                                      ))}
+                                    </div>
+                            </div>
+  </>
+)}
+                              </div>
                             )}
                           </td>
                         </tr>
@@ -3803,7 +4333,7 @@ if (popupOnly) {
                 </table>
               </div>
 
-              <div className="payment-payment-details">
+              <div className={`payment-payment-details${popupTheme === "dashboard" ? " payment-dashboard-payment-details" : ""}`}>
                 <div className="payment-details-row">
                   <div className="payment-detail-item">
                     <label>Payment Date:</label>
@@ -3864,10 +4394,11 @@ if (popupOnly) {
           </div>
         </div>
       )}
+
       {showPaidPopup && (
         <div
           className="Payment-paidPopupOverlay"
-          onClick={() => setShowPaidPopup(false)}
+          onClick={handleClosePaidPopup}
         >
           <div
             className="Payment-paidPopupContent"
@@ -3875,7 +4406,7 @@ if (popupOnly) {
           >
             <button
               className="Payment-paidPopupCloseButton"
-              onClick={() => setShowPaidPopup(false)}
+              onClick={handleClosePaidPopup}
             >
               X
             </button>
@@ -4046,7 +4577,17 @@ return (
             </div>
           ) : (
             filteredStudents.map((student) => {
-          const totalPaid = Number(
+              const studentId = getStudentLookupId(student);
+              const studentCompositeKey = [
+                String(student.name || student.StudentName || "").trim().toLowerCase(),
+                String(student.class_name || student.className || student.class || "").trim().toLowerCase(),
+                String(student.section || student.sectionName || student.Section || "").trim().toLowerCase(),
+              ].join("|");
+              const studentFeeSummary =
+                studentFeesMap[String(studentId)] ||
+                studentFeesMap[studentCompositeKey] ||
+                null;
+          const backendTotalPaid = Number(
                 student.total_paid ||
                   student.totalPaid ||
                   student.paidAmountTotal ||
@@ -4063,7 +4604,12 @@ return (
                     student.Discount ||
                     0
               );
-              const completeFee = Number(classFeeData?.CompleteFee || 0);
+              const completeFee =
+                getFilteredCompleteFee(classFeeData, selectedStudentFeeDetails, payments) +
+                individualFeeRowsTotal;
+              const totalPaid = studentFeeSummary
+                ? backendTotalPaid + (Number(studentFeeSummary.paidAmount) || 0)
+                : backendTotalPaid;
               const backendDue = Number(
                 student.total_due ||
                   student.totalDue ||
@@ -4074,44 +4620,20 @@ return (
                   student.total_remaining ||
                   0
               );
-              const dueAmount = backendDue > 0 ? backendDue : Math.max(completeFee - totalPaid - totalDiscount, 0);
-              console.log("[Payment][student-card-due]", {
-                studentId: student.id,
-                studentName: student.name,
-                className,
-                section,
-                completeFee,
-                totalPaid,
-                totalDiscount,
-                backendDue,
-                dueAmount,
-                rawStudent: {
-                  total_paid: student.total_paid,
-                  totalPaid: student.totalPaid,
-                  paidAmountTotal: student.paidAmountTotal,
-                  tuition_paid: student.tuition_paid,
-                  Paid_Amount: student.Paid_Amount,
-                  total_due: student.total_due,
-                  totalDue: student.totalDue,
-                  totalRemaining: student.totalRemaining,
-                  remainingAmount: student.remainingAmount,
-                  Remaining_Amount: student.Remaining_Amount,
-                  Total_Installments_Remaining: student.Total_Installments_Remaining,
-                  total_discount: student.total_discount,
-                  totalDiscount: student.totalDiscount,
-                  discount: student.discount,
-                  Discount: student.Discount,
-                },
-              });
+              const dueAmount = studentFeeSummary
+                ? backendDue + (Number(studentFeeSummary.remainingAmount) || 0)
+                : backendDue > 0
+                  ? backendDue
+                  : Math.max(completeFee - totalPaid - totalDiscount, 0);
               return (
                 <div
-                  key={student.id}
+                  key={studentId || student.name}
                   onClick={() => {
                     if (feeError) return;
-                    setSelectedStudentId(student.id);
+                    setSelectedStudentId(studentId || student.id);
                     setSelectedStudent(student.name);
                   }}
-                  className={`payment-student-card ${student.id === selectedStudentId ? "payment-student-card-selected" : ""}`}
+                  className={`payment-student-card ${String(studentId || student.id) === String(selectedStudentId) ? "payment-student-card-selected" : ""}`}
                 >
                   {student.photo?.data ? (
                     <img
@@ -4250,7 +4772,7 @@ return (
         <div className="income-modal-overlay" onClick={(e) => e.target === e.currentTarget && handleClosePopup()}>
 <div
     className="payment-modal-content "
-    onClick={(e) => e.stopPropagation()} // prevent closing when clicking inside modal
+    onClick={(e) => e.stopPropagation()} 
   >    
     <div className="payment-modal-body">
 
@@ -4268,12 +4790,14 @@ return (
           <tbody>
             {displayFeeRows.map((fee, idx) => {
               const remaining = Math.max(Number(fee.remaining) || 0, 0);
+              const installmentChoices = getInstallmentChoicesForFee(fee);
+              const hasInstallmentChoices = installmentChoices.length > 0;
 
               return (
              <tr
   key={idx}
   onMouseEnter={() => fee.label === "Tuition Fee" && setShowInstallments(true)}
-  onMouseLeave={() => setShowInstallments(false)}
+  onMouseLeave={() => setShowIpayment-submit-buttonnstallments(false)}
   style={{ position: "relative" }}
 >
   <td style={{ border: "1px solid #ccc", padding: "5px", position: "relative" }}>
@@ -4283,32 +4807,48 @@ return (
     {fee.label === "Tuition Fee" && showInstallments && (
       <div
         style={{
-          position: "absolute",
-          top: "100%",
-          right: -300,
+          position: "fixed",
+          top: "50%",
+          left: "50%",
+          transform: "translate(-50%, -50%)",
           background: "#fff",
           border: "1px solid #ccc",
           padding: "8px",
           fontSize: "10px",
           borderRadius: "8px",
-          width: "200px",
+          width: "280px",
+          maxWidth: "calc(100vw - 32px)",
           boxShadow: "0 2px 10px rgba(0,0,0,0.2)",
-          zIndex: 999,
+          zIndex: 10000,
         }}
       >
-        <strong>Select Installment</strong>
+       <strong>Select Installment</strong>
        <ul style={{ paddingLeft: 0, marginTop: 8, listStyle: "none" }}>
-  {installmentOptions.map((inst) => {
-    const original = Number(inst.amount);
-    const paid = Number(installments[`installment${inst.installment}`] || 0);
-    const remainingAmt = original - paid;
+  {(() => {
+    let unappliedPaid = Number(tuitionPaid) || 0;
+
+    return installmentOptions.map((inst) => {
+    const original = Number(inst.amount) || 0;
+    const paid = Math.max(Math.min(unappliedPaid, original), 0);
+    unappliedPaid = Math.max(unappliedPaid - original, 0);
+    const remainingAmt = Math.max(original - paid, 0);
     const isPaid = remainingAmt <= 0;
+    const isSelectable =
+      !isPaid &&
+      (() => {
+        const paidSet = new Set((paidInstallments || []).map((item) => Number(item)));
+        for (let step = 1; step < Number(inst.installment); step += 1) {
+          if (!paidSet.has(step)) return false;
+        }
+        return true;
+      })();
 
     return (
       <li
         key={inst.installment}
         onClick={() => {
           if (isPaid) return; // disable if paid
+          if (!isSelectable) return;
 
           const newEntries = [...feeEntries];
           newEntries[idx] = {
@@ -4324,18 +4864,21 @@ return (
         style={{
           padding: "6px 8px",
           borderBottom: "1px solid #eee",
-          cursor: isPaid ? "not-allowed" : "pointer",
-          color: isPaid ? "#a0a0a0" : "#000",
-          background: isPaid ? "#f5f5f5" : "transparent",
-          opacity: isPaid ? 0.6 : 1,
+          cursor: isPaid || !isSelectable ? "not-allowed" : "pointer",
+          color: isPaid || !isSelectable ? "#a0a0a0" : "#000",
+          background: isPaid || !isSelectable ? "#f5f5f5" : "transparent",
+          opacity: isPaid || !isSelectable ? 0.6 : 1,
         }}
       >
         {isPaid
           ? `Installment ${inst.installment} — Paid`
+          : !isSelectable
+            ? `Installment ${inst.installment} — Pay previous first`
           : `Installment ${inst.installment} — Rs. ${remainingAmt.toFixed(2)}`}
       </li>
     );
-  })}
+  });
+  })()}
 </ul>
 
       </div>
@@ -4372,19 +4915,82 @@ return (
       {formatPopupAmount(remaining) ? `Rs. ${formatPopupAmount(remaining)}` : ""}
     </span>
   ) : fee.isCustom ? (
-  <input
-    type="text"
-    value={dynamicFeeValues[fee.key] || ""}
-    onChange={(e) =>
-      handleDynamicFeeAmountChange(
-        fee.key,
-        e.target.value,
-        remaining
-      )
-    }
-    placeholder="Enter Amount"
-    style={{ width: "100px", padding: "5px", textAlign: "right" }}
-  />
+  <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: "6px", position: "relative" }}>
+    <input
+      type="text"
+      value={dynamicFeeValues[fee.key] || ""}
+      onChange={(e) =>
+        handleDynamicFeeAmountChange(
+          fee.key,
+          e.target.value,
+          remaining
+        )
+      }
+      placeholder="Enter Amount"
+      style={{ width: "100px", padding: "5px", textAlign: "right" }}
+    />
+    {hasInstallmentChoices && (
+      <button
+        type="button"
+        onClick={() => openInstallmentPopupForFee(fee, idx)}
+        style={{
+          border: "1px solid #c7d2fe",
+          background: "#eef2ff",
+          color: "#3730a3",
+          borderRadius: "999px",
+          fontSize: "11px",
+          padding: "4px 8px",
+          cursor: "pointer",
+        }}
+      >
+        Installments
+      </button>
+    )}
+    {activeInstallmentPopup?.rowIndex === idx && hasInstallmentChoices && (
+      <div
+        style={{
+          position: "fixed",
+          top: "50%",
+          left: "50%",
+          transform: "translate(-50%, -50%)",
+          width: "280px",
+          maxWidth: "calc(100vw - 32px)",
+          background: "#fff",
+          border: "1px solid #cbd5e1",
+          borderRadius: "10px",
+          boxShadow: "0 10px 25px rgba(0,0,0,0.18)",
+          zIndex: 10000,
+          padding: "10px",
+        }}
+      >
+        <div style={{ fontSize: "12px", fontWeight: 700, marginBottom: "8px" }}>
+          Select Installment
+        </div>
+        <div style={{ display: "flex", flexDirection: "column", gap: "6px", maxHeight: "180px", overflowY: "auto" }}>
+          {installmentChoices.map((option) => (
+            <button
+              key={option.id}
+              type="button"
+              disabled={!option.isSelectable}
+              onClick={() => selectInstallmentChoice(fee, idx, option)}
+              style={{
+                textAlign: "left",
+                border: "1px solid #e5e7eb",
+                background: option.isSelectable ? "#f9fafb" : "#f1f5f9",
+                padding: "8px 10px",
+                borderRadius: "8px",
+                cursor: option.isSelectable ? "pointer" : "not-allowed",
+                opacity: option.isSelectable ? 1 : 0.55,
+              }}
+            >
+              {option.label} - Rs. {formatPaymentAmount(option.amount)}
+              {option.isPaid ? " (Paid)" : option.isSelectable ? "" : " (Pay previous first)"}
+            </button>
+          ))}
+        </div>
+      </div>
+    )}
+  </div>
   ) : (
   <input
     type="text"
@@ -4506,7 +5112,7 @@ return (
             <button
   className="payment-submit-button"
   onClick={handlePaymentSubmission}
-  disabled={isLoading}   // 🔹 Disable while loading
+  disabled={isLoading}  
 >
   {isLoading ? "Submitting..." : "Submit"}
 </button>
@@ -4528,7 +5134,10 @@ return (
           >
             <button
               className="Payment-paidPopupCloseButton"
-              onClick={() => setShowPaidPopup(false)}
+          onClick={() => {
+  setShowPaidPopup(false);
+  window.location.reload();
+}}
             >
               X
             </button>

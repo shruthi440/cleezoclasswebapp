@@ -3,7 +3,7 @@ import axios from "axios";
 import { io } from "socket.io-client";
 import { useNavigate } from "react-router-dom"; // 🚀 Import useNavigate
 
-const socket = io('https://nova.tagsol.tech:3010'); // Connect to your server
+const socket = io('https://cleezoclass.com/:3010'); // Connect to your server
 
 const ChatApp = () => {
   const navigate = useNavigate(); // 🚀 Initialize navigate
@@ -20,8 +20,8 @@ const ChatApp = () => {
     const fetchInitialData = async () => {
       try {
         const [messagesRes, teachersRes] = await Promise.all([
-          axios.get("https://nova.tagsol.tech:3010/api/messages"),
-          axios.get("https://nova.tagsol.tech:3010/api/teachersmessage"),
+          axios.get("https://cleezoclass.com/:3010/api/messages"),
+          axios.get("https://cleezoclass.com/:3010/api/teachersmessage"),
         ]);
 
         setMessages(Array.isArray(messagesRes.data) ? messagesRes.data : []);
@@ -72,7 +72,7 @@ const ChatApp = () => {
     socket.emit("send-message", newMsg);
 
     try {
-      await axios.post("https://nova.tagsol.tech:3010/api/send-message", newMsg);
+      await axios.post("https://cleezoclass.com/:3010/api/send-message", newMsg);
     } catch (err) {
       console.error("Error sending to backend:", err);
     }

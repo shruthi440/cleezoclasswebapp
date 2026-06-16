@@ -25850,7 +25850,7 @@ app.post('/create-meeting', async (req, res) => {
       attempts: 0,
     };
 
-    const meetingLink = `https://nova.tagsol.tech/Bizzpulse/meeting/${meetingId}`; // Not /video
+    const meetingLink = `https://cleezoclass.com//Bizzpulse/meeting/${meetingId}`; // Not /video
 
     // Log the meeting link to the terminal
     console.log(`[Meeting] Generated link: ${meetingLink}`);

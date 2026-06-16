@@ -26,6 +26,7 @@ import Events from "./shared/EvenGenerations.jsx";
 import MarketingDashboard from "./shared/marketingDashboard (1).jsx";
 import SchoolAdmissionForm from "./shared/Enrollmentform.jsx";
 import QuestionPaperGenerate from "./adminfolder/Admin_AcademicStaff.jsx";
+import AdminQuestionPaper from "./adminfolder/AdminQuestionPaper.jsx";
 import TeacherUpload from "./shared/Teacherupload.jsx";
 import Leadpages from "./shared/leadpage (1).jsx";
 import MeetingApp from "./shared/MeetingApp (1).jsx";
@@ -51,7 +52,7 @@ import OperationsPage from "./shared/Operation.jsx";
 import MarketingPage from "./shared/Marketing.jsx";
 import HRPage from "./hr/Hr.jsx";
 import OperationDashboard from "./shared/OperationsDashboard.js.jsx";
-import AdminDashboard from "./adminfolder/AdminDashboard.jsx";
+import AdminDashboardold from "./adminfolder/AdminDashboard.jsx";
 import SeatingArrangement from "./shared/SeatingArrangement.jsx";
 import Certificates from "./hr/HR_payroll_Certificates.jsx";
 import TeacherEventManagement from "./shared/TeacherEventManagement.jsx";
@@ -169,6 +170,7 @@ import AdminReportsPage from "./adminfolder/AdminReportsPage.tsx";
 import AdmissionTimetableNew from "./shared/AdmissionTimetableNew.jsx";
 import AdminGenerations from "./adminfolder/AdminGenerations.jsx";
 import Posters from "./shared/posters.jsx";
+import AdminDashboard from "./adminfolder/AdminDashboard.jsx";
 
 const ROLE_HOME_ROUTE = {
   hr: "/HRDashboard",
@@ -328,6 +330,7 @@ function App() {
                    <Route path="/AccountantExpenses" element={<ProtectedRoute allowedRoles={["accountant"]}><AccountantExpensesPageNew /></ProtectedRoute>} />
                    <Route path="/AccountantReportsPage" element={<ProtectedRoute allowedRoles={["accountant"]}><AccountantReportsPage /></ProtectedRoute>} />
 
+                   <Route path="/AdminDashboardold" element={<AdminDashboard/>} />
 
                    <Route path="/AdminDashboard" element={<AdmissionDashboardNew/>} />
                    <Route path="/AdiminAcademicsNew" element={<AdiminAcademicsNew/>} />
@@ -421,6 +424,7 @@ function App() {
         <Route path="/MarketingPage" element={<MarketingPage/>} />
         <Route path="/HrPages" element={<HRPage/>} />
         <Route path="/AdminDashboard" element={<ProtectedRoute allowedRoles={["admin"]}><AdmissionDashboardNew/></ProtectedRoute>} />
+        <Route path="/AdminQuestionPaper" element={<ProtectedRoute allowedRoles={["admin"]}><AdminQuestionPaper/></ProtectedRoute>} />
         <Route path="/AdminReportsPage" element={<ProtectedRoute allowedRoles={["admin"]}><AdminReportsPage/></ProtectedRoute>} />
                 <Route path="/EventsMeetingDashboard" element={<EventsMeetingsChief/>} />
                                 <Route path="/ChiefDashboardWrapper" element={<ChiefDashboardWrapper/>} />

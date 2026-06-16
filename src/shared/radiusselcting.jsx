@@ -11,6 +11,7 @@ import { FiArrowLeft } from 'react-icons/fi';
 import { Share2 } from 'lucide-react';
 import Swal from 'sweetalert2';
 import { Link } from 'react-router-dom';
+import { FaBackward } from 'react-icons/fa';
 
 const schoolLogo = ""; // Optional custom logo
 
@@ -24,7 +25,7 @@ function Radiusselectingg() {
   const logoSrc = schoolLogo || "/default-logo.png";
   const dateInputRef = useRef(null);
   const contentRef = useRef(null);
-  const [selectedDate, setSelectedDate] = useState('');
+  const [selectedDate, setSelectedDate] = useState('const useNavigate = setNavgate()');
   const [activePage, setActivePage] = useState(null);
   const headerRef = useRef();
   const navigate = useNavigate();
@@ -32,6 +33,7 @@ function Radiusselectingg() {
   const dashboardRef = useRef(null);
   const [activeContent, setActiveContent] = useState(null);
   const [isLoading, setIsLoading] = useState(false);
+
 
   const handleAttendanceClick = () => {
     setActivePage('attendance');
@@ -414,51 +416,11 @@ const iconStyle = {
   const userRole = localStorage.getItem('userRole');
   return (
     <>
-<header
-  className="top-bar"
-  style={{
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    padding: '0.5rem 1rem',
-    backgroundColor: 'white',
-    position: 'relative'
-  }}
->
-  {/* Logo on the left */}
-  <img
-    src={dynamicLogoSrc || "/default-logo.png"}
-    alt="School Logo"
-    className="header-logo"
-    style={{
-      height: '85px',   // increased size
-      width: 'auto',
-      borderRadius: '6px',
-      position: 'absolute',
-      left: '4rem',
-      top: '50%',
-      transform: 'translateY(-50%)'
-    }}
-  />
-
-  {/* Title in the center */}
-  <h1
-    className="header-title"
-    style={{
-      fontSize: '1.8rem',
-      fontWeight: '600',
-      margin: 0,
-      textAlign: 'center',
-      color: 'black'
-    }}
-  >
-    {dynamicSchoolCode.replace(/_/g, ' ')} SCHOOL
-  </h1>
-</header>
 
 
 
-      <div className="outer-container">
+
+
      
         <main className="main-content">
 
@@ -484,7 +446,7 @@ const iconStyle = {
 
       /* --- Main Content Card Adjustments (Unchanged) --- */
       main.main-content > section.dashboard-body > div[style*="maxWidth: 1000px"] {
-        width: 95% !important;
+        width: 25% !important;
         padding: 20px !important;
         margin: 30px auto !important;
       }
@@ -513,19 +475,44 @@ const iconStyle = {
 </style>
           
           <section className="dashboard-body">
-          
+    
+       
             <div ref={dashboardRef} style={{ overflowY: 'auto' }}></div>
-
-            <div
-              style={{
-                backgroundColor: "#ffffff",
-                padding: "40px",
-                maxWidth: "1000px",
-                margin: "60px auto",
-                borderRadius: "16px",
-                boxShadow: "0 8px 25px rgba(0,0,0,0.1)",
-              }}
-            >
+           
+<div
+  style={{
+    position: "relative",
+    backgroundColor: "#ffffff",
+    padding: "40px",
+    maxWidth: "1000px",
+    // margin: "60px auto",
+    borderRadius: "16px",
+    boxShadow: "0 8px 25px rgba(0,0,0,0.1)",
+  }}
+>
+ <button
+  type="button"
+  onClick={() => navigate(-1)}
+  style={{
+    position: "absolute",
+    top: "20px",
+    left: "20px",
+    width: "42px",
+    height: "42px",
+    borderRadius: "50%",
+    border: "none",
+    background: "#f3f4f6",
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    cursor: "pointer",
+    boxShadow: "0 2px 8px rgba(0,0,0,0.12)",
+    transition: "all 0.2s ease",
+    zIndex: 10,
+  }}
+>
+  <ArrowLeft size={20} />
+</button>
               <div
                 style={{
                   display: "flex",
@@ -701,7 +688,7 @@ const iconStyle = {
             )}
           </section>
         </main>
-      </div>
+
     </>
   );
 }

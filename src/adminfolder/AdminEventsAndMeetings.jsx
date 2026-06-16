@@ -7,6 +7,9 @@ import "../frontdeskdahboard/FrontDesk.css";
 import "./AdminEventsAndMeetings.css";
 import EditableProfileMenu from "../shared/EditableProfileMenu.jsx";
 import ErrorPopup from "../shared/ErrorPopup";
+import InstituteBrand from "../shared/InstituteBrand.jsx";
+import { resolveInstituteDisplayName } from "../shared/instituteNameUtils";
+import { getUserDisplayName } from "../shared/userDisplayName";
 
 import abcLogo from "../assets/logoab.png";
 import dashboardIcon from "../assets/Dashboard.png";
@@ -348,22 +351,30 @@ const AdminEventsAndMeetings = () => {
     fetch(`https://cleezoclass.com:4000/api/institute?dbName=${schoolCode}`)
       .then((res) => res.json())
       .then((data) => {
-        const resolvedSchoolName = String(
-          data?.institute_name ||
-          data?.instituteName ||
-          data?.school_name ||
-          data?.name ||
-          data?.schoolName ||
-          "Unknown School"
-        ).trim();
-        const normalizedLogo = normalizeInstituteLogo(data?.logo);
-        setSchoolName(resolvedSchoolName);
-        setSchoolLogo(normalizedLogo || "/default-logo.png");
-        localStorage.setItem("schoolName", resolvedSchoolName);
-        localStorage.setItem("schoolLogo", normalizedLogo || "/default-logo.png");
+      const resolvedSchoolName = resolveInstituteDisplayName({
+        apiInstituteName: data?.institute_name || data?.instituteName || data?.school_name || data?.name || data?.schoolName,
+        storedSchoolName: localStorage.getItem("schoolName"),
+        storedInstituteName: localStorage.getItem("instituteName"),
+        schoolCode,
+        fallback: "Unknown School",
+      });
+      const normalizedLogo = normalizeInstituteLogo(data?.logo);
+      setSchoolName(resolvedSchoolName);
+      setSchoolLogo(normalizedLogo || "/default-logo.png");
+      localStorage.setItem("schoolName", resolvedSchoolName);
+      localStorage.setItem("instituteName", resolvedSchoolName);
+      localStorage.setItem("schoolLogo", normalizedLogo || "/default-logo.png");
       })
       .catch(() => {
-        setSchoolName("Unknown School");
+        const fallbackSchoolName = resolveInstituteDisplayName({
+          storedSchoolName: localStorage.getItem("schoolName"),
+          storedInstituteName: localStorage.getItem("instituteName"),
+          schoolCode,
+          fallback: "Unknown School",
+        });
+        setSchoolName(fallbackSchoolName);
+        localStorage.setItem("schoolName", fallbackSchoolName);
+        localStorage.setItem("instituteName", fallbackSchoolName);
         setSchoolLogo("/default-logo.png");
       });
   }, [schoolCode]);
@@ -767,8 +778,11 @@ const AdminEventsAndMeetings = () => {
             </div>
 
             <div className="dashboard-topbar-center accountant-topbar-center">
-              <img src={schoolLogo || "/default-logo.png"} alt={schoolName || "School Logo"} className="accountant-school-logo" />
-              <span style={{ fontWeight: 700, marginLeft: "0.4rem" }}>{schoolName || "Unknown School"}</span>
+              <InstituteBrand
+                logoSrc={schoolLogo || "/default-logo.png"}
+                logoAlt={schoolName || "School Logo"}
+                instituteName={schoolName || "Unknown School"}
+              />
             </div>
 
             <div className="dashboard-topbar-right accountant-topbar-right">
@@ -780,7 +794,7 @@ const AdminEventsAndMeetings = () => {
           <div className="admin-events-content">
             <div className="admin-events-top">
                     <div className="accountant-welcome-block">
-                <h2>Hi, Vinay!</h2>
+                <h2>Hi, {getUserDisplayName()}!</h2>
                 <p>Check Store Inventory,</p>
                 <p>Report Track to Class Teacher</p>
                 <p>Submit Building maintenance</p>
@@ -907,11 +921,11 @@ const AdminEventsAndMeetings = () => {
                         ? "Store PO"
                         : "Live Chat"}
                   </h3>
-                  <div className="admin-events-chat-meta">
+                  <div className="accountant-card-filters">
                     {activeQuickPanel === "livechat" ? (
                       <button type="button" className="admin-events-create-btn" onClick={openLiveChatPopup}>+ Create New</button>
                     ) : null}
-                    <div className="admin-events-chat-count">
+                    <div className="accountant-feetype-count">
                       <strong>
                         {activeQuickPanel === "assistant"
                           ? assistantPanelItems.length
@@ -976,10 +990,6 @@ const AdminEventsAndMeetings = () => {
                             <span>
                               Live Chat (P - T) - {formatChatDateTime(item.date, item.time)} - {item.party1_name || "Staff"} to {item.party2_student || "Student"}, {item.party2_class || "-"}{item.party2_section ? item.party2_section : ""}
                             </span>
-                            <div className="admin-events-chat-actions">
-                              <button type="button">▷</button>
-                              <button type="button">✕</button>
-                            </div>
                           </div>
                         ))
                       )}
@@ -1002,10 +1012,6 @@ const AdminEventsAndMeetings = () => {
                             <span>
                               Live Chat (T - P) - {formatChatDateTime(item.date, item.time)} - {item.party1_name || "Staff"} to {item.party2_student || "Student"}, {item.party2_class || "-"}{item.party2_section ? item.party2_section : ""}
                             </span>
-                            <div className="admin-events-chat-actions">
-                              <button type="button">▷</button>
-                              <button type="button">✕</button>
-                            </div>
                           </div>
                         ))
                       )}

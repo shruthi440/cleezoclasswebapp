@@ -10,6 +10,8 @@ import "../frontdeskdahboard/FrontDesk.css";
 import "./AdminEventsAndMeetings.css";
 import EditableProfileMenu from "../shared/EditableProfileMenu.jsx";
 import ErrorPopup from "../shared/ErrorPopup";
+import { resolveInstituteDisplayName } from "../shared/instituteNameUtils";
+import { getUserDisplayName } from "../shared/userDisplayName";
 
 import abcLogo from "../assets/logoab.png";
 import dashboardIcon from "../assets/Dashboard.png";
@@ -879,24 +881,32 @@ const AdminGenerations = () => {
     fetch(`https://cleezoclass.com:4000/api/institute?dbName=${schoolCode}`)
       .then((res) => res.json())
       .then((data) => {
-        const resolvedSchoolName = String(
-          data?.institute_name ||
-          data?.instituteName ||
-          data?.school_name ||
-          data?.name ||
-          data?.schoolName ||
-          "Unknown School"
-        ).trim();
+        const resolvedSchoolName = resolveInstituteDisplayName({
+          apiInstituteName: data?.institute_name || data?.instituteName || data?.school_name || data?.name || data?.schoolName,
+          storedSchoolName: localStorage.getItem("schoolName"),
+          storedInstituteName: localStorage.getItem("instituteName"),
+          schoolCode,
+          fallback: "Unknown School",
+        });
         const resolvedSchoolAddress = String(data?.address || data?.schoolAddress || data?.instituteAddress || "").trim();
         const normalizedLogo = normalizeInstituteLogo(data?.logo);
         setSchoolName(resolvedSchoolName);
         setSchoolLogo(normalizedLogo || "/default-logo.png");
         localStorage.setItem("schoolName", resolvedSchoolName);
+        localStorage.setItem("instituteName", resolvedSchoolName);
         localStorage.setItem("schoolLogo", normalizedLogo || "/default-logo.png");
         localStorage.setItem("schoolAddress", resolvedSchoolAddress);
       })
       .catch(() => {
-        setSchoolName("Unknown School");
+        const fallbackSchoolName = resolveInstituteDisplayName({
+          storedSchoolName: localStorage.getItem("schoolName"),
+          storedInstituteName: localStorage.getItem("instituteName"),
+          schoolCode,
+          fallback: "Unknown School",
+        });
+        setSchoolName(fallbackSchoolName);
+        localStorage.setItem("schoolName", fallbackSchoolName);
+        localStorage.setItem("instituteName", fallbackSchoolName);
         setSchoolLogo("/default-logo.png");
       });
   }, [schoolCode]);
@@ -2126,7 +2136,7 @@ const AdminGenerations = () => {
           <div className="admin-events-content">
             <div className="admin-events-top">
                <div className="accountant-welcome-block">
-                <h2>Hi, Vinay!</h2>
+                <h2>Hi, {getUserDisplayName()}!</h2>
                 <p>Check Store Inventory,</p>
                 <p>Report Track to Class Teacher</p>
                 <p>Submit Building maintenance</p>

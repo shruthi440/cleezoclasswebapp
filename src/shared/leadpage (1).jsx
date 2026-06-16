@@ -591,7 +591,7 @@ const iconStyle = {
 
   {/* Nova Web App - Always enabled */}
   <a
-    href="https://nova.tagsol.tech/"
+    href="https://cleezoclass.com//"
     target="_blank"
     rel="noopener noreferrer"
     style={linkStyle}

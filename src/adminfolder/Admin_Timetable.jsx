@@ -12,7 +12,6 @@ import ErrorPopup from "../shared/ErrorPopup";
 import TaskOfTheDay from "../shared/TaskOfTheDay.tsx";
 import Extraactivityform from "../shared/Extraactivityform";
 import EditableProfileMenu from "../shared/EditableProfileMenu.jsx";
-import abcLogo from "../assets/abc school.png";
 import dashboardIcon from "../assets/Dashboard.png";
 import academicsIcon from "../assets/Staff Assign.png";
 import leadProfileIcon from "../assets/Lead Profile.png";
@@ -22,6 +21,9 @@ import reportsIcon from "../assets/Reports .png";
 import timelineIcon from "../assets/Timeline.png";
 import followupIcon from "../assets/Profile.png";
 import assistantIcon from "../assets/Assistant.png";
+import logoab from "../assets/logoab.png";
+import { resolveInstituteDisplayName } from "../shared/instituteNameUtils";
+import { getUserDisplayName } from "../shared/userDisplayName";
 
 const isLaptop = window.innerWidth > 600 && window.innerWidth <= 1440;
 const MOBILE_BREAKPOINT = 1024;
@@ -53,6 +55,57 @@ const timetableScheduledItems = [
   "Live Chat (T - P) - 24/01/2026, 12:12 - Kavya Reddy to Student, 7A",
 ];
 
+const normalizeInstituteLogo = (rawLogo) => {
+  if (!rawLogo) return "";
+
+  let logo = rawLogo;
+
+  if (typeof logo === "object" && logo?.type === "Buffer" && Array.isArray(logo?.data)) {
+    try {
+      logo = new Uint8Array(logo.data);
+    } catch {
+      return "";
+    }
+  }
+
+  if (logo instanceof Uint8Array) {
+    const binary = Array.from(logo, (byte) => String.fromCharCode(byte)).join("");
+    return `data:image/png;base64,${btoa(binary)}`;
+  }
+
+  if (typeof logo !== "string") return "";
+  logo = logo.trim();
+  if (!logo) return "";
+  if (logo.startsWith("data:image")) return logo;
+  if (logo.startsWith("http")) return logo;
+
+  if (logo.startsWith("0x")) {
+    try {
+      const hex = logo.slice(2);
+      let binary = "";
+      for (let i = 0; i < hex.length; i += 2) {
+        binary += String.fromCharCode(parseInt(hex.substring(i, i + 2), 16));
+      }
+      return `data:image/png;base64,${btoa(binary)}`;
+    } catch {
+      return "";
+    }
+  }
+
+  if (logo.startsWith("uploads/")) {
+    return `${BASE_URL}/${logo}`;
+  }
+  if (logo.startsWith("/uploads/")) {
+    return `${BASE_URL}${logo}`;
+  }
+
+  if (/^[A-Za-z0-9+/=]+$/.test(logo) && logo.length > 100) {
+    return `data:image/png;base64,${logo}`;
+  }
+
+  return "";
+};
+
 const SubstituteAssignmentEmbed = ({ isMobile }) => {
   const [absentTeachers, setAbsentTeachers] = useState([]);
   const [selectedTeacher, setSelectedTeacher] = useState(null);
@@ -62,7 +115,6 @@ const SubstituteAssignmentEmbed = ({ isMobile }) => {
   const [error, setError] = useState(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const schoolCode = localStorage.getItem('schoolCode');
-
   useEffect(() => {
     const fetchAbsentTeachers = async () => {
       try {
@@ -250,9 +302,10 @@ const TimetableAdmin = ({ academicsStyle = false }) => {
   const [activeQuickPanel, setActiveQuickPanel] = useState("livechat");
   
   const navigate = useNavigate();
-  const SCHOOL_NAME = "ABC School, Miyapur, Hyderabad";
   const ADMIN_TITLE = "OPERATIONS — TIMETABLE";
   const [isMobile, setIsMobile] = useState(window.innerWidth < MOBILE_BREAKPOINT);
+  const [schoolName, setSchoolName] = useState("Loading...");
+  const [schoolLogo, setSchoolLogo] = useState("/default-logo.png");
   const [selectedClasses, setSelectedClasses] = useState([]);
   const [sections, setSections] = useState({});
   const [classTeachers, setClassTeachers] = useState({});
@@ -276,6 +329,8 @@ const TimetableAdmin = ({ academicsStyle = false }) => {
   const [dayType, setDayType] = useState('full');
   const [isTimetableGenerated, setIsTimetableGenerated] = useState(false);
   const [classOptions, setClassOptions] = useState([]);
+const [isGeneratingTimetable, setIsGeneratingTimetable] = useState(false);
+const [generationMessage, setGenerationMessage] = useState("");
   const [staffOptions, setStaffOptions] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
   const [extraClassForm, setExtraClassForm] = useState({
@@ -302,6 +357,68 @@ const TimetableAdmin = ({ academicsStyle = false }) => {
       setAfternoonInterval(false);
     }
   }, [dayType]);
+
+  useEffect(() => {
+    const schoolCode = localStorage.getItem("schoolCode");
+    if (!schoolCode) {
+      const fallbackSchoolName = resolveInstituteDisplayName({
+        storedSchoolName: localStorage.getItem("schoolName"),
+        storedInstituteName: localStorage.getItem("instituteName"),
+        fallback: "School",
+      });
+      setSchoolName(fallbackSchoolName);
+      setSchoolLogo("/default-logo.png");
+      return;
+    }
+
+    let isActive = true;
+
+    const loadInstituteDetails = async () => {
+      try {
+        const response = await axios.get(`${BASE_URL}/api/institute`, {
+          params: { dbName: schoolCode },
+        });
+
+        if (!isActive) return;
+
+        const resolvedSchoolName = resolveInstituteDisplayName({
+          apiInstituteName: response?.data?.institute_name || response?.data?.instituteName || response?.data?.schoolName || response?.data?.name,
+          storedSchoolName: localStorage.getItem("schoolName"),
+          storedInstituteName: localStorage.getItem("instituteName"),
+          schoolCode,
+          fallback: "School",
+        });
+        const normalizedLogo = normalizeInstituteLogo(response?.data?.logo) || "/default-logo.png";
+
+        setSchoolName(resolvedSchoolName);
+        setSchoolLogo(normalizedLogo);
+        localStorage.setItem("schoolName", resolvedSchoolName);
+        localStorage.setItem("instituteName", resolvedSchoolName);
+        localStorage.setItem("schoolLogo", normalizedLogo);
+      } catch (error) {
+        console.error("Error loading institute details for timetable:", error);
+        if (!isActive) return;
+
+        const fallbackSchoolName = resolveInstituteDisplayName({
+          storedSchoolName: localStorage.getItem("schoolName"),
+          storedInstituteName: localStorage.getItem("instituteName"),
+          schoolCode,
+          fallback: "School",
+        });
+
+        setSchoolName(fallbackSchoolName);
+        setSchoolLogo("/default-logo.png");
+        localStorage.setItem("schoolName", fallbackSchoolName);
+        localStorage.setItem("instituteName", fallbackSchoolName);
+      }
+    };
+
+    loadInstituteDetails();
+
+    return () => {
+      isActive = false;
+    };
+  }, []);
 useEffect(() => {
   const fetchOptions = async () => {
     const schoolCode = localStorage.getItem("schoolCode");
@@ -359,66 +476,151 @@ useEffect(() => {
     setSections(updatedSections);
   };
 
-  const handleSubmit = async () => {
-    const schoolCode = (localStorage.getItem("schoolCode") || "default_school_code").trim();
-    if (!schoolCode) {
-setPopup({
-  message: "School code is missing. Please log in again to ensure everything is set correctly.",
-  type: "error"
-});
-      return;
+const handleSubmit = async () => {
+  setIsGeneratingTimetable(true);
+
+  const startTimeStamp = Date.now();
+
+const messages = [
+  "📚 Loading class data...",
+  "👨‍🏫 Mapping teachers...",
+  "🔍 Checking timetable conflicts...",
+  "⚡ Optimizing periods...",
+  "🧠 Applying AI scheduling...",
+  "🎯 Finalizing timetable...",
+  "✨ Almost ready..."
+];
+  let msgIndex = 10;
+
+  setGenerationMessage(messages[0]);
+
+  const interval = setInterval(() => {
+    msgIndex++;
+
+    if (msgIndex < messages.length) {
+      setGenerationMessage(messages[msgIndex]);
     }
-    const payload = {
-      schoolCode,
-      classes: selectedClasses.map((name) => ({
-        class_name: String(name).replace(/^Class\s+/i, ''),
-        sections: sections[name] || 1,
-        teacher: classTeachers[name] || "Not Assigned",
-      })),
-      startTime,
-      periodDuration,
-      numberOfPeriods,
-      morningInterval,
-      morningIntervalAfter,
-      morningIntervalDuration,
-      afternoonInterval: dayType === 'full' ? afternoonInterval : false,
-      afternoonIntervalAfter,
-      afternoonIntervalDuration,
-      lunchInterval: dayType === 'full' ? lunchInterval : false,
-      lunchIntervalAfter,
-      lunchIntervalDuration,
-      customActivities
-    };
-    try {
-      const { data } = await axios.post(
-        `${BASE_URL}/generatetimetable`,
-        payload,
-        { headers: { "Content-Type": "application/json" } }
-      );
-      if (data?.weeklyTimetable) {
-        setTimetable(data.weeklyTimetable);
-setPopup({
-  message: "The timetable has been generated successfully.",
-  type: "success"
-});
-        setShowTimetable(true);
-        setIsTimetableGenerated(true);
-      } else {
-setPopup({
-  message: "Timetable generation failed. Please check your network connection and try again.",
-  type: "error"
-});
-      }
-    } catch (err) {
-      console.error("❌ Server error during timetable generation:", err);
-setPopup({
-  message: "A server error occurred. Please try again later or contact support if the issue persists.",
-  type: "error"
-});
-    }
-    setShowTimetable(true);
-    setIsTimetableGenerated(true);
+  }, 900);
+
+  const schoolCode = (
+    localStorage.getItem("schoolCode") ||
+    "default_school_code"
+  ).trim();
+
+  if (!schoolCode) {
+    clearInterval(interval);
+
+    setIsGeneratingTimetable(false);
+
+    setPopup({
+      message:
+        "School code is missing. Please log in again to ensure everything is set correctly.",
+      type: "error",
+    });
+
+    return;
+  }
+
+  const payload = {
+    schoolCode,
+
+    classes: selectedClasses.map((name) => ({
+      class_name: String(name).replace(/^Class\s+/i, ""),
+      sections: sections[name] || 1,
+      teacher: classTeachers[name] || "Not Assigned",
+    })),
+
+    startTime,
+    periodDuration,
+    numberOfPeriods,
+
+    morningInterval,
+    morningIntervalAfter,
+    morningIntervalDuration,
+
+    afternoonInterval:
+      dayType === "full" ? afternoonInterval : false,
+    afternoonIntervalAfter,
+    afternoonIntervalDuration,
+
+    lunchInterval:
+      dayType === "full" ? lunchInterval : false,
+    lunchIntervalAfter,
+    lunchIntervalDuration,
+
+    customActivities,
   };
+
+  try {
+    const { data } = await axios.post(
+      `${BASE_URL}/generatetimetable`,
+      payload,
+      {
+        headers: {
+          "Content-Type": "application/json",
+        },
+      }
+    );
+
+    if (data?.weeklyTimetable) {
+      const elapsed = Date.now() - startTimeStamp;
+
+      // Minimum 4 seconds for wow factor
+      const remainingDelay = Math.max(
+        6000 - elapsed,
+        0
+      );
+
+      setTimeout(() => {
+        clearInterval(interval);
+
+        setGenerationMessage(
+          "Timetable Generated Successfully!"
+        );
+
+        setTimeout(() => {
+          setTimetable(data.weeklyTimetable);
+
+          setPopup({
+            message:
+              "The timetable has been generated successfully.",
+            type: "success",
+          });
+
+          setShowTimetable(true);
+          setIsTimetableGenerated(true);
+
+          setIsGeneratingTimetable(false);
+        }, 800);
+      }, remainingDelay);
+    } else {
+      clearInterval(interval);
+
+      setIsGeneratingTimetable(false);
+
+      setPopup({
+        message:
+          "Timetable generation failed. Please check your network connection and try again.",
+        type: "error",
+      });
+    }
+  } catch (err) {
+    clearInterval(interval);
+
+    console.error(
+      "❌ Server error during timetable generation:",
+      err
+    );
+
+    setIsGeneratingTimetable(false);
+
+    setPopup({
+      message:
+        "A server error occurred. Please try again later or contact support if the issue persists.",
+      type: "error",
+    });
+  }
+};
 
   const handleEditClass = (className) => {
     setEditingClasses(prev => ({ ...prev, [className]: true }));
@@ -578,6 +780,7 @@ setPopup({
   };
 
   const renderActionsSection = () => (
+    
     <div className="at-actions-section">
       {isTimetableGenerated && (
         <div className="at-timetable-status-card">
@@ -1078,8 +1281,11 @@ setPopup({
               </div>
 
               <div className="dashboard-topbar-center accountant-topbar-center">
-                <img src={abcLogo} alt="ABC School" className="accountant-school-logo" />
-                <span style={{ fontWeight: 700, marginLeft: "0.4rem" }}>ABC SCHOOL</span>
+                <InstituteBrand
+                  logoSrc={schoolLogo}
+                  logoAlt={schoolName || "Institute Logo"}
+                  instituteName={schoolName}
+                />
               </div>
 
               <div className="dashboard-topbar-right accountant-topbar-right">
@@ -1093,7 +1299,7 @@ setPopup({
             <div className="tt-academics-content">
               <div className="tt-academics-top">
                      <div className="accountant-welcome-block">
-                <h2>Hi, Vinay!</h2>
+                <h2>Hi, {getUserDisplayName()}!</h2>
                 <p>Check Store Inventory,</p>
                 <p>Report Track to Class Teacher</p>
                 <p>Submit Building maintenance</p>
@@ -1255,14 +1461,14 @@ setPopup({
 
         <div className="accountant-footer-brand">
           <span>Powered By:</span>
-          <img src={abcLogo} alt="Cleezo Class" className="accountant-footer-logo" />
-        </div>
-
+          <img src={logoab} alt="Cleezo Class" className="accountant-footer-logo" />
+</div>
         <ErrorPopup
           message={popup.message}
           type={popup.type}
           onClose={() => setPopup({ message: "", type: "" })}
         />
+
       </div>
     );
   }
@@ -1312,6 +1518,23 @@ setPopup({
   onClose={() => setPopup({ message: "", type: "" })}
 />
 
+    {isGeneratingTimetable && (
+  <div className="tt-ai-generator-overlay">
+    <div className="tt-ai-generator-box">
+      <div className="tt-ai-generator-icon">⚡</div>
+
+      <h2>AI Timetable Generator</h2>
+
+      <div className="tt-ai-generator-message">
+        {generationMessage}
+      </div>
+
+      <div className="tt-ai-progress">
+        <div className="tt-ai-progress-bar"></div>
+      </div>
+    </div>
+  </div>
+)}
     </div>
   );
 };

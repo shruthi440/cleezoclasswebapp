@@ -130,7 +130,7 @@ function QuestionPaperGenerator() {
 
   useEffect(() => {
     setLoading(true);
-    axios.get('https://nova.tagsol.tech:3010/api/clases')
+    axios.get('https://cleezoclass.com/:3010/api/clases')
       .then(response => {
         setClasses(response.data);
         setLoading(false);
@@ -152,7 +152,7 @@ function QuestionPaperGenerator() {
 
     if (classLevel && board) {
       setLoading(true);
-      axios.get(`https://nova.tagsol.tech:3010/api/subjects/${classLevel}/${board}`) // Pass board as parameter
+      axios.get(`https://cleezoclass.com/:3010/api/subjects/${classLevel}/${board}`) // Pass board as parameter
         .then(response => {
           setSubjects(response.data);
           setLoading(false);
@@ -175,7 +175,7 @@ function QuestionPaperGenerator() {
 
     if (selectedBoard && selectedClass) {
       setLoading(true);
-      axios.get(`https://nova.tagsol.tech:3010/api/subjects/${selectedClass}/${selectedBoard}`)
+      axios.get(`https://cleezoclass.com/:3010/api/subjects/${selectedClass}/${selectedBoard}`)
         .then(response => {
           setSubjects(response.data);
           setLoading(false);
@@ -208,7 +208,7 @@ function QuestionPaperGenerator() {
 
     setLoading(true);
     setError('');
-    axios.post('https://nova.tagsol.tech:3010/api/Questionpaper', {
+    axios.post('https://cleezoclass.com/:3010/api/Questionpaper', {
       class: selectedClass,
       subject: selectedSubject,
       examType,

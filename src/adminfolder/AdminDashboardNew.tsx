@@ -5,6 +5,9 @@ import "./AccountantDashboardnew.css";
 import "../frontdeskdahboard/FrontDesk.css";
 import "./AdminDashboardNew.css";
 import "./AdminEventsAndMeetings.css";
+import InstituteBrand from "../shared/InstituteBrand.jsx";
+import { resolveInstituteDisplayName } from "../shared/instituteNameUtils";
+import { getUserDisplayName } from "../shared/userDisplayName";
 
 import abcLogo from "../assets/logoab.png";
 import dashboardIcon from "../assets/Dashboard.png";
@@ -21,6 +24,7 @@ import premiumIcon from "../assets/Go Premium.png";
 import { FaEdit, FaUser } from "react-icons/fa";
 import TaskOfTheDay from "../shared/TaskOfTheDay.tsx";
 import FrontDesk_Tickets from "../frontdeskdahboard/FrontDesk_Tickets.tsx";
+import ErrorPopup from "../shared/ErrorPopup";
 // import StoreDashboard from "../shared/AdminStoreNew.jsx";
 
 const ADMIN_API_BASE = "https://cleezoclass.com:4000/api";
@@ -102,6 +106,20 @@ const AdminDashboard: React.FC = () => {
   const [schoolName, setSchoolName] = useState("");
   const [schoolLogo, setSchoolLogo] = useState("/default-logo.png");
   const [instituteAddress, setInstituteAddress] = useState("");
+  const [popupType, setPopupType] = useState("");
+  const [popupMessage, setPopupMessage] = useState("");
+  const [party1List, setParty1List] = useState<any[]>([]);
+  const [classOptions, setClassOptions] = useState<any[]>([]);
+  const [sectionOptions, setSectionOptions] = useState<any[]>([]);
+  const [studentOptions, setStudentOptions] = useState<any[]>([]);
+  const [liveChatForm, setLiveChatForm] = useState({
+    party1: "",
+    className: "",
+    section: "",
+    student: "",
+    date: new Date().toISOString().split("T")[0],
+    time: "",
+  });
   const pendingChatCount = pendingChats.filter((item: any) => {
     const status = String(item?.status || item?.approval_status || "pending").toLowerCase();
     return status === "pending" || status === "awaiting";
@@ -348,28 +366,101 @@ const AdminDashboard: React.FC = () => {
     fetch(`https://cleezoclass.com:4000/api/institute?dbName=${schoolCode}`)
       .then((res) => res.json())
       .then((data) => {
-        const resolvedSchoolName = String(
-          data?.institute_name ||
-          data?.instituteName ||
-          data?.school_name ||
-          data?.name ||
-          data?.schoolName ||
-          "Unknown School"
-        ).trim();
+        const resolvedSchoolName = resolveInstituteDisplayName({
+          apiInstituteName: data?.institute_name || data?.instituteName || data?.school_name || data?.name || data?.schoolName,
+          storedSchoolName: localStorage.getItem("schoolName"),
+          storedInstituteName: localStorage.getItem("instituteName"),
+          schoolCode,
+          fallback: "Unknown School",
+        });
         const normalizedLogo = normalizeInstituteLogo(data?.logo);
 
         setSchoolName(resolvedSchoolName);
         setSchoolLogo(normalizedLogo || "/default-logo.png");
         setInstituteAddress(data?.address || data?.schoolAddress || data?.instituteAddress || "");
         localStorage.setItem("schoolName", resolvedSchoolName);
+        localStorage.setItem("instituteName", resolvedSchoolName);
         localStorage.setItem("schoolLogo", normalizedLogo || "/default-logo.png");
       })
       .catch(() => {
-        setSchoolName("Unknown School");
+        const fallbackSchoolName = resolveInstituteDisplayName({
+          storedSchoolName: localStorage.getItem("schoolName"),
+          storedInstituteName: localStorage.getItem("instituteName"),
+          schoolCode,
+          fallback: "Unknown School",
+        });
+        setSchoolName(fallbackSchoolName);
+        localStorage.setItem("schoolName", fallbackSchoolName);
+        localStorage.setItem("instituteName", fallbackSchoolName);
         setSchoolLogo("/default-logo.png");
         setInstituteAddress("");
       });
   }, []);
+
+  useEffect(() => {
+    const schoolCode = localStorage.getItem("schoolCode");
+    if (!schoolCode) return;
+
+    const loadLiveChatMeta = async () => {
+      try {
+        const [{ data: staffData }, { data: classData }] = await Promise.all([
+          axios.get(`${ADMIN_API_BASE}/party1`, { params: { schoolCode } }),
+          axios.get(`${ADMIN_API_BASE}/classes`, { params: { schoolCode } }),
+        ]);
+
+        setParty1List(Array.isArray(staffData) ? staffData : []);
+        setClassOptions(Array.isArray(classData) ? classData : []);
+      } catch (error) {
+        console.error("Failed to load live chat meta", error);
+      }
+    };
+
+    loadLiveChatMeta();
+  }, []);
+
+  useEffect(() => {
+    const schoolCode = localStorage.getItem("schoolCode");
+    if (!schoolCode || !liveChatForm.className) {
+      setSectionOptions([]);
+      setStudentOptions([]);
+      return;
+    }
+
+    axios
+      .get(`${ADMIN_API_BASE}/sections/${encodeURIComponent(liveChatForm.className)}`, {
+        params: { schoolCode },
+      })
+      .then((res) => {
+        setSectionOptions(Array.isArray(res.data) ? res.data : []);
+        setLiveChatForm((prev) => ({ ...prev, section: "", student: "" }));
+      })
+      .catch((error) => {
+        console.error("Failed to load sections", error);
+        setSectionOptions([]);
+      });
+  }, [liveChatForm.className]);
+
+  useEffect(() => {
+    const schoolCode = localStorage.getItem("schoolCode");
+    if (!schoolCode || !liveChatForm.className || !liveChatForm.section) {
+      setStudentOptions([]);
+      return;
+    }
+
+    axios
+      .get(
+        `${ADMIN_API_BASE}/admin/students/${encodeURIComponent(liveChatForm.className)}/${encodeURIComponent(liveChatForm.section)}`,
+        { params: { schoolCode } }
+      )
+      .then((res) => {
+        setStudentOptions(Array.isArray(res.data) ? res.data : []);
+        setLiveChatForm((prev) => ({ ...prev, student: "" }));
+      })
+      .catch((error) => {
+        console.error("Failed to load students", error);
+        setStudentOptions([]);
+      });
+  }, [liveChatForm.className, liveChatForm.section]);
 
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
@@ -469,46 +560,109 @@ const AdminDashboard: React.FC = () => {
     window.location.replace(import.meta.env.BASE_URL || "/");
   };
 
-  useEffect(() => {
-    const fetchPendingChats = async () => {
-      setPendingChatsLoading(true);
-      setPendingChatsError("");
-      const schoolCode = localStorage.getItem("schoolCode") || "NOVA";
-      const endpoints = [
-        `https://cleezoclass.com:4000/api/chat-requests/pending?schoolCode=${encodeURIComponent(schoolCode)}`,
-        `https://cleezoclass.com:4000/api/chat-requests?schoolCode=${encodeURIComponent(schoolCode)}`,
-      ];
-      try {
-        let data: any = [];
-        for (const url of endpoints) {
-          const res = await fetch(url);
-          if (!res.ok) continue;
-          const body = await res.json();
-          const list = Array.isArray(body)
-            ? body
-            : Array.isArray(body?.data)
-              ? body.data
-              : Array.isArray(body?.requests)
-                ? body.requests
-                : Array.isArray(body?.chatRequests)
-                  ? body.chatRequests
-                  : [];
-          if (list.length > 0) {
-            data = list;
-            break;
-          }
-        }
-        setPendingChats(Array.isArray(data) ? data : []);
-      } catch (err) {
-        console.error("Failed to fetch pending chat approvals:", err);
-        setPendingChatsError("Failed to load pending approvals.");
-        setPendingChats([]);
-      } finally {
-        setPendingChatsLoading(false);
+  const loadPendingChats = async () => {
+    setPendingChatsLoading(true);
+    setPendingChatsError("");
+    const schoolCode = localStorage.getItem("schoolCode") || "NOVA";
+    const endpoints = [
+      `https://cleezoclass.com:4000/api/chat-requests/pending?schoolCode=${encodeURIComponent(schoolCode)}`,
+      `https://cleezoclass.com:4000/api/chat-requests?schoolCode=${encodeURIComponent(schoolCode)}`,
+    ];
+    try {
+      const mergedChats: any[] = [];
+      const seenKeys = new Set<string>();
+
+      for (const url of endpoints) {
+        const res = await fetch(url);
+        if (!res.ok) continue;
+        const body = await res.json();
+        const list = Array.isArray(body)
+          ? body
+          : Array.isArray(body?.data)
+            ? body.data
+            : Array.isArray(body?.requests)
+              ? body.requests
+              : Array.isArray(body?.chatRequests)
+                ? body.chatRequests
+                : [];
+
+        list.forEach((item: any) => {
+          const key =
+            String(item?.id || item?.request_id || item?.sessionId || item?.session_id || item?.chat_id || "").trim() ||
+            `${item?.date || item?.created_at || ""}-${item?.time || item?.createdAt || ""}-${item?.party1_name || item?.party2_student || ""}`;
+          if (seenKeys.has(key)) return;
+          seenKeys.add(key);
+          mergedChats.push(item);
+        });
       }
-    };
-    fetchPendingChats();
+
+      setPendingChats(mergedChats);
+    } catch (err) {
+      console.error("Failed to fetch pending chat approvals:", err);
+      setPendingChatsError("Failed to load pending approvals.");
+      setPendingChats([]);
+    } finally {
+      setPendingChatsLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    loadPendingChats();
   }, []);
+
+  const openLiveChatPopup = () => {
+    setPopupType("liveChat");
+  };
+
+  const closePopup = () => setPopupType("");
+
+  const handleCreateLiveChatRequest = async () => {
+    const { party1, className, section, student, date, time } = liveChatForm;
+
+    if (!party1 || !className || !section || !student) {
+      setPopupMessage("Staff, class, section, and student are required.");
+      return;
+    }
+
+    const party1Obj = party1List.find((item: any) => item.name === party1);
+    if (!party1Obj) {
+      setPopupMessage("Please select a valid staff member.");
+      return;
+    }
+
+    const schoolCode = localStorage.getItem("schoolCode") || "NOVA";
+    try {
+      const { data } = await axios.post(`${ADMIN_API_BASE}/chat-request`, {
+        party1_id: party1Obj.id,
+        party1_name: party1Obj.name,
+        party2_class: className,
+        party2_section: section,
+        party2_student: student,
+        date,
+        time,
+        schoolCode,
+      });
+
+      if (!data?.success) {
+        throw new Error(data?.message || "Failed to save chat request.");
+      }
+
+      setPopupMessage("Individual chat request has been successfully saved.");
+      setLiveChatForm({
+        party1: "",
+        className,
+        section,
+        student: "",
+        date: new Date().toISOString().split("T")[0],
+        time: "",
+      });
+      closePopup();
+      await loadPendingChats();
+    } catch (error: any) {
+      console.error("Failed to save chat request", error);
+      setPopupMessage(error?.response?.data?.message || error.message || "Failed to save chat request.");
+    }
+  };
 
   useEffect(() => {
     const fetchStoreActions = async () => {
@@ -668,7 +822,36 @@ const AdminDashboard: React.FC = () => {
 
   return (
     <div className="dashboard-page dashboard-home-page frontdesk-dashboard-page accountant-dashboard-page accountant-dashboard-home-page admission-dashboard-page">
-      <div className="dashboard-shell accountant-dashboard-shell">
+      <div className="dashboard-shell accountant-dashboard-shell" style={{ position: "relative" }}>
+        {String(localStorage.getItem("userRole") || "").toLowerCase() === "superadmin" ? (
+          <button
+            type="button"
+            onClick={() => navigate("/ChiefDashboard")}
+            style={{
+              position: "absolute",
+              top: "calc(50% - 15.5rem - 1.1rem - 15px)",
+              left: "0.65rem",
+              zIndex: 2,
+              padding: 0,
+              border: 0,
+              background: "transparent",
+              boxShadow: "none",
+              appearance: "none",
+              outline: 0,
+              color: "#111111",
+              fontSize: "0.82rem",
+              fontWeight: 700,
+              textDecoration: "underline",
+              textDecorationColor: "#f36b79",
+              textUnderlineOffset: "0.18rem",
+              cursor: "pointer",
+              whiteSpace: "nowrap",
+            }}
+          >
+            Chief Dashboard
+          </button>
+        ) : null}
+
         <aside className="dashboard-sidebar accountant-sidebar-strip">
           {sidebarItems.map((item) => (
             <button
@@ -742,8 +925,11 @@ const AdminDashboard: React.FC = () => {
             </div>
 
             <div className="dashboard-topbar-center accountant-topbar-center">
-              <img src={schoolLogo || "/default-logo.png"} alt={schoolName || "School Logo"} className="accountant-school-logo" />
-              <span style={{ fontWeight: 700, marginLeft: "0.4rem" }}>{schoolName || "Unknown School"}</span>
+              <InstituteBrand
+                logoSrc={schoolLogo || "/default-logo.png"}
+                logoAlt={schoolName || "School Logo"}
+                instituteName={schoolName || "Unknown School"}
+              />
             </div>
 
             <div className="dashboard-topbar-right accountant-topbar-right">
@@ -899,7 +1085,7 @@ const AdminDashboard: React.FC = () => {
           <div className="accountant-grid">
             <div className="accountant-row accountant-row-top">
               <div className="accountant-welcome-block">
-                <h2>Hi, Vinay!</h2>
+                <h2>Hi, {userInfo?.name || userInfo?.username || getUserDisplayName()}!</h2>
                 <p>Check Store Inventory,</p>
                 <p>Report Track to Class Teacher</p>
                 <p>Submit Building maintenance</p>
@@ -939,9 +1125,13 @@ const AdminDashboard: React.FC = () => {
                   </button>
                 </div>
 
-                <button type="button" className="accountant-inline-plus accountant-inline-plus-below">
-                  +
-                </button>
+              <button
+  type="button"
+  className="accountant-inline-plus accountant-inline-plus-below"
+  onClick={() => navigate("/AdiminAcademicsNew")}
+>
+  +
+</button>
 
                 <div className="accountant-collect-content">
                   <div className="accountant-progress-panel" style={{ ["--admission-progress" as any]: "252deg" }}>
@@ -1065,7 +1255,7 @@ const AdminDashboard: React.FC = () => {
                         : "Live Chat"}
                   </h3>
                   <div className="accountant-card-filters">
-                    <button className="accountant-card-filter">+ Create New</button>
+                    <button className="accountant-card-filter" type="button" onClick={openLiveChatPopup}>+ Create New</button>
                     <div className="accountant-feetype-count">
                       <strong>
                         {activeQuickPanel === "assistant"
@@ -1173,10 +1363,6 @@ const AdminDashboard: React.FC = () => {
                                 <span>
                                   Live Chat (P - T) - {formatChatDateTime(chat.date, chat.time)} - {chat.party1_name || "Staff"} to {chat.party2_student || "Student"}, {chat.party2_class || "-"}{chat.party2_section || ""}
                                 </span>
-                                <div style={{ display: "flex", gap: "0.35rem" }}>
-                                  <button style={{ width: "1.7rem", height: "1.7rem", border: 0, borderRadius: "50%", background: "#eef5ff", color: "#60a5fa" }}>▷</button>
-                                  <button style={{ width: "1.7rem", height: "1.7rem", border: 0, borderRadius: "50%", background: "#eef5ff", color: "#60a5fa" }}>✕</button>
-                                </div>
                               </div>
                             ))
                           )}
@@ -1270,6 +1456,90 @@ const AdminDashboard: React.FC = () => {
           </div>
         </div>
       </div>
+
+      {popupType === "liveChat" && (
+        <div className="admin-events-modal-overlay" onClick={closePopup}>
+          <div className="admin-events-modal" onClick={(e) => e.stopPropagation()}>
+            <div className="admin-events-card-header">
+              <h3>Individual Chat Request</h3>
+              <button type="button" className="admin-events-modal-close" onClick={closePopup}>
+                ×
+              </button>
+            </div>
+            <div className="admin-events-form-grid">
+              <select
+                className="admin-events-input"
+                value={liveChatForm.party1}
+                onChange={(e) => setLiveChatForm((prev) => ({ ...prev, party1: e.target.value }))}
+              >
+                <option value="">Party 1 Staff</option>
+                {party1List.map((item: any) => (
+                  <option key={item.id} value={item.name}>
+                    {item.name} ({item.user_type})
+                  </option>
+                ))}
+              </select>
+              <select
+                className="admin-events-input"
+                value={liveChatForm.className}
+                onChange={(e) => setLiveChatForm((prev) => ({ ...prev, className: e.target.value }))}
+              >
+                <option value="">Class</option>
+                {classOptions.map((item: any, index: number) => (
+                  <option key={`${item}-${index}`} value={String(item)}>
+                    {String(item)}
+                  </option>
+                ))}
+              </select>
+              <select
+                className="admin-events-input"
+                value={liveChatForm.section}
+                onChange={(e) => setLiveChatForm((prev) => ({ ...prev, section: e.target.value }))}
+                disabled={!liveChatForm.className}
+              >
+                <option value="">Section</option>
+                {sectionOptions.map((item: any, index: number) => (
+                  <option key={`${item}-${index}`} value={String(item)}>
+                    {String(item)}
+                  </option>
+                ))}
+              </select>
+              <select
+                className="admin-events-input"
+                value={liveChatForm.student}
+                onChange={(e) => setLiveChatForm((prev) => ({ ...prev, student: e.target.value }))}
+                disabled={!liveChatForm.className || !liveChatForm.section}
+              >
+                <option value="">Student</option>
+                {studentOptions.map((item: any, index: number) => (
+                  <option key={`${item?.id || index}`} value={item?.name || item?.student_name || ""}>
+                    {item?.name || item?.student_name || "Student"}
+                  </option>
+                ))}
+              </select>
+              <input
+                className="admin-events-input"
+                type="date"
+                value={liveChatForm.date}
+                onChange={(e) => setLiveChatForm((prev) => ({ ...prev, date: e.target.value }))}
+              />
+              <input
+                className="admin-events-input"
+                type="time"
+                value={liveChatForm.time}
+                onChange={(e) => setLiveChatForm((prev) => ({ ...prev, time: e.target.value }))}
+              />
+            </div>
+            <div className="admin-events-action-row">
+              <button type="button" className="admin-events-submit-btn" onClick={handleCreateLiveChatRequest}>
+                Create Chat Request
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      <ErrorPopup message={popupMessage} onClose={() => setPopupMessage("")} />
 
       {profileImageOpen && (
         <div

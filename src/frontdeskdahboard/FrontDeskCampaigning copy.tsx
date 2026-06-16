@@ -30,6 +30,7 @@ import ErrorPopup from "../shared/ErrorPopup";
 import TaskOfTheDay from "../shared/TaskOfTheDay.tsx";
 import LeadsTable from "./FrontDesk_Track.tsx";
 import abcLogo from "../assets/logoab.png";
+import { resolveInstituteDisplayName } from "../shared/instituteNameUtils";
 import homeIcon from "../assets/Dashboard.png";
 import usersIcon from "../assets/Staff Assign.png";
 import chartIcon from "../assets/Lead Profile.png";
@@ -3213,6 +3214,9 @@ const StableCommunicationAssignSection = React.memo(({
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data?.error || "Send failed");
+      if (Number(data?.totalLeads || 0) <= 0) {
+        throw new Error("No matching leads were found for the selected campaign filters.");
+      }
 
       // Frontend fallback: if backend sends only media (without caption), schedule text separately.
       // This keeps writeup delivery working on older server versions.
@@ -7550,6 +7554,9 @@ const CommunicationAssignSection: React.FC<{
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data?.error || "Send failed");
+      if (Number(data?.totalLeads || 0) <= 0) {
+        throw new Error("No matching leads were found for the selected campaign filters.");
+      }
 
       if (posterText) {
         try {
@@ -8376,7 +8383,16 @@ useEffect(() => {
       }
 
       console.log("📂 Institute data received:", data);
-      setSchoolName(data.institute_name || currentDbName);
+      const resolvedSchoolName = resolveInstituteDisplayName({
+        apiInstituteName: data?.institute_name || data?.instituteName || data?.schoolName || data?.name,
+        storedSchoolName: localStorage.getItem("schoolName"),
+        storedInstituteName: localStorage.getItem("instituteName"),
+        schoolCode: currentDbName,
+        fallback: "Unknown School",
+      });
+      setSchoolName(resolvedSchoolName);
+      localStorage.setItem("schoolName", resolvedSchoolName);
+      localStorage.setItem("instituteName", resolvedSchoolName);
       setLogo(data.logo || "/default-logo.png");
       setInstituteAddress(data.address || "Address not available");
 
@@ -8420,7 +8436,15 @@ useEffect(() => {
       if (retriesLeft > 0) {
         return fetchInstituteInfo(retriesLeft - 1);
       }
-      setSchoolName(currentDbName || "Unknown School");
+      const fallbackSchoolName = resolveInstituteDisplayName({
+        storedSchoolName: localStorage.getItem("schoolName"),
+        storedInstituteName: localStorage.getItem("instituteName"),
+        schoolCode: currentDbName,
+        fallback: "Unknown School",
+      });
+      setSchoolName(fallbackSchoolName);
+      localStorage.setItem("schoolName", fallbackSchoolName);
+      localStorage.setItem("instituteName", fallbackSchoolName);
       setLogo("/default-logo.png");
       setInstituteAddress("Address not available");
     }

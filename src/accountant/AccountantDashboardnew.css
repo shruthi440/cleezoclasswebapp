@@ -320,10 +320,28 @@
   font-size: 0.65rem;
   font-weight: 600;
   color: #1f2937;
-  white-space: nowrap;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  line-height: 1.05;
+  white-space: normal;
   overflow: hidden;
-  text-overflow: ellipsis;
   max-width: 220px;
+}
+
+.accountant-school-name-line {
+  display: block;
+  min-width: 0;
+}
+
+.accountant-school-name-line-primary {
+  font-size: 0.65rem;
+  font-weight: 700;
+}
+
+.accountant-school-name-line-secondary {
+  font-size: 0.58rem;
+  font-weight: 600;
 }
 
 .accountant-grid {
@@ -367,10 +385,11 @@
 
 .accountant-bottom-right {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   grid-template-rows: minmax(0, 0.86fr) auto;
   gap: 0.34rem;
-  height: 100%;
+
+  height: 200px;
   align-content: stretch;
 }
 
@@ -390,6 +409,7 @@
   min-height: 0;
   overflow: hidden;
 }
+/* syam */
 
 
 
@@ -889,8 +909,10 @@
 
 
 .collect-stats strong {
-  color: #000000;
+  text-align: left;
+  color: #101010;
   font-weight: 700;
+
 }
 
 
@@ -1051,7 +1073,7 @@
   display: flex;
   justify-content: space-between;
   align-items: center;
-  gap: 0.7rem;
+  /* gap: 0.7rem; */
 }
 
 .accountant-ticket-header {
@@ -1545,7 +1567,7 @@
 }
 .accountant-progress-ring {
   --size: 2.55rem;
-  --thickness: 4px;
+  /* --thickness: 4px; */
 
   width: var(--size);
   height: var(--size);
@@ -1594,6 +1616,8 @@
 }
 
 .collect-stats p {
+  justify-content: space-between;
+
   margin: 0;
   display: flex;
   gap: 0.22rem;
@@ -1632,7 +1656,7 @@
 }
 
 .accountant-collect-card .accountant-progress-ring-inner {
-  font-size: 1rem;
+  font-size: 0.9rem;
 }
 
 .accountant-collect-card .collect-stats p {
@@ -1827,7 +1851,7 @@
   margin: 0;
   font-size: 0.84rem;
   font-weight: 700;
-  color: #000000;
+  color: #ffffff;
 }
 
 .accountant-income-card p,
@@ -1974,7 +1998,7 @@
 
   .accountant-grid {
     grid-template-rows: auto;
-    overflow: visible;
+    overflow: scroll;
   }
 
   .accountant-topbar {
@@ -2056,6 +2080,98 @@
   }
 }
 
+/* syam */
+
+.accountant-outstanding-card {
+  padding: 8px;
+  border-radius: 14px;
+}
+
+
+.accountant-card-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+
+.accountant-card-header .Heading {
+  font-size: 13px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+
+.accountant-card-filters {
+  display: flex;
+  gap: 6px;
+  overflow-x: auto;
+  flex-wrap: nowrap;
+}
+
+.accountant-outstanding-search,
+.accountant-card-filter {
+  height: 30px;
+  min-width: 70px;
+  font-size: 11px;
+  padding: 0 2px;
+  border-radius: 8px;
+}
+
+
+.accountant-student-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+
+.accountant-student-mini {
+  padding: 8px;
+  border-radius: 10px;
+  min-height: auto;
+}
+
+.accountant-student-avatar-wrap img {
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+}
+
+
+.accountant-student-mini h4 {
+  font-size: 12px;
+  margin: 4px 0 2px;
+}
+
+
+.accountant-student-mini p {
+  font-size: 10px;
+  margin: 0;
+}
+
+
+.accountant-student-mini span {
+  font-size: 9px !important;
+  padding: 2px 5px !important;
+}
+
+
+.accountant-add-circle {
+  width: 34px;
+  height: 34px;
+  font-size: 18px;
+}
+
+.accountant-add-student span {
+  font-size: 10px;
+}
+
+
+
+/* syam */
 
 @media (min-width: 921px) and (max-width: 1200px) {
     html.accountant-dashboard-scroll-lock,
@@ -2087,7 +2203,7 @@
   .accountant-dashboard-home-page .accountant-dashboard-shell {
     height: 100%;
     min-height: 0;
-    overflow: clip;
+    overflow: hidden;
   }
 
   .accountant-dashboard-home-page .accountant-sidebar-strip {
@@ -2197,7 +2313,7 @@
   .accountant-dashboard-home-page .accountant-outstanding-card .accountant-card-header {
   flex-direction: row;
   align-items: center;
-  gap: 0.7rem;
+  gap: 0.1rem;
 }
 .accountant-dashboard-home-page .accountant-outstanding-card .accountant-card-filters {
   width: auto;
@@ -2240,8 +2356,9 @@
   }
 
   .accountant-dashboard-home-page .accountant-student-mini p {
-    font-size: 0.46rem;
-    line-height: 1.08;
+    font-size: 0.66rem;
+    line-height: 18;
+  
   }
 
   .accountant-dashboard-home-page .accountant-ticket-users {
@@ -2322,6 +2439,7 @@
     line-height: 1;
   }
 }
+
 
 @media (min-width: 749px) and (max-width: 1024px) {
   .accountant-outstanding-card {
@@ -2694,6 +2812,12 @@
   .frontdesk-dashboard-page .accountant-main-area,
   .accountant-dashboard-page .accountant-grid,
   .frontdesk-dashboard-page .accountant-grid {
+    height: auto !important;
+    max-height: none !important;
+    overflow: visible !important;
+  }
+
+    .accountant-grid {
     height: auto !important;
     max-height: none !important;
     overflow: visible !important;

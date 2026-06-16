@@ -275,7 +275,10 @@ const fetchDynamicOptions = async () => {
     };
         const [isLoading, setIsLoading] = useState(false); 
       const combinedOptions = { ...predefinedOptions, ...dynamicOptions };
-
+const isFormValid =
+  expenseCategory &&
+  specificExpenseName &&
+  description.trim();
     return (
         <div style={styles.formContainer}>
            
@@ -371,8 +374,17 @@ className="btn-dropdown-FeesManagement"   style={{ width: '100%' }}
                 </div>
 
                 {/* Submit Button */}
-                <button type="submit"    className="btn-solid"
->Next: Add Payment</button>
+<button
+  type="submit"
+  className="btn-solid"
+  disabled={!isFormValid}
+  style={{
+    opacity: isFormValid ? 1 : 0.5,
+    cursor: isFormValid ? "pointer" : "not-allowed"
+  }}
+>
+  Next: Add Payment
+</button>
             </form>
         </div>
     );

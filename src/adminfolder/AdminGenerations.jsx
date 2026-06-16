@@ -11,6 +11,10 @@ import "./AdminEventsAndMeetings.css";
 import EditableProfileMenu from "../shared/EditableProfileMenu.jsx";
 import ErrorPopup from "../shared/ErrorPopup";
 import AdmissionTimetableNew from "../shared/AdmissionTimetableNew.jsx";
+import CompactTextTabs from "../shared/CompactTextTabs.jsx";
+import InstituteBrand from "../shared/InstituteBrand.jsx";
+import { resolveInstituteDisplayName } from "../shared/instituteNameUtils";
+import { getUserDisplayName } from "../shared/userDisplayName";
 
 import abcLogo from "../assets/logoab.png";
 import dashboardIcon from "../assets/Dashboard.png";
@@ -881,24 +885,32 @@ const AdminGenerations = () => {
     fetch(`https://cleezoclass.com:4000/api/institute?dbName=${schoolCode}`)
       .then((res) => res.json())
       .then((data) => {
-        const resolvedSchoolName = String(
-          data?.institute_name ||
-          data?.instituteName ||
-          data?.school_name ||
-          data?.name ||
-          data?.schoolName ||
-          "Unknown School"
-        ).trim();
+        const resolvedSchoolName = resolveInstituteDisplayName({
+          apiInstituteName: data?.institute_name || data?.instituteName || data?.school_name || data?.name || data?.schoolName,
+          storedSchoolName: localStorage.getItem("schoolName"),
+          storedInstituteName: localStorage.getItem("instituteName"),
+          schoolCode,
+          fallback: "Unknown School",
+        });
         const resolvedSchoolAddress = String(data?.address || data?.schoolAddress || data?.instituteAddress || "").trim();
         const normalizedLogo = normalizeInstituteLogo(data?.logo);
         setSchoolName(resolvedSchoolName);
         setSchoolLogo(normalizedLogo || "/default-logo.png");
         localStorage.setItem("schoolName", resolvedSchoolName);
+        localStorage.setItem("instituteName", resolvedSchoolName);
         localStorage.setItem("schoolLogo", normalizedLogo || "/default-logo.png");
         localStorage.setItem("schoolAddress", resolvedSchoolAddress);
       })
       .catch(() => {
-        setSchoolName("Unknown School");
+        const fallbackSchoolName = resolveInstituteDisplayName({
+          storedSchoolName: localStorage.getItem("schoolName"),
+          storedInstituteName: localStorage.getItem("instituteName"),
+          schoolCode,
+          fallback: "Unknown School",
+        });
+        setSchoolName(fallbackSchoolName);
+        localStorage.setItem("schoolName", fallbackSchoolName);
+        localStorage.setItem("instituteName", fallbackSchoolName);
         setSchoolLogo("/default-logo.png");
       });
   }, [schoolCode]);
@@ -2105,8 +2117,11 @@ const AdminGenerations = () => {
             </div>
 
             <div className="dashboard-topbar-center accountant-topbar-center">
-              <img src={schoolLogo || "/default-logo.png"} alt={schoolName || "School Logo"} className="accountant-school-logo" />
-              <span style={{ fontWeight: 700, marginLeft: "0.4rem" }}>{schoolName || "Unknown School"}</span>
+              <InstituteBrand
+                logoSrc={schoolLogo || "/default-logo.png"}
+                logoAlt={schoolName || "School Logo"}
+                instituteName={schoolName || "Unknown School"}
+              />
             </div>
 
             <div className="dashboard-topbar-right accountant-topbar-right">
@@ -2120,56 +2135,19 @@ const AdminGenerations = () => {
           <div className="admin-events-content">
             <div className="admin-events-top">
                <div className="accountant-welcome-block">
-                <h2>Hi, Vinay!</h2>
+                <h2>Hi, {getUserDisplayName()}!</h2>
                 <p>Check Store Inventory,</p>
                 <p>Report Track to Class Teacher</p>
                 <p>Submit Building maintenance</p>
-                <div
-                  style={{
-                    display: "flex",
-                    alignItems: "center",
-                    gap: "0.5rem",
-                    marginTop: "0.55rem",
-                    flexWrap: "wrap",
-                  }}
-                >
-                  <button
-                    type="button"
-                    style={{
-                      padding: "0.32rem 0.68rem",
-                      borderRadius: "999px",
-                      border: "1px solid #94a3b8",
-                      background: location.pathname === "/AdminGenerations" ? "#0f172a" : "#ffffff",
-                      color: location.pathname === "/AdminGenerations" ? "#fff" : "#334155",
-                      fontWeight: 800,
-                      fontSize: "0.76rem",
-                      cursor: "pointer",
-                      boxShadow: location.pathname === "/AdminGenerations" ? "0 6px 16px rgba(15, 23, 42, 0.15)" : "0 2px 8px rgba(15, 23, 42, 0.08)",
-                      minWidth: "72px",
-                    }}
-                    onClick={() => navigate("/AdminGenerations")}
-                  >
-                    Reports
-                  </button>
-                  <button
-                    type="button"
-                    style={{
-                      padding: "0.32rem 0.68rem",
-                      borderRadius: "999px",
-                      border: "1px solid #94a3b8",
-                      background: location.pathname === "/AdmissionTimetableNew" ? "#0f172a" : "#ffffff",
-                      color: location.pathname === "/AdmissionTimetableNew" ? "#fff" : "#334155",
-                      fontWeight: 800,
-                      fontSize: "0.76rem",
-                      cursor: "pointer",
-                      boxShadow: location.pathname === "/AdmissionTimetableNew" ? "0 6px 16px rgba(15, 23, 42, 0.15)" : "0 2px 8px rgba(15, 23, 42, 0.08)",
-                      minWidth: "72px",
-                    }}
-                    onClick={() => navigate("/AdmissionTimetableNew")}
-                  >
-                    Timetable
-                  </button>
-                </div>
+                <CompactTextTabs
+                  activePath={location.pathname}
+                  onNavigate={navigate}
+                  tabs={[
+                    { path: "/AdminGenerations", label: "Reports" },
+                    { path: "/AdmissionTimetableNew", label: "Timetable" },
+                    // { path: "/AdminQuestionPaper", label: "QP" },
+                  ]}
+                />
               </div>
               <div className="admin-events-task accountant-card">
                 <div className="admin-events-task-header">
@@ -2222,11 +2200,11 @@ const AdminGenerations = () => {
                         ? "Store PO"
                         : "Live Chat"}
                   </h3>
-                  <div className="admin-events-chat-meta">
+                  <div className="accountant-card-filters">
                     {activeQuickPanel === "livechat" ? (
                       <button type="button" className="admin-events-create-btn" onClick={openLiveChatPopup}>+ Create New</button>
                     ) : null}
-                    <div className="admin-events-chat-count">
+                    <div className="accountant-feetype-count">
                       <strong>
                         {activeQuickPanel === "assistant"
                           ? assistantPanelItems.length
@@ -2291,10 +2269,6 @@ const AdminGenerations = () => {
                             <span>
                               Live Chat (P - T) - {formatChatDateTime(item.date, item.time)} - {item.party1_name || "Staff"} to {item.party2_student || "Student"}, {item.party2_class || "-"}{item.party2_section ? item.party2_section : ""}
                             </span>
-                            <div className="admin-events-chat-actions">
-                              <button type="button">▷</button>
-                              <button type="button">✕</button>
-                            </div>
                           </div>
                         ))
                       )}
@@ -2317,10 +2291,6 @@ const AdminGenerations = () => {
                             <span>
                               Live Chat (T - P) - {formatChatDateTime(item.date, item.time)} - {item.party1_name || "Staff"} to {item.party2_student || "Student"}, {item.party2_class || "-"}{item.party2_section ? item.party2_section : ""}
                             </span>
-                            <div className="admin-events-chat-actions">
-                              <button type="button">▷</button>
-                              <button type="button">✕</button>
-                            </div>
                           </div>
                         ))
                       )}
@@ -2663,6 +2633,86 @@ const AdminGenerations = () => {
                 disabled={submitting}
               >
                 {submitting ? "Saving..." : eventMeetingTab === "event" ? "Create Event" : "Create Meeting"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {popupType === "liveChat" && (
+        <div className="admin-events-modal-overlay" onClick={closePopup}>
+          <div className="admin-events-modal" onClick={(e) => e.stopPropagation()}>
+            <div className="admin-events-card-header">
+              <h3>Individual Chat Request</h3>
+              <button type="button" className="admin-events-modal-close" onClick={closePopup}>×</button>
+            </div>
+            <div className="admin-events-form-grid">
+              <select
+                className="admin-events-input"
+                value={liveChatForm.party1}
+                onChange={(e) => setLiveChatForm((prev) => ({ ...prev, party1: e.target.value }))}
+              >
+                <option value="">Party 1 Staff</option>
+                {party1List.map((item) => (
+                  <option key={item.id} value={item.name}>
+                    {item.name} ({item.user_type})
+                  </option>
+                ))}
+              </select>
+              <select
+                className="admin-events-input"
+                value={liveChatForm.className}
+                onChange={(e) => setLiveChatForm((prev) => ({ ...prev, className: e.target.value }))}
+              >
+                <option value="">Class</option>
+                {classOptions.map((item, index) => (
+                  <option key={`${item}-${index}`} value={String(item)}>
+                    {String(item)}
+                  </option>
+                ))}
+              </select>
+              <select
+                className="admin-events-input"
+                value={liveChatForm.section}
+                onChange={(e) => setLiveChatForm((prev) => ({ ...prev, section: e.target.value }))}
+                disabled={!liveChatForm.className}
+              >
+                <option value="">Section</option>
+                {sectionOptions.map((item, index) => (
+                  <option key={`${item}-${index}`} value={String(item)}>
+                    {String(item)}
+                  </option>
+                ))}
+              </select>
+              <select
+                className="admin-events-input"
+                value={liveChatForm.student}
+                onChange={(e) => setLiveChatForm((prev) => ({ ...prev, student: e.target.value }))}
+                disabled={!liveChatForm.className || !liveChatForm.section}
+              >
+                <option value="">Student</option>
+                {studentOptions.map((item, index) => (
+                  <option key={`${item?.id || index}`} value={item?.name || item?.student_name || ""}>
+                    {item?.name || item?.student_name || "Student"}
+                  </option>
+                ))}
+              </select>
+              <input
+                className="admin-events-input"
+                type="date"
+                value={liveChatForm.date}
+                onChange={(e) => setLiveChatForm((prev) => ({ ...prev, date: e.target.value }))}
+              />
+              <input
+                className="admin-events-input"
+                type="time"
+                value={liveChatForm.time}
+                onChange={(e) => setLiveChatForm((prev) => ({ ...prev, time: e.target.value }))}
+              />
+            </div>
+            <div className="admin-events-action-row">
+              <button type="button" className="admin-events-submit-btn" onClick={handleCreateLiveChatRequest}>
+                Create Chat Request
               </button>
             </div>
           </div>

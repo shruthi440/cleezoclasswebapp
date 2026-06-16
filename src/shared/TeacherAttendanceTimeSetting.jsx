@@ -4,14 +4,13 @@ import axios from "axios";
 import jsPDF from "jspdf";
 import html2canvas from "html2canvas";
 import "bootstrap/dist/css/bootstrap.min.css";
+import { AlarmClock, Presentation, TriangleAlert, UserCog } from "lucide-react";
 
-const AttendanceForms = () => {
-  const location = useLocation();
+const AttendanceForms =  ({ view = "both" }) => {
   const navigate = useNavigate();
 
-  const viewMode =
-    new URLSearchParams(location.search).get("view") || "both";
-
+  const viewMode = view;
+console.log("ATTENDANCE VIEW MODE ============================================", viewMode);
   const [dynamicLogoSrc, setDynamicLogoSrc] = useState("");
   const [dynamicSchoolCode, setDynamicSchoolCode] = useState("");
 
@@ -111,112 +110,262 @@ const AttendanceForms = () => {
 
   return (
     <>
-      {/* HEADER */}
-      <header
-        style={{
-          background: "#fff",
-          height: "90px",
-          display: "flex",
-          alignItems: "center",
-          padding: "0 20px",
-          boxShadow: "0 2px 5px rgba(0,0,0,0.1)",
-        }}
-      >
-        <img
-          src={dynamicLogoSrc || "/default-logo.png"}
-          alt="logo"
-          style={{ height: "60px" }}
-        />
-
-        <h3 style={{ margin: "0 auto" }}>
-          {dynamicSchoolCode.replace(/_/g, " ")} SCHOOL
-        </h3>
-      </header>
+  
 
       {/* MAIN */}
       <div
-        ref={dashboardRef}
-        className="container mt-4 d-flex flex-column flex-lg-row gap-4 justify-content-center"
+  ref={dashboardRef}
+  style={{
+    display: "flex",
+    flexWrap: "wrap",
+    justifyContent: "center",
+    alignItems: "stretch",
+    gap: "24px",
+    padding: "20px",
+    minHeight: "400px",
+  }}
+>
+  {viewMode !== "teacher" && (
+    <div
+      style={{
+        width: "420px",
+        background: "#ffffff",
+        borderRadius: "20px",
+        padding: "30px",
+        boxShadow: "0 10px 30px rgba(0,0,0,0.08)",
+        border: "1px solid #e5e7eb",
+      }}
+    >
+      <div
+        style={{
+          textAlign: "center",
+          marginBottom: "25px",
+        }}
       >
-        {/* ALERT TIME */}
-        {viewMode !== "teacher" && (
-          <div className="card p-4 shadow" style={{ maxWidth: "450px" }}>
-            <h5 className="text-center mb-3">
-              Set Attendance Notification Time
-            </h5>
+        <div
+          style={{
+            width: "70px",
+            height: "70px",
+            borderRadius: "50%",
+            background: "#dbeafe",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            margin: "0 auto 15px",
+            fontSize: "32px",
+          }}
+        >
+          <TriangleAlert size={34} color="#ff979f" />
+        </div>
 
-            <form onSubmit={handleSubmit}>
-              <input
-                type="time"
-                value={alertTime}
-                onChange={(e) => setAlertTime(e.target.value)}
-                className="form-control mb-3"
-                required
-              />
+        <h4
+          style={{
+            margin: 0,
+            fontWeight: "700",
+            color: "#1e293b",
+          }}
+        >
+          Student Alert Time
+        </h4>
 
-              <button className="btn btn-primary w-100">Submit</button>
-            </form>
-
-            {message && (
-              <p
-                className={`mt-2 ${
-                  message.includes("success") ? "text-success" : "text-danger"
-                }`}
-              >
-                {message}
-              </p>
-            )}
-          </div>
-        )}
-
-        {/* LOGIN / LOGOUT */}
-        {viewMode !== "student" && (
-          <div className="card p-4 shadow" style={{ maxWidth: "450px" }}>
-            <h5 className="text-center mb-3">
-              Set Login / Logout Time
-            </h5>
-
-            <form onSubmit={handleSubmit1}>
-              <input
-                type="time"
-                value={loginTime}
-                onChange={(e) => setLoginTime(e.target.value)}
-                className="form-control mb-2"
-                required
-              />
-
-              <input
-                type="time"
-                value={logoutTime}
-                onChange={(e) => setLogoutTime(e.target.value)}
-                className="form-control mb-3"
-                required
-              />
-
-              <button className="btn btn-primary w-100">Submit</button>
-            </form>
-
-            {message1 && (
-              <p
-                className={`mt-2 ${
-                  message1.includes("success")
-                    ? "text-success"
-                    : "text-danger"
-                }`}
-              >
-                {message1}
-              </p>
-            )}
-          </div>
-        )}
+        <p
+          style={{
+            color: "#64748b",
+            fontSize: "14px",
+            marginTop: "8px",
+          }}
+        >
+          Configure attendance notification time
+        </p>
       </div>
 
-      {/* DOWNLOAD BUTTON */}
-      <div className="text-center mt-4">
-        <button onClick={handleDownload} className="btn btn-success">
-          Download PDF
+      <form onSubmit={handleSubmit}>
+        <input
+          type="time"
+          value={alertTime}
+          onChange={(e) => setAlertTime(e.target.value)}
+          required
+          style={{
+            width: "100%",
+            padding: "14px",
+            borderRadius: "12px",
+            border: "1px solid #cbd5e1",
+            marginBottom: "20px",
+            fontSize: "15px",
+          }}
+        />
+
+        <button
+          type="submit"
+          style={{
+            width: "100%",
+            background: "#f9b1b8",
+            color: "#fff",
+            border: "none",
+            borderRadius: "12px",
+            padding: "14px",
+            fontWeight: "600",
+            cursor: "pointer",
+          }}
+        >
+          Save Alert Time
         </button>
+      </form>
+
+      {message && (
+        <div
+          style={{
+            marginTop: "15px",
+            padding: "10px",
+            borderRadius: "10px",
+            background: "#f8fafc",
+            textAlign: "center",
+          }}
+        >
+          {message}
+        </div>
+      )}
+    </div>
+  )}
+
+  {viewMode !== "student" && (
+    <div
+      style={{
+        width: "420px",
+        background: "#ffffff",
+        borderRadius: "20px",
+        padding: "30px",
+        boxShadow: "0 10px 30px rgba(0,0,0,0.08)",
+        border: "1px solid #e5e7eb",
+      }}
+    >
+      <div
+        style={{
+          textAlign: "center",
+          marginBottom: "25px",
+        }}
+      >
+        <div
+          style={{
+            width: "70px",
+            height: "70px",
+            borderRadius: "50%",
+            background: "#ffffff87",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            margin: "0 auto 15px",
+            fontSize: "32px",
+          }}
+        >
+          <UserCog size={34} color="#f9b1b8" />
+        </div>
+
+        <h4
+          style={{
+            margin: 0,
+            fontWeight: "700",
+            color: "#1e293b",
+          }}
+        >
+          Teacher Attendance Time
+        </h4>
+
+        <p
+          style={{
+            color: "#64748b",
+            fontSize: "14px",
+            marginTop: "8px",
+          }}
+        >
+          Configure login and logout timings
+        </p>
       </div>
+
+      <form onSubmit={handleSubmit1}>
+        <label
+          style={{
+            fontSize: "13px",
+            fontWeight: "600",
+            color: "#475569",
+          }}
+        >
+          Login Time
+        </label>
+
+        <input
+          type="time"
+          value={loginTime}
+          onChange={(e) => setLoginTime(e.target.value)}
+          required
+          style={{
+            width: "100%",
+            padding: "14px",
+            borderRadius: "12px",
+            border: "1px solid #cbd5e1",
+            marginTop: "6px",
+            marginBottom: "15px",
+          }}
+        />
+
+        <label
+          style={{
+            fontSize: "13px",
+            fontWeight: "600",
+            color: "#475569",
+          }}
+        >
+          Logout Time
+        </label>
+
+        <input
+          type="time"
+          value={logoutTime}
+          onChange={(e) => setLogoutTime(e.target.value)}
+          required
+          style={{
+            width: "100%",
+            padding: "14px",
+            borderRadius: "12px",
+            border: "1px solid #cbd5e1",
+            marginTop: "6px",
+            marginBottom: "20px",
+          }}
+        />
+
+        <button
+          type="submit"
+          style={{
+            width: "100%",
+            background: "#f89191",
+            color: "#fff",
+            border: "none",
+            borderRadius: "12px",
+            padding: "14px",
+            fontWeight: "600",
+            cursor: "pointer",
+          }}
+        >
+          Save Attendance Time
+        </button>
+      </form>
+
+      {message1 && (
+        <div
+          style={{
+            marginTop: "15px",
+            padding: "10px",
+            borderRadius: "10px",
+            background: "#f8fafc",
+            textAlign: "center",
+          }}
+        >
+          {message1}
+        </div>
+      )}
+    </div>
+  )}
+</div>
     </>
   );
 };
