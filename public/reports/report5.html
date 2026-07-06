@@ -1,0 +1,459 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Progress Report</title>
+<style data-inline-report-style="true">
+:root {
+  --ink: #1e2a36;
+  --muted: #6b7a89;
+  --line: #8aa1b7;
+  --line-soft: #c8d5e1;
+  --panel: #f7f9fc;
+  --head: #2a4f7b;
+  --head-soft: #d9e4f1;
+  --accent: #1b6fb9;
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0 !important;
+  padding: 24px !important;
+  font-family: "Segoe UI", Arial, sans-serif;
+  color: var(--ink);
+  background: #d3d9e1;
+}
+
+.report-card,
+.report,
+.container {
+  width: 1100px !important;
+  max-width: 1100px !important;
+  min-height: auto !important;
+  margin: 0 auto !important;
+  background: #fff;
+  border: 6px solid #b9c2cc;
+  border-radius: 10px;
+  box-shadow: 0 10px 24px rgba(0,0,0,0.12);
+  padding: 18px 18px 22px 18px;
+  position: relative;
+}
+
+.report-card {
+  min-width: 1100px !important;
+}
+
+.report-card::before,
+.report::before,
+.container::before {
+  content: "";
+  position: absolute;
+  inset: 6px;
+  border: 2px solid #3a6fb0;
+  border-radius: 6px;
+  pointer-events: none;
+}
+
+.header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding-bottom: 10px;
+  border-bottom: 2px solid #99aac2;
+  margin-bottom: 10px;
+}
+
+.logo {
+  width: 64px;
+  height: 64px;
+  object-fit: contain;
+  border-radius: 6px;
+  background: #fff;
+  border: 1px solid var(--line-soft);
+  padding: 4px;
+}
+
+.school-details,
+.school-info,
+.header-left {
+  flex: 1;
+  text-align: center;
+}
+
+.school-name,
+.school-info h1,
+.header-left h1 {
+  margin: 0;
+  font-size: 22px;
+  font-weight: 800;
+  color: var(--head);
+  letter-spacing: 0.5px;
+}
+
+.sub-title,
+.sub-header,
+.header-left h2 {
+  margin: 4px 0 0 0;
+  font-size: 12px;
+  color: var(--muted);
+  font-weight: 600;
+}
+
+.header-right {
+  text-align: right;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.section-title,
+.box-title {
+  margin-top: 12px;
+  font-size: 13px;
+  font-weight: 800;
+  color: var(--head);
+  background: #e7edf5;
+  padding: 6px 10px;
+  border: 1px solid #9db2cc;
+  border-radius: 4px;
+}
+
+.student-info {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+  margin-top: 10px;
+  font-size: 12px;
+}
+
+.student-info div,
+.student-info p {
+  margin: 0;
+  padding: 6px 8px;
+  background: var(--panel);
+  border: 1px solid var(--line-soft);
+  border-radius: 4px;
+}
+
+table,
+.table-style,
+.info-table,
+.marks-table,
+.attendance-table,
+.scholistc-table,
+.scholastic-table,
+.grading-table,
+.term-table {
+  width: 100%;
+  border-collapse: collapse;
+  margin-top: 8px;
+  font-size: 12px;
+}
+
+th, td {
+  border: 1px solid #5f7088;
+  padding: 6px 8px;
+  text-align: center;
+}
+
+th {
+  background: #355c9a;
+  color: #fff;
+  font-weight: 700;
+}
+
+tr:nth-child(even) td {
+  background: #f9fbfe;
+}
+
+.remarks,
+.comments,
+.remark-box {
+  border: 1px solid var(--line-soft);
+  padding: 8px;
+  min-height: 60px;
+  background: #fff;
+}
+
+.row,
+.row-flex,
+.analysis-row,
+.graph-grade-row,
+.signature-container,
+.signature-section,
+.flex,
+.term-container,
+.graphs {
+  display: flex;
+  gap: 12px;
+}
+
+.box,
+.small-box,
+.analysis-box,
+.graph-box,
+.grade-box,
+.left,
+.right,
+.attendance,
+.grade-box,
+.notes,
+.grading {
+  flex: 1;
+  min-width: 0;
+}
+
+.signature-box,
+.sign-box,
+.signature {
+  flex: 1;
+  text-align: center;
+  font-size: 12px;
+}
+
+.signature-line,
+.sign-line {
+  margin-top: 24px;
+  border-top: 1px solid var(--line);
+  padding-top: 6px;
+}
+
+.footer {
+  margin-top: 16px;
+  padding-top: 10px;
+  border-top: 2px solid var(--line-soft);
+  text-align: center;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.info-label {
+  background: var(--head);
+  color: #fff;
+  font-weight: 700;
+}
+
+@media (max-width: 1024px) {
+  body { padding: 12px; }
+  .header { flex-direction: column; text-align: center; }
+  .student-info { grid-template-columns: repeat(2, 1fr); }
+  .row,
+  .row-flex,
+  .analysis-row,
+  .graph-grade-row,
+  .signature-container,
+  .signature-section,
+  .flex,
+  .term-container,
+  .graphs { flex-direction: column; }
+}
+
+@media (max-width: 640px) {
+  body { padding: 8px; }
+  .school-name,
+  .school-info h1,
+  .header-left h1 { font-size: 18px; }
+  .sub-title,
+  .sub-header { font-size: 11px; }
+  .student-info { grid-template-columns: 1fr; }
+  th, td { font-size: 11px; padding: 4px; }
+}
+
+@media print {
+  html, body {
+    margin: 0 !important;
+    padding: 0 !important;
+    background: #ffffff !important;
+  }
+  .report-card,
+  .report,
+  .container {
+    width: 100% !important;
+    max-width: 100% !important;
+    box-shadow: none !important;
+    border-radius: 0 !important;
+  }
+  .report-graph {
+    height: 220px;
+  }
+}
+
+.student-photo-box{width:80px;height:100px;border:1px solid var(--line-soft);background:#fff;display:flex;align-items:center;justify-content:center;}
+.student-photo-box img{width:100%;height:100%;object-fit:cover;}
+
+/* Report Header (OverallReport-style) */
+.report-header {
+  display: grid;
+  grid-template-columns: 90px 1fr 90px;
+  gap: 12px;
+  align-items: center;
+  padding-bottom: 10px;
+  border-bottom: 2px solid var(--line-soft);
+  margin-bottom: 10px;
+}
+.report-header-logo img,
+.report-header-photo img {
+  width: 90px;
+  height: 90px;
+  object-fit: cover;
+  border: 1px solid var(--line-soft);
+  border-radius: 6px;
+  background: #fff;
+}
+.report-header-center { text-align: center; }
+.report-header-school { font-weight: 800; font-size: 18px; color: var(--head); }
+.report-header-info {
+  margin-top: 6px;
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 6px;
+  font-size: 11px;
+}
+.report-header-info div {
+  padding: 4px 6px;
+  border: 1px solid var(--line-soft);
+  background: var(--panel);
+  border-radius: 4px;
+}
+
+.report-graph {
+  margin-top: 10px;
+  padding: 6px 8px;
+  border: 1px solid #9db2cc;
+  background: #f7f9fc;
+  height: 200px;
+}
+
+@media (max-width: 1024px) {
+  .report-header { grid-template-columns: 1fr; text-align: center; }
+  .report-header-info { grid-template-columns: repeat(2, 1fr); }
+}
+
+@media (max-width: 640px) {
+  .report-header-info { grid-template-columns: 1fr; }
+}
+</style>
+<style data-report-theme="true">
+:root { --head: #519eeb; --head-soft: #d9edf7; --line: #9fb9c7; --line-soft: #c5d6e0; --panel: #f4f9fb; --accent: #1d6fa5; }
+.header, .report-header { border-bottom-color: #9fb9c7; }
+th { background: #fff !important; }
+.section-title, .box-title { background: #d9edf7 !important; border-color: #9fb9c7 !important; color: #2c3e50 !important; }
+
+</style>
+</head>
+
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+<body>
+<div class="container">
+
+<!-- HEADER (OverallReport style) -->
+<div class="report-header">
+  <div class="report-header-logo">
+    <img src="logo.png" class="logo" data-school-logo alt="School Logo">
+  </div>
+  <div class="report-header-center">
+    <div class="report-header-school" data-school-name>ABC PUBLIC SCHOOL</div>
+    <div class="sub-title">Progress Report 2026</div>
+    <div class="report-header-info">
+      <div><strong>NAME:</strong> <span data-student-name>John Doe</span></div>
+      <div><strong>CLASS:</strong> <span data-student-class>5</span></div>
+      <div><strong>SECTION:</strong> <span data-student-section>A</span></div>
+      <div><strong>FATHER:</strong> <span data-student-father>-</span></div>
+      <div><strong>DOB:</strong> <span data-student-dob>-</span></div>
+      <div><strong>ADMISSION:</strong> <span data-student-admission>-</span></div>
+      <div><strong>PHONE:</strong> <span data-student-phone>-</span></div>
+      <div><strong>AADHAR:</strong> <span data-student-aadhar>-</span></div>
+      <div><strong>ADDRESS:</strong> <span data-student-address>-</span></div>
+    </div>
+  </div>
+  <div class="report-header-photo">
+    <img data-student-photo alt="Student Photo">
+  </div>
+</div>
+
+<!-- SCHOLASTIC -->
+<div class="section-title">Academic Performance</div>
+<table class="marks-table" data-academic-table>
+<thead>
+<tr>
+<th>Subject</th>
+<th>FA1</th>
+<th>FA2</th>
+<th>FA3</th>
+<th>FA4</th>
+<th>SA1</th>
+<th>SA2</th>
+<th>Total</th>
+</tr>
+</thead>
+<tbody>
+<tr><td colspan="8">No data</td></tr>
+</tbody>
+</table>
+
+<!-- CO SCHOLASTIC + ATTENDANCE -->
+<div class="row">
+
+<div class="left">
+<div class="section-title">CO-SCHOLASTIC ACTIVITIES</div>
+<table>
+<tr><th>Activity</th><th>Grade</th></tr>
+<tr><td>Art</td><td>A</td></tr>
+<tr><td>Sports</td><td>B</td></tr>
+<tr><td>Music</td><td>A</td></tr>
+</table>
+</div>
+
+<div class="right">
+<div class="section-title">ATTENDANCE</div>
+<table>
+<tr><td>Total Days</td><td>220</td></tr>           
+<tr><td>Present</td><td>210</td></tr>
+<tr><td>Absent</td><td>10</td></tr>
+</table>
+</div>
+
+</div>
+
+<div class="section-title">Teacher's Remark</div>
+<div style="border:1px solid rgb(11, 10, 10); padding:8px;">
+Good performance. Keep working hard to achieve higher grades. 
+
+</div>
+
+<!-- GRADING SCALE + GRAPH -->
+<div class="row">
+
+<div class="left">
+<div class="section-title">GRADING SCALE</div>
+<table>
+<tr><th>Marks</th><th>Grade</th></tr>
+<tr><td>70</td><td>A2</td></tr>
+<tr><td>80</td><td>A1</td></tr>
+
+</table>
+</div>
+
+<div class="right">
+<div class="section-title">PERFORMANCE GRAPH</div>
+<canvas id="performance-chart" height="150"></canvas>
+</div>
+
+</div>
+
+<!-- FOOTER -->
+<div class="footer">
+<div class="signature">_________<br>Teacher</div>
+<div class="signature">_________<br>Principal</div>
+<div class="signature">_________<br>Parent</div>
+</div>
+
+</div>
+
+<!-- GRAPH SCRIPT -->
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+<script src="./reportDataBridge.js"></script>
+</body>
+</html>

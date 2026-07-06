@@ -1,0 +1,237 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>ID Card Template 5</title>
+  <style>
+    :root{--navy:#153a6d;--cyan:#2eb7cf;--green:#1f8f63;--ink:#10233b;--muted:#5c7086;--line:#dbe4f0}
+    *{box-sizing:border-box}
+    html,body{width:100%;height:100%;overflow:hidden}
+    body{
+      margin:0;
+      font-family:Arial,Helvetica,sans-serif;
+      color:var(--ink);
+      background:linear-gradient(180deg,#dfe9f6,#eff5fb);
+    }
+    .page{
+      width:min(100%, 540px);
+      min-height:460px;
+      margin:0 auto;
+      padding:6px 12px 8px;
+      display:grid;
+      place-items:center;
+      overflow:hidden;
+    }
+    .pair{
+      display:grid;
+      grid-template-columns:repeat(2, minmax(0, 1fr));
+      gap:12px;
+      align-items:start;
+      margin-top:-10px;
+    }
+    .lanyard{
+      width:78px;
+      height:56px;
+      margin:0 auto 4px;
+      position:relative;
+    }
+    .lanyard:before{
+      content:"";
+      position:absolute;
+      left:50%;
+      top:0;
+      transform:translateX(-50%);
+      width:12px;
+      height:26px;
+      background:#2a2a2a;
+      border-radius:0 0 8px 8px;
+    }
+    .lanyard:after{
+      content:"";
+      position:absolute;
+      left:50%;
+      top:18px;
+      transform:translateX(-50%);
+      width:60px;
+      height:24px;
+      border-top:8px solid #2a2a2a;
+      border-left:8px solid transparent;
+      border-right:8px solid transparent;
+      border-radius:0 0 14px 14px;
+    }
+    .card{
+      width:100%;
+      max-width:192px;
+      min-height:286px;
+      border-radius:14px;
+      overflow:hidden;
+      background:#fff;
+      border:1px solid var(--line);
+      box-shadow:0 18px 36px rgba(19,49,92,.18);
+      position:relative;
+    }
+    .card:before{
+      content:"";
+      position:absolute;
+      inset:0;
+      background:
+        linear-gradient(135deg,transparent 0 34%,rgba(46,183,207,.16) 34% 42%,transparent 42% 100%),
+        linear-gradient(180deg,#fff 0,#fbfdff 100%);
+      pointer-events:none;
+    }
+    .top{
+      background:linear-gradient(180deg,var(--navy),#0d2a57);
+      color:#fff;
+      padding:8px 8px 10px;
+      text-align:center;
+      position:relative;
+      z-index:1;
+    }
+    .school{font-size:9px;font-weight:700}
+    .mini{font-size:7px;opacity:.9;letter-spacing:.04em}
+    .photo{
+      width:62px;
+      height:76px;
+      margin:8px auto 0;
+      border-radius:10px;
+      overflow:hidden;
+      border:4px solid #eaf1fb;
+      background:#dfe8f4;
+      box-shadow:0 10px 18px rgba(18,50,92,.12);
+      position:relative;
+      z-index:1;
+    }
+    .photo img{width:100%;height:100%;object-fit:cover;display:block}
+    .name{
+      text-align:center;
+      font-size:13px;
+      font-weight:700;
+      margin-top:6px;
+      position:relative;
+      z-index:1;
+    }
+    .role{
+      text-align:center;
+      font-size:8px;
+      color:var(--cyan);
+      font-weight:700;
+      letter-spacing:.08em;
+      margin-top:2px;
+      position:relative;
+      z-index:1;
+    }
+    .body{
+      padding:6px 10px 10px;
+      position:relative;
+      z-index:1;
+    }
+    .row{
+      font-size:8px;
+      line-height:1.3;
+      color:#30465f;
+      margin-top:4px;
+    }
+    .row strong{color:var(--ink)}
+    .band{
+      margin-top:6px;
+      height:8px;
+      border-radius:999px;
+      background:linear-gradient(90deg,var(--cyan),var(--green));
+    }
+    .back{
+      margin-top:6px;
+      min-height:286px;
+      border-top:5px solid var(--cyan);
+    }
+    .back .head{
+      padding:6px 8px;
+      background:#f8fbff;
+      font-size:9px;
+      font-weight:700;
+      color:#1d3557;
+    }
+    .back .body{
+      padding-top:8px;
+      font-size:8px;
+      line-height:1.3;
+    }
+    .barcode{
+      height:40px;
+      margin-top:6px;
+      border-radius:8px;
+      background:
+        repeating-linear-gradient(90deg,#153a6d 0 3px,transparent 3px 6px),
+        linear-gradient(180deg,#fff,#e9eef6);
+      border:1px solid #d3deeb;
+    }
+  </style>
+</head>
+<body>
+  <div class="page">
+    <div class="pair">
+      <div>
+        <div class="lanyard"></div>
+        <section class="card">
+          <div class="top">
+            <div class="school" data-school>COMPANY LOGO</div>
+            <div class="mini">STUDENT / STAFF BADGE</div>
+          </div>
+          <div class="photo"><img data-photo alt="Student photo" hidden></div>
+          <div class="name" data-name>Student Name</div>
+          <div class="role">ID CARD</div>
+          <div class="body">
+            <div class="row">Class: <strong data-class>--</strong> | Sec <strong data-section>--</strong></div>
+            <div class="row">Admission No: <strong data-admission>--</strong></div>
+            <div class="row">Roll No: <strong data-roll>--</strong></div>
+            <div class="row">Parent: <strong data-parent>--</strong></div>
+            <div class="row">Blood Group: <strong data-blood>--</strong></div>
+          </div>
+        </section>
+      </div>
+      <div>
+        <div class="lanyard"></div>
+        <section class="card back">
+          <div class="head">Back Side / Contact</div>
+          <div class="body">
+            <div>Phone: <strong data-phone>--</strong></div>
+            <div>Address: <strong data-address>--</strong></div>
+            <div>Emergency: <strong data-emergency>--</strong></div>
+            <div>Transport: <strong data-route>--</strong></div>
+            <div class="barcode"></div>
+          </div>
+        </section>
+      </div>
+    </div>
+  </div>
+  <script>
+    const p = new URLSearchParams(location.search);
+    const set = (sel, val) => document.querySelectorAll(sel).forEach((n) => (n.textContent = val || "--"));
+    const img = p.get("photo");
+    if (img) {
+      const el = document.querySelector("[data-photo]");
+      if (el) {
+        el.src = img;
+        el.hidden = false;
+      }
+    }
+    set("[data-school]", p.get("school"));
+    set("[data-name]", p.get("name"));
+    set("[data-class]", p.get("className"));
+    set("[data-section]", p.get("section"));
+    set("[data-admission]", p.get("admissionNo"));
+    set("[data-roll]", p.get("rollNo"));
+    set("[data-blood]", p.get("bloodGroup"));
+    set("[data-phone]", p.get("phone"));
+    set("[data-parent]", p.get("parent"));
+    set("[data-route]", p.get("route"));
+    set("[data-address]", p.get("address"));
+    set("[data-emergency]", p.get("emergency"));
+    if (p.get("print") === "1") {
+      window.addEventListener("load", () => setTimeout(() => window.print(), 250));
+      window.addEventListener("afterprint", () => window.close());
+    }
+  </script>
+  <script src="./idcard-common.js"></script>
+</body>
+</html>

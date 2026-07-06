@@ -1,0 +1,372 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Id Card 14</title>
+<style>
+
+body{
+    margin:0;
+    background:#c9d9ea;
+    min-height:100vh;
+    display:flex;
+    justify-content:center;
+    align-items:center;
+    padding:24px;
+    font-family:Arial,sans-serif;
+}
+
+.wrapper{
+    display:flex;
+    gap:45px;
+    flex-wrap:wrap;
+    justify-content:center;
+}
+
+/* plastic holder */
+
+.card-holder{
+    width:300px;
+    height:440px;
+    background:#eef1f4;
+    border:6px solid #ffffff;
+    border-radius:14px;
+    padding:8px;
+    position:relative;
+    box-shadow:0 10px 20px rgba(60,85,110,.32);
+}
+
+
+/* inner card */
+
+.id-card{
+    width:100%;
+    height:100%;
+    background:white;
+    position:relative;
+    overflow:hidden;
+    border-radius:10px;
+}
+
+/* header curves */
+
+.top-design{
+    width:100%;
+    height:104px;
+    position:absolute;
+    top:0;
+    left:0;
+    z-index:1;
+}
+
+/* logo */
+
+.school-logo{
+    width:50px;
+    height:50px;
+    position:relative;
+    margin:45px auto 0;
+    z-index:5;
+    left: 20px;
+   
+}
+
+.logo img{
+    width:100%;
+   
+}
+
+.school-name{
+    position:relative;
+    z-index:5;
+    text-align:center;
+    margin-top:3px;
+    color:#7c243b;
+    font-size:14px;
+    font-weight:700;
+    text-transform:uppercase;
+}
+
+/* image */
+
+.photo{
+    width:90px;
+    height:96px;
+    border:2px solid #9b2041;
+    border-radius:12px;
+    overflow:hidden;
+    margin:14px auto 10px;
+    position:relative;
+    z-index:5;
+}
+
+.photo img{
+    width:100%;
+    height:100%;
+    object-fit:cover;
+}
+
+
+/* text */
+
+.student-name{
+    text-align:center;
+    color:#7c243b;
+    font-size:22px;
+    font-weight:700;
+    margin-top:8px;
+}
+
+.role{
+    text-align:center;
+    color:#666;
+    font-size:13px;
+    margin-top:2px;
+}
+
+.student-details{
+    width:220px;
+    margin:11px auto 0;
+    position:relative;
+    z-index:5;
+}
+
+.detail-row{
+    display:grid;
+    grid-template-columns:82px 8px 1fr;
+    gap:3px;
+    font-size:10px;
+    line-height:1.25;
+    margin-bottom:2px;
+    color:#111;
+}
+
+.detail-row span:first-child{
+    font-weight:700;
+}
+
+.detail-row span:last-child{
+    overflow-wrap:anywhere;
+}
+
+/* footer wave */
+
+.bottom-wave{
+    width:360px;
+    height:104px;
+    background:#717575;
+    clip-path:ellipse(60% 42% at 36% 100%);
+    position:absolute;
+    bottom:-16px;
+    left:-34px;
+    z-index:1;
+}
+
+
+/* back */
+
+.back-content{
+    margin-top:118px;
+    text-align:center;
+    padding:0 28px;
+    line-height:1.35;
+    position:relative;
+    z-index:5;
+}
+
+.back-title{
+    color:#7c243b;
+    font-size:20px;
+    font-weight:700;
+    margin-bottom:10px;
+    text-transform:uppercase;
+}
+
+.instructions{
+    margin:0;
+    padding-left:18px;
+    text-align:left;
+    font-size:11px;
+    font-weight:700;
+}
+
+.instructions li{
+    margin-bottom:6px;
+}
+
+.school-details{
+    border-top:1px solid #c70545;
+    margin-top:12px;
+    padding-top:10px;
+    font-size:11px;
+}
+.rule{
+      font-size:12px;
+      line-height:1.25;
+      color:#51606d;
+    }
+.school-details strong{
+    display:block;
+    color:#7c243b;
+    font-size:13px;
+    margin-bottom:4px;
+}
+
+</style>
+</head>
+<body>
+
+<div class="wrapper">
+
+    <!-- FRONT -->
+
+    <div class="card-holder">
+
+        <div class="hole left"></div>
+        <div class="hole right"></div>
+
+        <div class="id-card">
+
+            <svg class="top-design" viewBox="0 0 320 104" preserveAspectRatio="none" aria-hidden="true">
+                <path d="M0 0 H150 C104 7 48 25 0 61 Z" fill="#c70545"/>
+            
+                <path d="M76 0 H320 V86 C263 48 208 23 151 14 C116 8 91 4 76 0 Z" fill="#ffa126"/>
+                
+                
+            </svg>
+
+           <div>
+                 <img data-school-logo alt="School logo" class="school-logo" hidden />
+            </div>
+
+            <div class="school-name"data-school> school name </div>
+                
+           
+
+           <div class="photo"><img data-photo alt="Student photo" hidden></div>
+
+
+
+            <div class="role"data-name> Student</div>
+
+            <div class="student-details">
+
+ <div class="detail-row">
+                    <span>Father Name</span>
+                    <span>:</span>
+                    <strong data-parent>--</strong>
+                </div>
+
+                
+                <div class="detail-row">
+                    <span>Class</span>
+                    <span>:</span>
+                    <strong data-class>--</strong>
+                </div>
+                <div class="detail-row">
+                    <span>Roll No</span>
+                    <span>:</span>
+                     <strong data-roll>--</strong>
+                </div>
+                <div class="detail-row">
+                    <span>Date of Birth</span>
+                    <span>:</span>
+                     <strong data-dob>--</strong>
+                </div>
+                <div class="detail-row">
+                    <span>Mobile</span>
+                    <span>:</span>
+                     <strong data-parent mobile>--</strong>
+                </div>
+                <div class="detail-row">
+                    <span>Address</span>
+                    <span>:</span>
+                     <strong data-student-address>--</strong>
+                </div>
+            </div>
+
+            <div class="bottom-wave"></div>
+
+        </div>
+
+    </div>
+
+
+    <!-- BACK -->
+
+    <div class="card-holder">
+
+        <div class="hole left"></div>
+        <div class="hole right"></div>
+
+        <div class="id-card">
+
+            <svg class="top-design" viewBox="0 0 320 104" preserveAspectRatio="none" aria-hidden="true">
+                <path d="M0 0 H150 C104 7 48 25 0 61 Z" fill="#c70545"/>
+                
+                <path d="M76 0 H320 V86 C263 48 208 23 151 14 C116 8 91 4 76 0 Z" fill="#ffa126"/>
+                
+                
+            </svg>
+
+            <div class="back-content">
+
+                <div class="back-title">Instructions</div>
+
+                <ul class="instructions">
+                    <li>Wear this ID card during school hours.</li>
+                    <li>Do not bend, scratch, or damage this card.</li>
+                    <li>Lost cards should be reported to the office.</li>
+                    <li>This card is not transferable.</li>
+                </ul>
+
+                <div class="school-details" data-school-detais>
+                   
+                  
+                 <div class="rule">Phone: <strong data-phone>--</strong></div>
+          <div class="rule">email: <strong data-emergency>--</strong></div>
+          <div class="rule">Address: <strong data-address>--</strong></div>
+                </div>
+
+            </div>
+
+            <div class="bottom-wave"></div>
+
+        </div>
+
+    </div>
+
+</div>
+
+  <script>
+    const p = new URLSearchParams(location.search);
+    const set = (sel, val) => document.querySelectorAll(sel).forEach((n) => (n.textContent = val || "--"));
+    const img = p.get("photo");
+    if (img) {
+      const el = document.querySelector("[data-photo]");
+      if (el) {
+        el.src = img;
+        el.hidden = false;
+      }
+    }
+    set("[data-school]", p.get("school"));
+    set("[data-name]", p.get("name"));
+    set("[data-class]", p.get("className"));
+    set("[data-admission]", p.get("admissionNo"));
+    set("[data-roll]", p.get("rollNo"));
+    set("[data-blood]", p.get("bloodGroup"));
+    set("[data-dob]", p.get("dob"));
+    set("[data-phone]", p.get("phone"));
+    set("[data-parent]", p.get("parent"));
+    set("[data-route]", p.get("route"));
+    set("[data-address]", p.get("address"));
+    set("[data-emergency]", p.get("emergency"));
+    if (p.get("print") === "1") {
+      window.addEventListener("load", () => setTimeout(() => window.print(), 250));
+      window.addEventListener("afterprint", () => window.close());
+    }
+  </script>
+  <script src="./idcard-common.js"></script>
+</body>
+</html>

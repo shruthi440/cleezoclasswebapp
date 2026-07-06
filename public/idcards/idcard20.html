@@ -1,0 +1,362 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=280, initial-scale=1.0">
+    <title>ID Card 20</title>
+    <style>
+    body{
+    background:#1bb6b6;
+    display:flex;
+    justify-content:center;
+    align-items:center;
+    min-height:100vh;
+
+    transform: scale(0.6);
+    transform-origin: top center;
+}
+
+.model-id-card{
+    width:350px;
+    height:420px;
+    background:#fff;
+    border-radius:24px;
+    box-shadow:0 6px 24px rgba(0,0,0,0.18);
+    font-family:'Segoe UI',Arial,sans-serif;
+    position:relative;
+    overflow:hidden;
+    border:3px solid #e0e0e0;
+}
+
+/* Header */
+
+.model-id-header{
+    width:100%;
+    height:130px;
+    position:absolute;
+    top:-18px;
+    left:0;
+    z-index:1;
+    overflow:hidden;
+}
+
+.model-id-header-wave{
+    position:absolute;
+    top:-35px;
+    left:0;
+    width:100%;
+    height:130px;
+    z-index:2;
+}
+
+/* Footer */
+
+.model-id-footer-wave{
+    position:absolute;
+    bottom:0;
+    left:0;
+    width:100%;
+    height:60px;
+    z-index:1;
+}
+
+/* Content */
+
+.model-id-details{
+    margin:0 24px;
+    margin-top:10px;
+    color:#222;
+    font-weight:500;
+    position:relative;
+    z-index:10;
+}
+
+/* School */
+
+.school-header{
+    text-align:center;
+    margin-top:20px;
+    margin-bottom:15px;
+}
+
+.school-logo{
+    width:65px;
+    height:60px;
+    margin:0 auto 6px auto;
+}
+
+.school-logo img{
+    width:100%;
+    height:95%;
+    object-fit:contain;
+    display:block;
+}
+
+.school-name{
+    font-size:15px;
+    font-weight:bold;
+    color:#1565c0;
+    margin-bottom:15px;
+}
+
+/* Student */
+
+.photo{
+    width:90px;
+    height:95px;
+    background:#a8d5dc;
+    border:3px solid #444;
+    border-radius:8px;
+    margin:0 auto;
+}
+
+.student-name{
+    text-align:center;
+    font-size:22px;
+    font-weight:bold;
+    color:#1565c0;
+    margin-top:12px;
+    margin-bottom:18px;
+}
+
+/* Details rows */
+
+  .meta{
+      display:grid;
+    grid-template-columns:96px 10px minmax(0,1fr);
+    gap:4px;
+    align-items:start;
+    margin-bottom:5px;
+    font-size:13px;
+    line-height:1.15;
+     }
+.back-card{
+    margin-left:40px;
+}
+
+.back-content{
+    padding:120px 25px 90px;
+    text-align:center;
+}
+
+
+.back-title{
+    text-align:center;
+    color:#1565c0;
+    font-size:18px;
+    font-weight:bold;
+    margin-bottom:10px;
+}
+
+.back-content{
+    padding:65px 28px 90px;
+    text-align:center;
+    position:relative;
+    z-index:10;
+}
+
+.back-details{
+    border-top:2px solid #1976d2;
+    margin-top:35px;
+    padding-top:8px;
+    text-align:center;
+    font-size:16px;
+    line-height:1.25;
+    color: #1565c0;
+    font-weight:bold;
+}
+
+
+    
+.rule{
+      font-size:13px;
+      line-height:1.25;
+      color:#090909;
+      text-align:left;
+    }
+
+.back-section-title{
+    color:#1565c0;
+    font-size:15px;
+    font-weight:bold;
+    margin-top:25px;
+    margin-bottom:10px;
+}
+
+.instructions-list{
+    text-align:left;
+    font-size:14px;
+    line-height:1.6;
+    margin:0;
+    padding-left:20px;
+}
+
+.school-details{
+    line-height:1.8;
+    font-size:14px;
+}
+
+.back-header{
+    width:100%;
+    height:160px;
+    position:absolute;
+    top:-5px;
+    left:0;
+    overflow:hidden;
+    z-index:1;
+}
+
+.back-header .model-id-header-wave{
+    position:absolute;
+    top:-5px;
+    left:0;
+    width:100%;
+    height:150px;
+}
+
+    </style>
+</head>
+<body>
+    <div class="model-id-card">
+  <div class="model-id-header"></div>
+
+<svg class="model-id-header-wave" viewBox="0 0 280 60" fill="none" xmlns="http://www.w3.org/2000/svg">
+    <path d="M0,60 Q70,0 280,30 L280,0 L0,0 Z" fill="#1565c0"/>
+    <path d="M0,50 Q120,-10 280,20" stroke="#fff" stroke-width="4" fill="none"/>
+</svg>
+
+<div class="model-id-details">
+
+    <div class="school-header">
+
+    <div class="school-logo">
+    <img data-school-logo alt="School logo"  hidden />
+</div>
+
+    <div class="school-name"data-school>
+         School school-name
+    </div>
+
+    <div class="photo"><img data-photo alt="Student photo" hidden></div>
+
+<div class="student-name"data-name>
+    student name
+</div>
+
+</div>
+
+        <div class="meta">Class Name: <strong data-class>-</strong></div>
+          <div class="meta"> Roll No:<strong data-roll>-</strong></div>
+          <div class="meta">Father's Name: <strong data-parent>-</strong></div>
+         <div  class="meta">Blood Group: <strong data-blood>-</strong></div>
+            <div  class="meta">Address: <strong data-address>-</strong></div>
+        </div>
+
+
+        <svg class="model-id-footer-wave" viewBox="0 0 280 60" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <path d="M0,0 Q70,60 280,30 L280,60 L0,60 Z" fill="#1565c0"/>
+            <path d="M0,10 Q120,70 280,40" stroke="#fff" stroke-width="4" fill="none"/>
+        </svg>
+    </div>
+
+<div class="model-id-card back-card">
+
+    <!-- Header Wave -->
+    <div class="model-id-header">
+        <svg class="model-id-header-wave"
+             viewBox="0 0 280 60"
+             fill="none"
+             xmlns="http://www.w3.org/2000/svg">
+
+            <path d="M0,60 Q70,0 280,30 L280,0 L0,0 Z"
+                  fill="#1565c0"/>
+
+            <path d="M0,50 Q120,-10 280,20"
+                  stroke="#fff"
+                  stroke-width="4"
+                  fill="none"/>
+        </svg>
+    </div>
+
+    <!-- Back Content -->
+ <div class="back-content">
+
+    <div class="back-title">
+        SCHOOL ID CARD
+    </div>
+
+    <div class="back-section-title">
+        Instructions
+    </div>
+
+    <ul class="instructions-list">
+        <li>Carry ID card daily</li>
+        <li>Do not fold or damage card</li>
+        <li>Return if found</li>
+        <li>Show card when requested</li>
+    </ul>
+
+       <div class="back-details" >School details</div>
+           
+          <div class="rule">Phone: <strong data-phone>--</strong></div>
+         
+          <div class="rule">Address: <strong data-address>--</strong></div>
+
+</div>
+
+
+    <!-- Footer Wave -->
+     <div class="model-id-header back-header"></div>
+
+     <svg class="model-id-header-wave" viewBox="0 0 280 60" fill="none" xmlns="http://www.w3.org/2000/svg">
+    <path d="M0,60 Q70,0 280,30 L280,0 L0,0 Z" fill="#1565c0"/>
+    <path d="M0,50 Q120,-10 280,20" stroke="#fff" stroke-width="4" fill="none"/>
+</svg>
+
+    <svg class="model-id-footer-wave"
+         viewBox="0 0 280 60"
+         fill="none"
+         xmlns="http://www.w3.org/2000/svg">
+
+        <path d="M0,0 Q70,60 280,30 L280,60 L0,60 Z"
+              fill="#1565c0"/>
+
+        <path d="M0,10 Q120,70 280,40"
+              stroke="#fff"
+              stroke-width="4"
+              fill="none"/>
+    </svg>
+
+</div>
+
+ <script>
+    const p = new URLSearchParams(location.search);
+    const set = (sel, val) => document.querySelectorAll(sel).forEach((n) => (n.textContent = val || "--"));
+    const img = p.get("photo");
+    if (img) {
+      const el = document.querySelector("[data-photo]");
+      if (el) {
+        el.src = img;
+        el.hidden = false;
+      }
+    }
+    set("[data-school]", p.get("school"));
+    set("[data-name]", p.get("name"));
+    set("[data-class]", p.get("className"));
+    set("[data-admission]", p.get("admissionNo"));
+    set("[data-roll]", p.get("rollNo"));
+    set("[data-blood]", p.get("bloodGroup"));
+    set("[data-dob]", p.get("dob"));
+    set("[data-phone]", p.get("phone"));
+    set("[data-parent]", p.get("parent"));
+    set("[data-route]", p.get("route"));
+    set("[data-address]", p.get("address"));
+    set("[data-emergency]", p.get("emergency"));
+    if (p.get("print") === "1") {
+      window.addEventListener("load", () => setTimeout(() => window.print(), 250));
+      window.addEventListener("afterprint", () => window.close());
+    }
+  </script>
+  <script src="./idcard-common.js"></script>
+</body>
+</html>

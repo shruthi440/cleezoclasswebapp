@@ -1,0 +1,384 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=280, initial-scale=1.0">
+<title>Model ID Card 12</title>
+
+<style>
+*{
+    box-sizing:border-box;
+}
+
+body{
+    background:#dcdcdc;
+    display:flex;
+    justify-content:center;
+    align-items:center;
+    min-height:100vh;
+    margin:0;
+    font-family:Arial,sans-serif;
+}
+
+.id-wrapper{
+    display:flex;
+    gap:34px;
+    justify-content:center;
+    align-items:center;
+    flex-wrap:wrap;
+    padding:30px;
+}
+
+.id-card{
+    width:300px;
+    height:425px;
+    background:white;
+    border-radius:20px;
+    position:relative;
+    overflow:hidden;
+    box-shadow:0 8px 18px rgba(0,0,0,.25);
+    border:4px solid #f3f3f3;
+}
+
+.wave-band{
+    position:absolute;
+    left:-22px;
+    top:125px;
+    width:324px;
+    height:78px;
+    z-index:1;
+    transform:rotate(2deg);
+}
+
+
+
+.wave-band::before{
+    top:0;
+    transform:skewY(18deg);
+}
+
+
+/* heading */
+
+.school-name{
+    text-align:center;
+    font-size:20px;
+    font-weight:bold;
+    color:#6e5421;
+    margin-top:28px;
+    line-height:1.2;
+}
+
+.school-address{
+    text-align:center;
+    font-size:11px;
+    margin-top:8px;
+    color:#333;
+    padding:0 20px;
+    line-height:1.2;
+}
+
+
+
+/* circular image */
+
+    .photo{
+      width:90px;
+      height:95px;
+      margin:0 auto;
+      border-radius:8px;
+      overflow:hidden;
+      border:3px solid var(--orange);
+      background:#c3c8cc;
+      box-shadow:0 10px 18px rgba(4, 4, 4, 0.12);
+      margin-top: 20px;
+    }
+    .photo img{width:100%;height:100%;object-fit:cover;display:block}
+/* name */
+
+.name{
+    position:absolute;
+    top:210px;
+    left:5px;
+    width:100%;
+    
+    text-align:center;
+    color:#de7f86;
+    font-size:13px;
+    font-weight:700;
+}
+
+/* class badge */
+
+.class-badge{
+    width:max-content;
+    min-width:78px;
+    position:absolute;
+    top:245px;
+    left:50%;
+    transform:translateX(-50%);
+    margin:0;
+    background:#2f7ea2;
+    color:white;
+    text-align:center;
+    padding:3px 8px;
+    border-radius:4px;
+    font-size:18px;
+    font-weight:bold;
+}
+
+/* details */
+
+.details{
+    position:absolute;
+    top:280px;
+    left:-10px;
+    width:100%;
+    margin:0;
+    padding:0 24px;
+    z-index:3;
+}
+
+    .meta{
+      display:grid;
+    grid-template-columns:96px 10px minmax(0,1fr);
+    gap:4px;
+    align-items:start;
+    margin-bottom:5px;
+    font-size:13px;
+    line-height:1.15;
+     }
+
+.row span:first-child{
+    font-weight:bold;
+    white-space:nowrap;
+}
+
+.row span:nth-child(2){
+    text-align:center;
+}
+
+.row span:last-child{
+    overflow-wrap:anywhere;
+}
+
+
+
+.principal{
+    position:absolute;
+    right:20px;
+    bottom:26px;
+    color:#6e5421;
+    font-size:12px;
+    z-index:4;
+}
+
+/* footer */
+
+.footer-strip{
+    position:absolute;
+    bottom:0;
+    left:0;
+    width:100%;
+    background:#f2a29b;
+   height: 5%;
+    padding:5px;
+    font-size:11px;
+   
+}
+
+.back-school-name{
+    text-align:center;
+    font-size:20px;
+    font-weight:bold;
+    color:#6e5421;
+    margin-top:28px;
+    line-height:1.2;
+}
+
+.back-school-address{
+    text-align:center;
+    font-size:12px;
+    margin-top:6px;
+    color:#333;
+    padding:0 22px;
+    line-height:1.25;
+}
+
+.back-logo{
+    width:65px;
+    height:65px;
+    margin:14px auto 0;
+}
+
+.back-logo img{
+    width:100%;
+    height:100%;
+    object-fit:contain;
+}
+
+.back-content{
+    position:relative;
+    z-index:3;
+    padding:20px 28px 0;
+    color:#222;
+}
+
+.back-title{
+    text-align:center;
+    color:#de7f86;
+    font-size:17px;
+    font-weight:bold;
+    margin-bottom:8px;
+    text-transform:uppercase;
+}
+
+.instructions{
+    margin:0;
+    padding-left:18px;
+    font-size:11px;
+    line-height:1.32;
+}
+
+.instructions li{
+    margin-bottom:5px;
+}
+
+.back-details{
+    border-top:2px solid #f2a29b;
+    margin-top:20px;
+    padding-top:8px;
+    text-align:center;
+    font-size:10px;
+    line-height:1.25;
+}
+
+.back-details strong{
+    color:#6e5421;
+    display:block;
+    font-size:12px;
+    line-height:1.2;
+    margin-bottom:3px;
+}
+
+
+</style>
+</head>
+<body>
+
+<div class="id-wrapper">
+<div class="id-card">
+
+    <div class="clip"></div>
+    <div class="wave-band"></div>
+
+    <div class="school-name" data-school>school name<br>
+        
+    </div>
+
+    <div class="school-address" data-school-address>
+       school address
+    </div>
+
+
+    <div class="photo"><img data-photo alt="Student photo" hidden></div>
+
+              <div class="name" data-name>Student Name</div>
+
+    <div class="class-badge">
+        Class-7
+    </div>
+
+    <div class="details">
+
+       
+         
+          <div class="meta">Class Name: <strong data-class>-</strong></div>
+          <div class="meta"> Roll No:<strong data-roll>-</strong></div>
+          <div class="meta">Father's Name: <strong data-parent>-</strong></div>
+         <div  class="meta">Blood Group: <strong data-blood>-</strong></div>
+            <div  class="meta">DOB: <strong data-dob>-</strong></div>
+        </div>
+
+    
+    <div class="footer-strip">
+        
+    </div>
+
+    
+</div>
+<div class="id-card">
+
+    <div class="clip"></div>
+    <div class="wave-band"></div>
+
+    <div class="back-school-name" data-school>
+        school name<br>
+        
+    </div>
+
+    <div class="back-school-address" data-school-address>
+        school address</address>
+    </div>
+
+    <div class="back-logo">
+        <img data-school-logo alt="School Logo">
+    </div>
+
+    <div class="back-content">
+        <div class="back-title">Instructions</div>
+
+        <ul class="instructions">
+            <li>This ID card must be worn during school hours.</li>
+            <li>Do not bend, scratch, or damage this card.</li>
+            <li>If found, please return it to the school office.</li>
+            <li>This card is not transferable.</li>
+        </ul>
+
+        <div class="back-details">
+           
+          <div class="rule">Phone: <strong data-phone>--</strong></div>
+         
+          <div class="rule">Address: <strong data-address>--</strong></div>
+       
+        </div>
+    </div>
+
+    <div class="footer-strip">
+        
+    </div>
+
+</div>
+</div>
+<script>
+    const p = new URLSearchParams(location.search);
+    const set = (sel, val) => document.querySelectorAll(sel).forEach((n) => (n.textContent = val || "--"));
+    const img = p.get("photo");
+    if (img) {
+      const el = document.querySelector("[data-photo]");
+      if (el) {
+        el.src = img;
+        el.hidden = false;
+      }
+    }
+    set("[data-school]", p.get("school"));
+    set("[data-name]", p.get("name"));
+    set("[data-class]", p.get("className"));
+    set("[data-admission]", p.get("admissionNo"));
+    set("[data-roll]", p.get("rollNo"));
+    set("[data-blood]", p.get("bloodGroup"));
+    set("[data-dob]", p.get("dob"));
+    set("[data-phone]", p.get("phone"));
+    set("[data-parent]", p.get("parent"));
+    set("[data-route]", p.get("route"));
+    set("[data-address]", p.get("address"));
+    set("[data-emergency]", p.get("emergency"));
+    if (p.get("print") === "1") {
+      window.addEventListener("load", () => setTimeout(() => window.print(), 250));
+      window.addEventListener("afterprint", () => window.close());
+    }
+  </script>
+  <script src="./idcard-common.js"></script>
+
+</body>
+</html>

@@ -1,0 +1,272 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Student ID Card - Enhanced Replica</title>
+    <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;700&display=swap" rel="stylesheet">
+    <style>
+        body {
+            background: #1bb6b6;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            /* min-height: 100vh; */
+            align-items: flex-start;
+
+            overflow: hidden;
+            transform: scale(0.65);
+            transform-origin: top center;
+
+        }
+        .id-card-enhanced {
+            width: 320px;
+            height: 420px;
+            background: #fff;
+            border-radius: 16px;
+            box-shadow: 0 6px 24px rgba(0,0,0,0.18);
+            font-family: 'Roboto', Arial, sans-serif;
+            overflow: hidden;
+            position: relative;
+            border: 3px solid #e0e0e0;
+        }
+        .id-diagonal {
+            position: absolute;
+            top: 0; left: 0;
+            width: 100%;
+            height: 120px;
+            background: linear-gradient(110deg, #1565c0 60%, #2196f3 100%);
+            clip-path: polygon(0 0, 100% 0, 100% 60%, 0 100%);
+            z-index: 1;
+        }
+        .id-school-logo {
+            position: absolute;
+            top: 22px;
+            left: 18px;
+            width: 80px;
+            height: 80px;
+            background: #fff;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            border: 2px solid #1565c0;
+            z-index: 2;
+            box-shadow: 0 2px 8px #0002;
+        }
+        .id-school-logo img {
+            width: 35px;
+            height: 35px;
+            object-fit: contain;
+        }
+        .id-school-name {
+            position: absolute;
+            top: 20px;
+            left: 95px;
+            right: 10px;
+            color: #fff;
+            font-size: 1.08rem;
+            font-weight: 700;
+            letter-spacing: 1px;
+            z-index: 2;
+            text-shadow: 0 1px 2px #0002;
+            line-height: 1.2;
+        }
+        .photo {
+            position: relative;
+            margin: 0 auto 0 auto;
+            width: 80px;
+            height: 88px;
+            background: #fff;
+            border: 2px solid #1976d2;
+            border-radius: 8px;
+            overflow: hidden;
+            z-index: 3;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            box-shadow: 0 2px 10px #1976d255;
+            transform: none;
+        }
+        .photo img {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+        }
+        .id-details-enhanced {
+            position: absolute;
+            top: 100px;
+            left: 0;
+            right: 0;
+            width: 100%;
+            font-size: 0.90rem;
+            color: #222;
+            z-index: 4;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+        .id-details-enhanced .student-name {
+            font-size: 1.08rem;
+            font-weight: 700;
+            color: #c62828;
+            margin-top: 16px;
+            margin-bottom: 8px;
+            letter-spacing: 1px;
+            text-align: center;
+        }
+      
+     .meta{
+      display:grid;
+    grid-template-columns:96px 10px minmax(0,1fr);
+    gap:4px;
+    align-items:start;
+    margin-bottom:5px;
+    font-size:12px;
+    line-height:1.15;
+    left: 20px;
+    
+     }
+        .class-row {
+            margin-bottom: 18px;
+            margin-top: 18px;
+        }
+        .class-badge {
+            display: inline-block;
+            background: #fff;
+            border: 2px solid #e53935;
+            color: #e53935;
+            font-weight: 650;
+            border-radius: 12px;
+            padding: 1px 8px;
+            font-size: 0.90rem;
+            margin-left: 8px;
+        }
+        .id-stamp-enhanced {
+            position: absolute;
+            right: 18px;
+            bottom: 60px;
+            width: 54px;
+            height: 54px;
+            opacity: 0.18;
+            z-index: 2;
+        }
+        .id-stamp-enhanced img {
+            width: 100%;
+            height: 100%;
+            object-fit: contain;
+        }
+        .id-footer-enhanced {
+            position: absolute;
+            bottom: 0;
+            left: 0;
+            width: 100%;
+            background: #1976d2;
+            color: #fff;
+            text-align: center;
+            font-size: 0.98rem;
+            font-weight: 700;
+            padding: 7px 0;
+            letter-spacing: 1px;
+            border-bottom-left-radius: 13px;
+            border-bottom-right-radius: 13px;
+        }
+        .back-details{
+    border-top:2px solid #1976d2;
+    margin-top:15px;
+    padding-top:4px;
+    text-align:center;
+    font-size:15px;
+   
+}
+.rule{
+      font-size:12px;
+     margin-top: 5px;
+      color:#090909;
+      text-align:left;
+    }
+     
+.back-details h4{
+    text-align: center;
+    color:#0f71c7;
+}
+
+    </style>
+</head>
+<body>
+    <div class="id-card-enhanced">
+        <div class="id-diagonal"></div>
+        <div class="id-school-logo">
+            <img data-school-logo alt="School Logo">
+        </div>
+        <div class="id-school-name"data-school>school name</div>
+        <div class="id-details-enhanced">
+            <div class="class-row" style="margin-bottom: 18px; margin-top: 8px;"><span class="class-badge"data-class>Class : V</span></div>
+            
+                <div class="photo"><img data-photo alt="Student photo" hidden></div>
+           
+            <div class="student-name"data-name>student-name</div>
+                
+       
+         
+        
+          <div class="meta"> Roll No <strong data-roll>-</strong></div>
+          <div class="meta">Father's Name <strong data-parent>-</strong></div>
+         <div  class="meta">Blood Group <strong data-blood>-</strong></div>
+            <div  class="meta">DOB: <strong data-dob>-</strong></div>
+        </div>
+            
+        <div class="id-footer-enhanced"></div>
+    </div>
+    <!-- Back Side of ID Card -->
+            <div class="id-card-enhanced" style=" margin-left: 40px;">
+                    <div class="id-diagonal" style="height: 70px;"></div>
+                    <div style="padding: 18px 16px 16px 16px; position: relative; z-index: 2; text-align: left; font-size: 0.87rem; color: #222; height: 100%; display: flex; flex-direction: column; justify-content: center;">
+                        <h3 style="color: #1565c0; text-align: center; margin-bottom: 10px; margin-top: 10px; font-size: 1.01rem; letter-spacing: 0.5px;">Instructions / Guidelines</h3>
+                        <ul style="padding-left: 18px; margin-bottom: 10px; font-size: 0.87rem; line-height: 1.45;">
+                            <li>This card must be carried at all times in the school premises.</li>
+                            <li>If found, please return to the school office.</li>
+                            <li>Unauthorized use is strictly prohibited.</li>
+                            <li>For any queries, contact the school administration.</li>
+                        </ul>
+                               <div class="back-details">
+                               <h4>School Details</h4>
+          <div class="rule">Phone: <strong data-phone>--</strong></div>
+         
+          <div class="rule">Address: <strong data-address>--</strong></div>
+       
+        </div>
+                    </div>
+                    <div class="id-footer-enhanced"></div>
+            </div>
+  <script>
+    const p = new URLSearchParams(location.search);
+    const set = (sel, val) => document.querySelectorAll(sel).forEach((n) => (n.textContent = val || "--"));
+    const img = p.get("photo");
+    if (img) {
+      const el = document.querySelector("[data-photo]");
+      if (el) {
+        el.src = img;
+        el.hidden = false;
+      }
+    }
+    set("[data-school]", p.get("school"));
+    set("[data-name]", p.get("name"));
+    set("[data-class]", p.get("className"));
+    set("[data-admission]", p.get("admissionNo"));
+    set("[data-roll]", p.get("rollNo"));
+    set("[data-blood]", p.get("bloodGroup"));
+    set("[data-dob]", p.get("dob"));
+    set("[data-phone]", p.get("phone"));
+    set("[data-parent]", p.get("parent"));
+    set("[data-route]", p.get("route"));
+    set("[data-address]", p.get("address"));
+    set("[data-emergency]", p.get("emergency"));
+    if (p.get("print") === "1") {
+      window.addEventListener("load", () => setTimeout(() => window.print(), 250));
+      window.addEventListener("afterprint", () => window.close());
+    }
+  </script>
+  <script src="./idcard-common.js"></script>
+</body>
+</html>

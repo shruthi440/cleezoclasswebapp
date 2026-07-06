@@ -1,0 +1,369 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>ID Card Template 4</title>
+  <style>
+    :root{--blue:#0f4fd1;--blue2:#1c78d7;--red:#ef4444;--ink:#0f172a;--muted:#5c6d80;--line:#dbe4f0}
+    *{box-sizing:border-box}
+    html,body{width:100%;height:100%;overflow:hidden}
+    body{
+      margin:0;
+      font-family:Arial,Helvetica,sans-serif;
+      color:var(--ink);
+      background:linear-gradient(180deg,#f7fbff,#ecf3fb);
+    }
+    .page{
+      width:760px;
+      height:560px;
+      margin:0 auto;
+      padding:18px;
+      display:grid;
+      gap:16px;
+      overflow:hidden;
+    }
+    .pair{
+      display:grid;
+      grid-template-columns:repeat(2, minmax(0, 1fr));
+      gap:18px;
+      align-items:start;
+    }
+    .card{
+      width:280px;
+      border-radius:24px;
+      overflow:hidden;
+      background:#fff;
+      box-shadow:0 18px 34px rgba(15,23,42,.12);
+      border:1px solid var(--line);
+      position:relative;
+    }
+    .front{
+      min-height:328px;
+      background:
+        linear-gradient(135deg,transparent 0 25%,rgba(15,79,209,.96) 25% 42%,transparent 42% 100%),
+        linear-gradient(180deg,#fff 0%,#fafcff 100%);
+    }
+    .front:before{
+      content:"";
+      position:absolute;
+      inset:-18px -24px auto auto;
+      width:128px;
+      height:128px;
+      border-radius:50%;
+      background:rgba(14,165,233,.12);
+    }
+    .front:after{
+      content:"";
+      position:absolute;
+      left:0;
+      bottom:0;
+      width:100%;
+      height:58px;
+      background:linear-gradient(135deg,var(--red) 0 26%,#fff 26% 100%);
+      clip-path:polygon(0 52%,100% 0,100% 100%,0 100%);
+      opacity:.96;
+    }
+    .head{
+      padding:18px 16px 0;
+      display:flex;
+      justify-content:space-between;
+      gap:12px;
+      align-items:flex-start;
+      position:relative;
+      z-index:1;
+    }
+    .head h1{
+      margin:0;
+      font-size:30px;
+      line-height:1.02;
+      color:var(--ink);
+    }
+    .meta{
+      color:var(--muted);
+      font-size:12px;
+      text-align:right;
+    }
+    .profile{
+      display:grid;
+      grid-template-columns:124px 1fr;
+      gap:16px;
+      align-items:start;
+      padding:12px 16px 0;
+      position:relative;
+      z-index:1;
+    }
+    .photo{
+      width:124px;
+      height:158px;
+      border-radius:24px;
+      border:5px solid rgba(14,165,233,.12);
+      background:linear-gradient(180deg,#e0f2fe,#fff);
+      overflow:hidden;
+      display:grid;
+      place-items:center;
+      font-size:44px;
+      color:var(--blue);
+      font-weight:700;
+    }
+    .photo img{width:100%;height:100%;object-fit:cover;display:block}
+    .grid{
+      display:grid;
+      grid-template-columns:repeat(2,minmax(0,1fr));
+      gap:10px 12px;
+    }
+    .field{
+      padding:10px 12px;
+      border-radius:16px;
+      border:1px solid var(--line);
+      background:#f8fbff;
+      font-size:10px;
+      line-height:1.35;
+    }
+    .field span{
+      display:block;
+      font-size:9px;
+      text-transform:uppercase;
+      letter-spacing:.08em;
+      color:var(--muted);
+      margin-bottom:4px;
+    }
+    .field strong{
+      font-size:12px;
+      color:var(--ink);
+      word-break:break-word;
+    }
+    .ribbon{
+      position:relative;
+      z-index:1;
+      height:12px;
+      margin:12px 16px 0;
+      border-radius:999px;
+      background:linear-gradient(90deg,var(--blue),var(--red));
+    }
+    .right{
+      min-height:328px;
+      background:linear-gradient(180deg,var(--blue) 0%,#0284c7 48%,var(--red) 100%);
+      color:#fff;
+      padding:18px 16px;
+      display:grid;
+      align-content:space-between;
+      position:relative;
+    }
+    .right:before{
+      content:"";
+      position:absolute;
+      inset:12px;
+      border-radius:18px;
+      border:1px solid rgba(255,255,255,.16);
+    }
+    .brand,.foot{position:relative;z-index:1}
+    .brand{
+      display:grid;
+      gap:12px;
+      justify-items:center;
+      text-align:center;
+    }
+    .logo{
+      width:88px;
+      height:88px;
+      border-radius:28px;
+      background:rgba(255,255,255,.18);
+      border:1px solid rgba(255,255,255,.28);
+      display:grid;
+      place-items:center;
+      font-size:38px;
+      font-weight:700;
+    }
+    .school{
+      font-size:13px;
+      line-height:1.25;
+    }
+    .school strong{
+      display:block;
+      font-size:18px;
+      letter-spacing:.08em;
+      text-transform:uppercase;
+      margin-bottom:6px;
+    }
+    .tag{
+      padding:8px 10px;
+      border-radius:999px;
+      background:rgba(255,255,255,.14);
+      font-size:11px;
+      text-align:center;
+    }
+    .mini{
+      width:76px;
+      height:76px;
+      border-radius:18px;
+      background:rgba(255,255,255,.14);
+      border:1px solid rgba(255,255,255,.18);
+    }
+    .back{
+      min-height:200px;
+      border-radius:24px;
+      overflow:hidden;
+      background:linear-gradient(180deg,#fff,#f7fbff);
+      box-shadow:0 18px 34px rgba(15,23,42,.12);
+      border:1px solid var(--line);
+    }
+    .top{
+      background:linear-gradient(90deg,var(--blue),var(--red));
+      color:#fff;
+      padding:10px 18px;
+      font-size:12px;
+      font-weight:700;
+      letter-spacing:.1em;
+      text-transform:uppercase;
+    }
+    .body{
+      padding:16px 18px;
+      display:grid;
+      grid-template-columns:.95fr 1.05fr;
+      gap:14px;
+      align-items:start;
+    }
+    .panel{
+      border:1px solid var(--line);
+      border-radius:18px;
+      background:#fff;
+      padding:14px;
+    }
+    .panel h3{
+      margin:0 0 10px;
+      font-size:14px;
+    }
+    .panel ul{
+      margin:0;
+      padding-left:16px;
+      font-size:12px;
+      line-height:1.65;
+      color:#334155;
+    }
+    .barcode{
+      margin-top:14px;
+      height:72px;
+      border-radius:14px;
+      background:
+        repeating-linear-gradient(90deg,#0f172a 0 4px,transparent 4px 8px),
+        linear-gradient(180deg,#fff,#e2e8f0);
+      border:1px solid #cbd5e1;
+    }
+    .pill{
+      display:inline-flex;
+      padding:7px 10px;
+      border-radius:999px;
+      background:rgba(14,165,233,.1);
+      color:var(--blue);
+      font-size:11px;
+      font-weight:700;
+    }
+    .footline{
+      display:flex;
+      justify-content:space-between;
+      align-items:center;
+      gap:10px;
+      margin-top:12px;
+      color:var(--muted);
+      font-size:11px;
+    }
+  </style>
+</head>
+<body>
+  <div class="page">
+    <div class="pair">
+      <section class="card front">
+        <div class="head">
+          <div>
+            <h1 data-name>Student Name</h1>
+            <div class="meta">Class <span data-class>--</span> | Sec <span data-section>--</span></div>
+          </div>
+          <div class="meta">Admission No<br><strong data-admission>--</strong></div>
+        </div>
+        <div class="profile">
+          <div class="photo"><img data-photo alt="Student photo" hidden></div>
+          <div class="grid">
+            <div class="field"><span>Roll No</span><strong data-roll>--</strong></div>
+            <div class="field"><span>Blood Group</span><strong data-blood>--</strong></div>
+            <div class="field"><span>Date of Birth</span><strong data-dob>--</strong></div>
+            <div class="field"><span>Phone</span><strong data-phone>--</strong></div>
+            <div class="field"><span>Parent / Guardian</span><strong data-parent>--</strong></div>
+            <div class="field"><span>Transport</span><strong data-route>--</strong></div>
+            <div class="field" style="grid-column:1/-1"><span>Address</span><strong data-address>--</strong></div>
+          </div>
+        </div>
+        <div class="ribbon"></div>
+      </section>
+      <aside class="right">
+        <div class="brand">
+          <div class="logo" data-school-short>SC</div>
+          <div class="school"><strong data-school>School Name</strong>Student Identity Card<br>Academic Year 2025-26</div>
+        </div>
+        <div class="foot"><div class="tag">Modern Student Pass</div><div class="mini"></div></div>
+      </aside>
+    </div>
+    <section class="back">
+      <div class="top">Back Side</div>
+      <div class="body">
+        <div class="panel">
+          <h3>Instructions</h3>
+          <ul>
+            <li>Carry the card daily.</li>
+            <li>Show it at entry points.</li>
+            <li>Report any loss fast.</li>
+            <li>This card belongs to the school.</li>
+          </ul>
+          <div class="barcode"></div>
+        </div>
+        <div class="panel">
+          <h3>Emergency</h3>
+          <div class="field"><span>Contact</span><strong data-emergency>--</strong></div>
+          <div class="field" style="margin-top:10px"><span>School Code</span><strong data-school-code>--</strong></div>
+          <div class="footline"><span class="pill">Verified ID</span><span data-generated>Generated now</span></div>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+    const p = new URLSearchParams(location.search);
+    const set = (sel, val) => document.querySelectorAll(sel).forEach((n) => (n.textContent = val || "--"));
+    const img = p.get("photo");
+    if (img) {
+      const el = document.querySelector("[data-photo]");
+      if (el) {
+        el.src = img;
+        el.hidden = false;
+      }
+    }
+    const school = p.get("school");
+    set("[data-school]", school);
+    const short = (school || "SC")
+      .split(/\s+/)
+      .filter(Boolean)
+      .map((part) => part[0])
+      .join("")
+      .slice(0, 2)
+      .toUpperCase();
+    set("[data-school-short]", short || "SC");
+    set("[data-name]", p.get("name"));
+    set("[data-class]", p.get("className"));
+    set("[data-section]", p.get("section"));
+    set("[data-admission]", p.get("admissionNo"));
+    set("[data-roll]", p.get("rollNo"));
+    set("[data-blood]", p.get("bloodGroup"));
+    set("[data-dob]", p.get("dob"));
+    set("[data-phone]", p.get("phone"));
+    set("[data-parent]", p.get("parent"));
+    set("[data-route]", p.get("route"));
+    set("[data-address]", p.get("address"));
+    set("[data-emergency]", p.get("emergency"));
+    set("[data-school-code]", school);
+    if (p.get("print") === "1") {
+      window.addEventListener("load", () => setTimeout(() => window.print(), 250));
+      window.addEventListener("afterprint", () => window.close());
+    }
+  </script>
+  <script src="./idcard-common.js"></script>
+</body>
+</html>

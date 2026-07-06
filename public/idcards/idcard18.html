@@ -1,0 +1,296 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Student ID Card</title>
+    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;600;700&display=swap" rel="stylesheet">
+    <style>
+        body {
+            background: #f4f5f5;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            gap: 28px;
+            flex-wrap: wrap;
+            margin: 0;
+            padding: 32px;
+
+            transform: scale(0.65);
+            transform-origin: top center;
+            width: 150%;
+            margin-left: -30%;
+        }
+        .id-card {
+            width: 320px;
+            height: 440px;
+            background: #fff;
+            border-radius: 12px;
+            box-shadow: 0 4px 16px rgba(0,0,0,0.18);
+            font-family: 'Poppins', Arial, sans-serif;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+            position: relative;
+        }
+        .id-header {
+            background: #1565c0;
+            color: #fff;
+            padding: 0;
+            text-align: center;
+            position: relative;
+            width: 100%;
+            height: 55px;
+            display: flex;
+            flex-direction: row;
+            align-items: center;
+            justify-content: center;
+            border-top-left-radius: 12px;
+            border-top-right-radius: 12px;
+        }
+        .school-logo {
+            width: 50px;
+            height: 50px;
+            background: #fff;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            border: 2px solid #1565c0;
+            margin: 10px auto 6px auto;
+            overflow: hidden;
+        }
+        .school-logo img,
+        .school-logo svg {
+            width: 50px;
+            height: 50px;
+            object-fit: contain;
+            display: block;
+        }
+        .id-header .school-name {
+            font-size: 0.95rem;
+            font-weight: 700;
+            letter-spacing: 1px;
+            margin: 0;
+            display: inline-block;
+            text-align: left;
+        }
+        .id-photo {
+            width: 100px;
+            height: 100px;
+            border: 2px solid #1976d2;
+            margin: 12px auto 8px auto;
+            border-radius: 8px;
+            overflow: hidden;
+            background: #e3f2fd;
+            display: flex;
+            justify-content: center;
+        }
+        .id-photo img {
+            border-bottom-left-radius: 12px;
+            border-bottom-right-radius: 12px;
+            width: 100px;
+            height: 100px;
+            object-fit: cover;
+        }
+        .id-info {
+            padding: 0 18px;
+            font-size: 0.90rem;
+            color: #222;
+            flex: 1;
+        }
+        .id-info .label {
+            font-weight: 600;
+            color: #1976d2;
+            width: 40px;
+            display:grid;
+             grid-template-columns:96px 10px minmax(0,1fr);
+            font-size: 11px;
+          
+        }
+        .id-info .value {
+            font-weight: 500;
+            color: #222;
+        }
+        .id-info .student-name {
+            font-size: 1.2rem;
+            font-weight: 700;
+            color: #c62828;
+            margin-bottom: 2px;
+            letter-spacing: 1px;
+            text-align: center;
+        }
+        .id-info .student-class {
+            font-size: 1rem;
+            font-weight: 600;
+            color: #1976d2;
+            margin-bottom: 8px;
+        }
+        .id-footer {
+            background: #1565c0;
+            color: #fff;
+            text-align: center;
+            padding: 4px 0 3px 0;
+            font-size: 0.95rem;
+            font-weight: 600;
+            height: 32px;
+            letter-spacing: 1px;
+            width: 100%;
+            border-radius: 0;
+            position: absolute;
+            left: 0;
+            bottom: 0;
+        }
+        .back-card {
+            background: #fff;
+            border-radius: 12px;
+            padding-bottom: 16px;
+            height: 420px;
+            
+        
+        }
+        .back-card .id-header {
+            height: 55px;
+            background: #1565c0;
+            border-radius: 12px 12px 0 0;
+        }
+        .back-card .school-name {
+            font-family: Georgia, 'Times New Roman', serif;
+            font-size: 1.32rem;
+            letter-spacing: 3px;
+            text-align: center;
+        }
+        .back-content {
+            padding: 22px 25px 0;
+            color: #14203a;
+            font-family: Georgia, 'Times New Roman', serif;
+        }
+        .instruction-title {
+            color: #1565c0;
+            font-size: 1rem;
+            font-weight: 700;
+            margin-bottom: 8px;
+        }
+        .instruction-list {
+            margin: 0;
+            padding-left: 18px;
+        }
+        .instruction-list li {
+            font-size: 0.75rem;
+            line-height: 1.35;
+            margin-bottom: 7px;
+        }
+        .school-address-box {
+            background: #f4f4f4;
+            border-left: 5px solid #1565c0;
+            border-radius: 6px;
+            margin-top: 25px;
+            padding: 10px 12px;
+            line-height: 1.40;
+        }
+       .school-address-box h4{
+        color: #1565c0;
+        font-size: 14px;
+   
+       }
+        .rule{
+      font-size:12px;
+      line-height:1.25;
+      color:#090909;
+    }
+        .back-card .id-footer {
+            height: 12px;
+            background: #1565c0;
+            padding: 0;
+        }
+        @media (max-width: 720px) {
+            body {
+                align-items: flex-start;
+            }
+        }
+         
+    </style>
+</head>
+<body>
+
+    <div class="id-card" style="position:relative;">
+        <div class="id-header">
+            <span class="school-name" data-school>
+                 school name </span>
+        </div>
+        <div class="school-logo">
+           <img data-school-logo alt="School logo"  hidden />
+        </div>
+        
+        <div class="id-photo">
+              <img data-photo alt="Student photo" hidden>
+        </div>
+        <div class="id-info">
+            <div class="student-name"data-name>student-name</div>
+            <div><span class="label">Father Name:<strong data-parent>-</strong></div>
+            <div><span class="label">Date of Birth:<strong data-dob>-</strong></div>
+            <div><span  class="label">Mobile no:<strong parent-mobile-no>-</strong></div>
+            <div><span class="label">Class :<strong data-class>-</strong></div>
+            <div><span class="label">Address:<strong student-address>-</strong></div>
+        </div>
+        <div class="id-footer"></div>
+    </div>
+
+    <div class="id-card back-card">
+        <div class="id-header">
+            <span class="school-name">STUDENT ID CARD</span>
+        </div>
+
+        <div class="back-content">
+            <div class="instruction-title">Instructions</div>
+            <ol class="instruction-list">
+                <li>This card must be carried daily inside school campus.</li>
+                <li>Loss of this card should be reported immediately.</li>
+                <li>ID card is non-transferable.</li>
+                <li>Students must maintain discipline and school decorum.</li>
+                <li>Return this card to school office if found.</li>
+            </ol>
+
+            <div class="school-address-box">
+                <h4>School Details</h4>
+             <div class="rule">Address: <strong data-address>--</strong></div>
+
+            <div class="rule">Phone: <strong data-phone>--</strong></div>
+            </div>
+        </div>
+        <div class="back-bottom-line"></div>
+        <div class="id-footer"></div>
+    </div>
+
+  <script>
+    const p = new URLSearchParams(location.search);
+    const set = (sel, val) => document.querySelectorAll(sel).forEach((n) => (n.textContent = val || "--"));
+    const img = p.get("photo");
+    if (img) {
+      const el = document.querySelector("[data-photo]");
+      if (el) {
+        el.src = img;
+        el.hidden = false;
+      }
+    }
+    set("[data-school]", p.get("school"));
+    set("[data-name]", p.get("name"));
+    set("[data-class]", p.get("className"));
+    set("[data-admission]", p.get("admissionNo"));
+    set("[data-roll]", p.get("rollNo"));
+    set("[data-blood]", p.get("bloodGroup"));
+    set("[data-dob]", p.get("dob"));
+    set("[data-phone]", p.get("phone"));
+    set("[data-parent]", p.get("parent"));
+    set("[data-route]", p.get("route"));
+    set("[data-address]", p.get("address"));
+    set("[data-emergency]", p.get("emergency"));
+    if (p.get("print") === "1") {
+      window.addEventListener("load", () => setTimeout(() => window.print(), 250));
+      window.addEventListener("afterprint", () => window.close());
+    }
+  </script>
+  <script src="./idcard-common.js"></script>
+</body>
+</html>

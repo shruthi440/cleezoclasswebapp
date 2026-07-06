@@ -1,0 +1,259 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>ID Card Template 3</title>
+  <style>
+    :root{--navy:#102f67;--yellow:#f4b51c;--sky:#1d79d1;--ink:#11233c;--muted:#617184;--line:#dbe5f0}
+    *{box-sizing:border-box}
+    html,body{width:100%;height:100%;overflow:hidden}
+    body{
+      margin:0;
+      font-family:Arial,Helvetica,sans-serif;
+      color:var(--ink);
+      background:
+        radial-gradient(circle at top left,rgba(244,181,28,.14),transparent 24%),
+        radial-gradient(circle at bottom right,rgba(29,121,209,.12),transparent 26%),
+        linear-gradient(180deg,#fbfcfe,#eef4fb);
+    }
+    .page{
+      width:min(100%, 560px);
+      min-height:470px;
+      margin:0 auto;
+      padding:8px 12px 10px;
+      display:grid;
+      gap:8px;
+      overflow:hidden;
+    }
+    .title{
+      text-align:center;
+      font-size:18px;
+      font-weight:700;
+      color:var(--navy);
+      letter-spacing:.06em;
+    }
+    .pair{
+      display:grid;
+      grid-template-columns:repeat(2, minmax(0, 1fr));
+      gap:10px;
+      align-items:start;
+      margin-top:-4px;
+    }
+    .card{
+      width:100%;
+      max-width:220px;
+      border-radius:20px;
+      overflow:hidden;
+      background:#fff;
+      box-shadow:0 16px 36px rgba(17,35,60,.16);
+      border:1px solid var(--line);
+      position:relative;
+    }
+    .front{
+      min-height:286px;
+      background:
+        linear-gradient(180deg,var(--navy) 0 34%,#fff 34% 100%);
+    }
+    .front:before{
+      content:"";
+      position:absolute;
+      left:-28px;
+      bottom:-24px;
+      width:168px;
+      height:168px;
+      border-radius:50%;
+      background:var(--yellow);
+      opacity:.95;
+    }
+    .front:after{
+      content:"";
+      position:absolute;
+      right:-20px;
+      bottom:-18px;
+      width:180px;
+      height:82px;
+      background:linear-gradient(135deg,transparent 0 30%,var(--sky) 30% 100%);
+      opacity:.96;
+    }
+    .brand{
+      padding:10px 12px 0;
+      color:#fff;
+      text-align:center;
+      font-size:12px;
+      font-weight:700;
+      position:relative;
+      z-index:1;
+    }
+    .brand .small{font-size:9px;font-weight:400}
+    .photo{
+      width:72px;
+      height:88px;
+      margin:6px auto 0;
+      border-radius:8px;
+      overflow:hidden;
+      border:3px solid #fff;
+      background:#dce7f3;
+      box-shadow:0 10px 18px rgba(17,35,60,.12);
+      position:relative;
+      z-index:1;
+    }
+    .photo img{width:100%;height:100%;object-fit:cover;display:block}
+    .body{
+      padding:6px 12px 10px;
+      position:relative;
+      z-index:1;
+    }
+    .name{
+      text-align:center;
+      font-size:14px;
+      font-weight:700;
+      margin-top:4px;
+    }
+    .sub{
+      text-align:center;
+      color:var(--sky);
+      font-size:9px;
+      font-weight:700;
+      letter-spacing:.05em;
+    }
+    .list{
+      margin-top:6px;
+      text-align:left;
+      font-size:8px;
+      line-height:1.35;
+      color:#30465f;
+    }
+    .footer{
+      margin-top:6px;
+      display:flex;
+      justify-content:space-between;
+      align-items:center;
+      gap:10px;
+      font-size:8px;
+      color:#46596b;
+    }
+    .badge{
+      padding:4px 8px;
+      border-radius:999px;
+      background:#eff6ff;
+      color:var(--sky);
+      font-weight:700;
+    }
+    .back{
+      min-height:286px;
+      background:linear-gradient(180deg,#fff,#f7fbff);
+    }
+    .back .head{
+      background:linear-gradient(90deg,var(--navy),var(--sky));
+      color:#fff;
+      padding:8px 12px;
+      font-size:10px;
+      font-weight:700;
+      letter-spacing:.08em;
+      text-transform:uppercase;
+    }
+    .back .body{
+      padding:8px 12px;
+      font-size:8px;
+      line-height:1.35;
+      color:#31455d;
+    }
+    .panel{
+      border:1px solid var(--line);
+      border-radius:12px;
+      padding:8px;
+      background:#fff;
+      margin-bottom:8px;
+    }
+    .panel h3{
+      margin:0 0 6px;
+      font-size:11px;
+      color:#11233c;
+    }
+    .panel ul{
+      margin:0;
+      padding-left:14px;
+      line-height:1.35;
+    }
+    .barcode{
+      height:40px;
+      border-radius:10px;
+      background:
+        repeating-linear-gradient(90deg,#0f172a 0 3px,transparent 3px 6px),
+        linear-gradient(180deg,#fff,#edf3fa);
+      border:1px solid #d2dde9;
+    }
+  </style>
+</head>
+<body>
+  <div class="page">
+    <div class="title">ID CARDS TEMPLATE</div>
+    <div class="pair">
+      <section class="card front">
+        <div class="brand" data-school>SMART KIDS PRESCHOOL<div class="small">Teacher / Student Identity</div></div>
+        <div class="photo"><img data-photo alt="Student photo" hidden></div>
+        <div class="body">
+          <div class="name" data-name>Student Name</div>
+          <div class="sub">ID CARD</div>
+          <div class="list">
+            <div>Admission No : <strong data-admission>--</strong></div>
+            <div>Class : <strong data-class>--</strong> | Sec : <strong data-section>--</strong></div>
+            <div>Father : <strong data-parent>--</strong></div>
+            <div>DOB : <strong data-dob>--</strong></div>
+            <div>Blood : <strong data-blood>--</strong></div>
+          </div>
+          <div class="footer">
+            <span>Phone: <strong data-phone>--</strong></span>
+            <span class="badge">AUTHORIZED</span>
+          </div>
+        </div>
+      </section>
+      <section class="card back">
+        <div class="head">Back Side / Terms</div>
+        <div class="body">
+
+          <div class="panel">
+            <h3>Rules</h3>
+            <ul>
+              <li>Carry this card every day.</li>
+              <li>Return if found by others.</li>
+              <li>Show on request at entry.</li>
+            </ul>
+          </div>
+          <div class="barcode"></div>
+        </div>
+      </section>
+    </div>
+  </div>
+  <script>
+    const p = new URLSearchParams(location.search);
+    const set = (sel, val) => document.querySelectorAll(sel).forEach((n) => (n.textContent = val || "--"));
+    const img = p.get("photo");
+    if (img) {
+      const el = document.querySelector("[data-photo]");
+      if (el) {
+        el.src = img;
+        el.hidden = false;
+      }
+    }
+    set("[data-school]", p.get("school"));
+    set("[data-name]", p.get("name"));
+    set("[data-class]", p.get("className"));
+    set("[data-section]", p.get("section"));
+    set("[data-admission]", p.get("admissionNo"));
+    set("[data-blood]", p.get("bloodGroup"));
+    set("[data-dob]", p.get("dob"));
+    set("[data-phone]", p.get("phone"));
+    set("[data-parent]", p.get("parent"));
+    set("[data-route]", p.get("route"));
+    set("[data-address]", p.get("address"));
+    set("[data-emergency]", p.get("emergency"));
+    if (p.get("print") === "1") {
+      window.addEventListener("load", () => setTimeout(() => window.print(), 250));
+      window.addEventListener("afterprint", () => window.close());
+    }
+  </script>
+  <script src="./idcard-common.js"></script>
+</body>
+</html>

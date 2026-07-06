@@ -1,0 +1,383 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=280, initial-scale=1.0">
+    <title>Model ID Card 22</title>
+
+    <style>
+        * {
+            box-sizing: border-box;
+        }
+
+        body {
+            background: #ececec;
+            font-family: Arial, sans-serif;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            margin: 0;
+            overflow: hidden;
+            transform: scale(0.65);
+            transform-origin: top center;
+            width: 150%;
+            margin-left:-25%;
+        }
+
+        .id-wrapper {
+            display: flex;
+            gap: 70px;
+            justify-content: center;
+            align-items: flex-start;
+            gap: 12px;
+            padding: 15px;
+            flex-wrap: wrap;
+        }
+
+        /* Outer holder */
+
+        .id-card {
+            width: 320px;
+            height: 450px;
+            background: #d9d9d9;
+            border-radius: 8px;
+            position: relative;
+            padding: 20px;
+            box-shadow: 0 10px 20px rgba(0, 0, 0, .25);
+        }
+
+        /* top slots */
+
+        .top-hole {
+            width: 45px;
+            height: 10px;
+            background: #8f8f8f;
+            border-radius: 20px;
+            position: absolute;
+            top: 25px;
+            left: 40px;
+        }
+
+        .top-hole.right {
+            left: auto;
+            right: 40px;
+        }
+
+        /* inner white card */
+
+        .inner-card {
+            width: 100%;
+            height: 100%;
+            background: white;
+            border: 4px solid #efefef;
+            position: relative;
+            overflow: hidden;
+        }
+
+        /* exact left blue slider */
+
+        .left-shape {
+            position: absolute;
+            left: 0;
+            top: 0;
+            width: 0;
+            height: 0;
+            border-top: 180px solid #1f2d6b;
+            border-right: 160px solid transparent;
+        }
+
+
+        .shape-school {
+            position: absolute;
+            top: 16px;
+            left: 12px;
+            width: 120px;
+            color: white;
+            text-align: center;
+            z-index: 5;
+        }
+
+        .shape-school img {
+            width: 42px;
+            height: 42px;
+            object-fit: contain;
+            display: block;
+            margin: 0 auto 6px;
+        }
+
+        .school-name {
+            margin: 0;
+            font-size: 12px;
+            line-height: 1.18;
+        }
+
+        /* photo */
+
+        .photo {
+            width: 95px;
+            height: 95px;
+            background: #ddd;
+            border: 2px solid #ccc;
+            position: absolute;
+            top: 112px;
+            left: 50%;
+            transform: translateX(-50%);
+            z-index: 5;
+        }
+
+        /* name */
+
+        .id-label {
+            width: max-content;
+            margin: 208px auto 0;
+            padding: 3px 12px;
+            border-radius: 10px;
+            background: #1f2d6b;
+            color: #fff;
+            font-size: 10px;
+            font-weight: bold;
+        }
+
+        .student-title {
+            margin-top: 6px;
+            text-align: center;
+            font-size: 16px;
+            font-weight: bold;
+            color: #1f2d6b;
+        }
+
+        .student-photo {
+            width: 70px;
+            height: 70px;
+            border-radius: 8px;
+            overflow: hidden;
+            border: 5px solid white;
+            position: absolute;
+            top: 102px;
+            left: 50%;
+            transform: translateX(-50%);
+            z-index: 10;
+            background: rgb(197, 194, 194);
+            box-shadow: 0 2px 8px rgba(0, 0, 0, .25);
+        }
+
+        .student-photo img {
+            width: 100%;
+            height: 135%;
+            object-fit: cover;
+        }
+
+        /* details */
+
+
+        .meta {
+            display: grid;
+            grid-template-columns: 96px 10px minmax(0, 1fr);
+            gap: 5px;
+            align-items: start;
+            margin-top: 10px;
+            font-size: 12px;
+            line-height: 1.25;
+            margin-left: 15px;
+        }
+
+        .row {
+            display: grid;
+            grid-template-columns: 84px 8px minmax(0, 1fr);
+            gap: 4px;
+            align-items: start;
+            margin-bottom: 7px;
+        }
+
+        .row span:first-child {
+            font-weight: bold;
+            white-space: nowrap;
+        }
+
+        .row span:nth-child(2) {
+            text-align: center;
+        }
+
+        .row span:last-child {
+            overflow-wrap: anywhere;
+        }
+
+        /* BACK */
+
+        .instructions {
+            margin: 15px 25px 0;
+            padding-left: 18px;
+            line-height: 1.40;
+            font-size: 13px;
+            position: relative;
+            z-index: 5;
+        }
+
+        .back-title {
+            margin-top: 45px;
+            text-align: center;
+            color: #1f2d6b;
+            font-size: 20px;
+            font-weight: bold;
+            position: relative;
+            z-index: 5;
+        }
+
+        .back-school-details {
+            margin: 18px 25px 0;
+            padding-top: 5px;
+            border-top: 2px solid #1f2d6b;
+            text-align: center;
+            line-height: 1.28;
+            font-size: 15px;
+            position: relative;
+            z-index: 5;
+            color: #1f2d6b;
+        }
+
+        .bottom-shape {
+            position: absolute;
+            bottom: 0;
+            right: 0;
+            width: 0;
+            height: 0;
+            border-bottom: 90px solid #1f2d6b;
+            border-left: 180px solid transparent;
+        }
+
+        .rule {
+            font-size: 12px;
+            line-height: 1.25;
+            color: #090909;
+            text-align: left;
+        }
+
+        .school-name {
+            text-align: center;
+            font-size:12px;
+    line-height:1.2;
+            font-weight: bold;
+            color: #1f2d6b;
+            margin-top: 5px;
+            line-height: -3;
+        }
+    </style>
+</head>
+
+<body>
+    <div class="id-wrapper">
+
+        <!-- Front -->
+
+        <div class="id-card">
+
+            <div class="top-hole"></div>
+            <div class="top-hole right"></div>
+
+            <div class="inner-card">
+
+                <div class="left-shape"></div>
+
+                <div class="top-stripe"></div>
+
+                <div class="shape-school">
+                    <img data-school-logo alt="School logo" hidden />
+                    <div class="school-name" data-school>
+                        school name
+                    </div>
+                </div>
+
+                <div class="student-photo">
+                    <img data-photo alt="Student photo" hidden>
+                </div>
+
+
+
+                <div class="id-label">Student ID Card</div>
+                <div class="student-title"></div>
+
+
+                <div class="meta">Student Name: <strong data-student>-</strong></div>
+                <div class="meta">Father Name: <strong data-parent>-</strong></div>
+                <div class="meta"> Roll No:<strong data-roll>-</strong></div>
+                <div class="meta">Blood Group: <strong data-blood>-</strong></div>
+                <div class="meta">DOB: <strong data-dob>-</strong></div>
+                <div class="meta">Address: <strong data-address>-</strong></div>
+
+            </div>
+
+        </div>
+
+        <!-- Back -->
+
+        <div class="id-card">
+
+            <div class="top-hole"></div>
+            <div class="top-hole right"></div>
+
+            <div class="inner-card">
+                <div class="school-name" data-school>school name<br>
+
+                </div>
+
+                <div class="back-title">Instructions</div>
+
+                <ul class="instructions">
+
+                    <li>Wear this ID card during school hours.</li>
+
+                    <li>Do not bend, scratch, or damage this card.</li>
+
+                    <li>Report lost cards to the school office.</li>
+
+                    <li>This card is only for the assigned student.</li>
+
+                </ul>
+                <div class="back-school-details">School details
+                    <div class="rule">Address: <strong data-address>--</strong></div>
+                    <div class="rule">Phone: <strong data-phone>--</strong></div>
+
+                </div>
+
+
+                <div class="bottom-shape"></div>
+
+            </div>
+
+        </div>
+
+    </div>
+    <script>
+        const p = new URLSearchParams(location.search);
+        const set = (sel, val) => document.querySelectorAll(sel).forEach((n) => (n.textContent = val || "--"));
+        const img = p.get("photo");
+        if (img) {
+            const el = document.querySelector("[data-photo]");
+            if (el) {
+                el.src = img;
+                el.hidden = false;
+            }
+        }
+        set("[data-school]", p.get("school"));
+        set("[data-name]", p.get("name"));
+        set("[data-class]", p.get("className"));
+        set("[data-admission]", p.get("admissionNo"));
+        set("[data-roll]", p.get("rollNo"));
+        set("[data-blood]", p.get("bloodGroup"));
+        set("[data-dob]", p.get("dob"));
+        set("[data-phone]", p.get("phone"));
+        set("[data-parent]", p.get("parent"));
+        set("[data-route]", p.get("route"));
+        set("[data-address]", p.get("address"));
+        set("[data-emergency]", p.get("emergency"));
+        if (p.get("print") === "1") {
+            window.addEventListener("load", () => setTimeout(() => window.print(), 250));
+            window.addEventListener("afterprint", () => window.close());
+        }
+    </script>
+    <script src="./idcard-common.js"></script>
+</body>
+
+</html>

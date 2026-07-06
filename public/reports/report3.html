@@ -1,0 +1,107 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Annual Academic Performance</title>
+<style>
+@page { size: A4 portrait; margin: 10mm; }
+body { margin:0; padding:0; font-family:"Segoe UI",sans-serif; background:#fff; }
+.page { width:100%; border:2px solid #111; padding:10px; }
+.header-top { display:grid; grid-template-columns:90px 1fr 90px; gap:8px; align-items:center; }
+.header-top img { width:80px; height:80px; object-fit:contain; }
+.school-title { text-align:center; font-weight:800; font-size:20px; }
+.school-sub { text-align:center; font-size:11px; color:#555; }
+.report-title { text-align:center; font-weight:800; color:#a11; margin:6px 0; }
+.student-grid { display:grid; grid-template-columns:1fr 1fr 100px; gap:6px; font-size:11px; margin:6px 0; }
+.student-grid div { border:1px solid #333; padding:4px 6px; }
+.student-photo { grid-row:1 / span 3; align-self:center; justify-self:end; }
+.student-photo img { width:90px; height:100px; object-fit:cover; border:1px solid #333; }
+.section-title { font-weight:800; font-size:12px; color:#a11; margin:8px 0 4px; text-align:center; }
+.table { width:100%; border-collapse:collapse; font-size:11px; }
+.table th, .table td { border:1px solid #333; padding:4px; text-align:center; }
+.table th { background:#f0f0f0; }
+.chart-wrap { height:180px; border:1px solid #333; padding:6px; margin:6px 0; }
+.two-col { display:grid; grid-template-columns:1fr 1fr; gap:8px; margin-top:6px; }
+.note { border:1px solid #333; padding:6px; font-size:11px; }
+.signature-row { display:grid; grid-template-columns:1fr 1fr 1fr; gap:8px; margin-top:10px; font-size:11px; text-align:center; }
+.signature-line { border-top:1px solid #333; margin-top:18px; }
+</style>
+<style data-report-theme="true">
+:root { --head:#2f5f93; --head-soft:#e3edf8; --line:#7aa0c7; --line-soft:#c7d9ee; --panel:#f4f8fd; --accent:#23456b; }
+.header, .report-header { border-bottom-color:#7aa0c7; }
+th { background:#2f5f93 !important; color:#fff !important; }
+.section-title, .box-title { background:#e3edf8 !important; border-color:#7aa0c7 !important; color:#2f5f93 !important; }
+.report-card::before, .report::before, .container::before { border-color:#2f5f93; }
+.school-name, .report-header-school, .school-title { color:#2f5f93 !important; }
+</style>
+</head>
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<body>
+<div class="page">
+  <div class="header-top">
+    <img src="logo.png" data-school-logo alt="School Logo" />
+    <div>
+      <div class="school-title" data-school-name>ANANYA VIDYALAYA</div>
+      <div class="school-sub">CBSE Affiliated Senior Secondary School</div>
+      <div class="school-sub">Affiliation no: 430503 | School no: 11433</div>
+    </div>
+    <img src="logo.png" data-school-logo alt="School Logo" />
+  </div>
+
+  <div class="report-title">ANNUAL ACADEMIC PERFORMANCE : 2024-25</div>
+
+  <div class="student-grid">
+    <div><strong>Name:</strong> <span data-student-name>Student</span></div>
+    <div><strong>Admission No:</strong> <span data-student-admission>-</span></div>
+    <div class="student-photo"><img data-student-photo alt="Student Photo"></div>
+    <div><strong>Class:</strong> <span data-student-class>-</span> <strong>Section:</strong> <span data-student-section>-</span></div>
+    <div><strong>Roll No:</strong> -</div>
+    <div><strong>DOB:</strong> <span data-student-dob>-</span></div>
+    <div><strong>Father's Name:</strong> <span data-student-father>-</span></div>
+    <div><strong>Mother's Name:</strong> -</div>
+    <div><strong>Student House:</strong> -</div>
+    <div><strong>Address:</strong> <span data-student-address>-</span></div>
+    <div><strong>Phone:</strong> <span data-student-phone>-</span></div>
+  </div>
+
+  <div class="section-title">PART-1 SCHOLASTIC AREAS</div>
+  <table class="table" data-academic-table>
+    <thead>
+      <tr>
+        <th>Subject</th><th>FA1</th><th>FA2</th><th>SA1</th><th>FA3</th><th>FA4</th><th>SA2</th><th>Marks</th><th>%</th><th>Grade</th>
+      </tr>
+    </thead>
+    <tbody><tr><td colspan="10">No data</td></tr></tbody>
+  </table>
+
+  <div class="section-title">Performance Graph</div>
+  <div class="chart-wrap"><canvas id="marksChart"></canvas></div>
+
+  <div class="two-col">
+    <div>
+      <div class="section-title" style="margin-top:0;">CO-SCHOLASTIC AREAS: GRADE</div>
+      <table class="table" data-co-table>
+        <thead><tr><th>Area</th><th>Term-I</th><th>Term-II</th></tr></thead>
+        <tbody><tr><td colspan="3">No data</td></tr></tbody>
+      </table>
+    </div>
+    <div>
+      <div class="section-title" style="margin-top:0;">ATTENDANCE</div>
+      <table class="table" data-attendance-table>
+        <thead><tr><th>Month</th><th>Total</th><th>Present</th><th>Absent</th><th>%</th></tr></thead>
+        <tbody><tr><td colspan="5">No attendance data</td></tr></tbody>
+      </table>
+    </div>
+  </div>
+
+  <div class="note" style="margin-top:8px;">NOTE: Passed and Promoted.</div>
+
+  <div class="signature-row">
+    <div><div class="signature-line"></div>CLASS TEACHER</div>
+    <div><div class="signature-line"></div>PRINCIPAL</div>
+    <div><div class="signature-line"></div>PARENT/GUARDIAN</div>
+  </div>
+</div>
+<script src="./reportDataBridge.js"></script>
+</body>
+</html>

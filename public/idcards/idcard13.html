@@ -1,0 +1,300 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Model ID Card</title>
+<style>
+*{
+    box-sizing:border-box;
+}
+
+body{
+    background:#f1f0f0;
+    display:flex;
+    justify-content:center;
+    align-items:center;
+    min-height:100vh;
+    margin:0;
+    padding:28px;
+    font-family:Georgia,"Times New Roman",serif;
+}
+
+.card-set{
+    display:flex;
+    gap:34px;
+    justify-content:center;
+    align-items:center;
+    flex-wrap:wrap;
+}
+
+.id-card{
+    width:320px;
+    height:460px;
+    background:#fff;
+    border-radius:24px;
+    overflow:hidden;
+    position:relative;
+    box-shadow:0 12px 30px rgba(0,0,0,.55);
+}
+
+.header{
+    height:188px;
+    background:#1e6fd8;
+    position:relative;
+    overflow:hidden;
+}
+
+.school-title{
+    color:#fff200;
+    text-align:center;
+    font-family:Impact,Arial Black,Arial,sans-serif;
+    font-size:20px;
+    font-weight:900;
+    line-height:1;
+    letter-spacing:.4px;
+    padding:16px 14px 0 78px;
+    text-transform:uppercase;
+    text-shadow:2px 2px 0 rgba(0,0,0,.25);
+}
+
+.logo{
+    width:48px;
+    height:48px;
+    position:absolute;
+    left:12px;
+    top:22px;
+    z-index:5;
+}
+
+.logo img{
+    width:100%;
+    height:100%;
+    object-fit:contain;
+}
+
+.tagline{
+    position:absolute;
+    left:75px;
+    top:75px;
+    color:white;
+    font-family:"Trebuchet MS",Arial,sans-serif;
+    font-style:italic;
+    font-size:12px;
+    font-weight:bold;
+    white-space:nowrap;
+    z-index:5;
+}
+
+.header-waves{
+    position:absolute;
+    left:0;
+    bottom:-1px;
+    width:100%;
+    height:96px;
+    z-index:2;
+}
+
+.photo{
+      width:100px;
+      height:100px;
+      margin:8px auto 0;
+      border:3px solid #fff;
+      border-radius:5px;
+      overflow:hidden;
+      background:#dfe8f4;
+      box-shadow:0 10px 18px rgba(18,50,92,.12);
+      margin-top: -10px;
+    }
+    .photo img{width:90%;height:90%;object-fit:cover;display:block}
+.details{
+    position:absolute;
+    left:28px;
+    top:304px;
+    width:284px;
+    z-index:8;
+}
+
+ .meta{
+        display:grid;
+    grid-template-columns:106px 8px minmax(0,1fr);
+    gap:4px;
+    align-items:start;
+    margin-bottom:1px;
+    color:#111;
+    font-size:12px;
+    font-weight:bold;
+    line-height:1.20;
+}
+    .meta strong{color:var(--ink)}
+
+.footer-wave{
+    position:absolute;
+    left:0;
+    bottom:0;
+    width:100%;
+    height:38px;
+    z-index:6;
+}
+
+.back-content{
+    position:absolute;
+    left:26px;
+    right:26px;
+    top:190px;
+    z-index:8;
+    color:#111;
+}
+
+.back-title{
+    color:#2f1cff;
+    text-align:center;
+    font-family:Impact,Arial Black,Arial,sans-serif;
+    font-size:22px;
+    letter-spacing:.5px;
+    margin-bottom:10px;
+    text-transform:uppercase;
+}
+
+.instructions{
+    margin:0;
+    padding-left:18px;
+    font-size:12px;
+    font-weight:bold;
+    line-height:1.35;
+}
+
+.instructions li{
+    margin-bottom:5px;
+}
+
+.address-line{
+    border-top:2px solid #dd8d43;
+    margin-top:12px;
+    padding-top:9px;
+    text-align:center;
+    font-size:12px;
+    font-weight:bold;
+    color:#060606;
+    line-height:1.35;
+}
+
+.rule{
+    display:block;
+    color:#060606;
+    font-size:13px;
+    margin-bottom:3px;
+
+   
+}
+</style>
+</head>
+<body>
+<div class="card-set">
+<div class="id-card">
+    <div class="header">
+        <div class="school-title" data-school>School name</div>
+
+        <div class="logo">
+             <img data-school-logo alt="School logo" class="school-logo" hidden />
+        </div>
+
+        <div class="tagline">"Promised To Ensure Quality Education."</div>
+
+        <svg class="header-waves" viewBox="0 0 510 180" preserveAspectRatio="none" aria-hidden="true">
+            <path d="M0 130 C115 70 255 30 510 36 L510 180 L0 180 Z" fill="#f29b4e"/>
+            <path d="M0 148 C120 86 270 50 510 58 L510 180 L0 180 Z" fill="#08a817"/>
+            <path d="M0 168 C124 100 278 73 510 85 L510 180 L0 180 Z" fill="#fff"/>
+        </svg>
+    </div>
+
+    <div class="photo"><img data-photo alt="Student photo" hidden></div>
+
+    <div class="details">
+         <div class="meta">Studeent Name:: <strong data-class>--</strong></div>
+          <div class="meta">Class Name:: <strong data-class>--</strong></div>
+          <div class="meta"> Roll No:: <strong data-roll>--</strong></div>
+          <div class="meta">Father's Name:: <strong data-parent>--</strong></div>
+         <div  class="meta">Blood Group:: <strong data-blood>--</strong></div>
+            <div  class="meta">DOB::<strong data-dob>--</strong></div>
+    </div>
+
+    <svg class="footer-wave" viewBox="0 0 510 126" preserveAspectRatio="none" aria-hidden="true">
+        <path d="M0 126 L0 70 C135 50 260 0 510 14 L510 126 Z" fill="#f29b4e"/>
+        <path d="M430 60 C455 42 484 44 510 48 L510 126 L430 126 Z" fill="#f29b4e"/>
+    </svg>
+
+    
+</div>
+<div class="id-card">
+    <div class="header">
+        <div class="school-title"data-school>School Name</div>
+
+ <div class="logo">
+             <img data-school-logo alt="School logo" class="school-logo" hidden />
+        </div>
+
+   <div class="tagline">"Promised To Ensure Quality Education."</div>
+
+        <svg class="header-waves" viewBox="0 0 510 180" preserveAspectRatio="none" aria-hidden="true">
+            <path d="M0 130 C115 70 255 30 510 36 L510 180 L0 180 Z" fill="#f29b4e"/>
+            <path d="M0 148 C120 86 270 50 510 58 L510 180 L0 180 Z" fill="#08a817"/>
+            <path d="M0 168 C124 100 278 73 510 85 L510 180 L0 180 Z" fill="#fff"/>
+        </svg>
+    </div>
+
+    <div class="back-content">
+        <div class="back-title">Instructions</div>
+
+        <ul class="instructions">
+            <li>Wear this ID card during school hours.</li>
+            <li>Do not bend, scratch, or damage this card.</li>
+            <li>Lost cards should be reported to the office.</li>
+            <li>This card is not transferable.</li>
+        </ul>
+
+       <div class="address-line" data-school-address>School details</div>
+         
+          <div class="rule">Phone: <strong data-phone>--</strong></div>
+          <div class="rule">Emergency: <strong data-emergency>--</strong></div>
+          <div class="rule">Address: <strong data-address>--</strong></div>
+          <div class="rule">Transport: <strong data-route>--</strong></div>
+    </div>
+
+    <svg class="footer-wave" viewBox="0 0 510 126" preserveAspectRatio="none" aria-hidden="true">
+        <path d="M0 126 L0 70 C135 50 260 0 510 14 L510 126 Z" fill="#f29b4e"/>
+        <path d="M430 60 C455 42 484 44 510 48 L510 126 L430 126 Z" fill="#f29b4e"/>
+    </svg>
+</div>
+</div>
+ <script>
+    const p = new URLSearchParams(location.search);
+    const set = (sel, val) => document.querySelectorAll(sel).forEach((n) => (n.textContent = val || "--"));
+    const img = p.get("photo");
+    if (img) {
+      const el = document.querySelector("[data-photo]");
+      if (el) {
+        el.src = img;
+        el.hidden = false;
+      }
+    }
+    set("[data-school]", p.get("school"));
+    set("[data-name]", p.get("name"));
+    set("[data-class]", p.get("className"));
+    set("[data-admission]", p.get("admissionNo"));
+    set("[data-roll]", p.get("rollNo"));
+    set("[data-blood]", p.get("bloodGroup"));
+    set("[data-dob]", p.get("dob"));
+    set("[data-phone]", p.get("phone"));
+    set("[data-parent]", p.get("parent"));
+    set("[data-route]", p.get("route"));
+    set("[data-address]", p.get("address"));
+    set("[data-emergency]", p.get("emergency"));
+    if (p.get("print") === "1") {
+      window.addEventListener("load", () => setTimeout(() => window.print(), 250));
+      window.addEventListener("afterprint", () => window.close());
+    }
+  </script>
+  <script src="./idcard-common.js"></script>
+</body>
+</html>

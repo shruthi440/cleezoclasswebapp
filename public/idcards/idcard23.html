@@ -1,0 +1,411 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Model ID Card</title>
+<style>
+
+body{
+    margin:0;
+    background:#d8d8d8;
+    min-height:100vh;
+    display:flex;
+    justify-content:center;
+    align-items:center;
+    padding:28px;
+    font-family:Arial,sans-serif;
+
+    overflow: hidden;
+    transform: scale(0.65);
+    transform-origin: top center;
+    width: 150%;
+    margin-left: -30%;
+}
+
+.wrapper{
+    display:flex;
+    gap:30px;
+    flex-wrap:wrap;
+    justify-content:center;
+}
+
+/* HOLDER */
+
+.holder{
+    width:300px;
+    height:420px;
+    background:#cfcfcf;
+    padding:12px;
+    box-shadow:0 8px 20px rgba(0,0,0,.2);
+}
+
+.card{
+    width:100%;
+    height:100%;
+    background:
+    repeating-linear-gradient(
+      -45deg,
+      #fafafa,
+      #fafafa 2px,
+      #f4f4f4 2px,
+      #f4f4f4 4px
+    );
+    position:relative;
+    overflow:hidden;
+}
+
+/* ===== HEADER AND FOOTER SHAPES ===== */
+
+.front-header,
+.front-footer,
+.back-header,
+.back-footer{
+    position:absolute;
+    left:0;
+    width:100%;
+    z-index:1;
+}
+
+.front-header{
+    top:0;
+    height:122px;
+}
+
+.front-footer{
+    bottom:-25px;
+    height:132px;
+}
+
+.back-header{
+    top:0;
+    height:104px;
+}
+
+.back-footer{
+    bottom:-25px;
+    height:132px;
+}
+
+/* LOGO */
+
+.logo{
+    width:54px;
+    height:54px;
+    position:absolute;
+    top:16px;
+    left:18px;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    background:white;
+    border-radius:50%;
+    box-shadow:0 2px 8px rgba(0,0,0,.18);
+    z-index:6;
+}
+
+.logo img{
+    width:85%;
+    height:85%;
+    object-fit:contain;
+}
+
+/* PHOTO */
+
+.photo{
+    width:90px;
+    height:90px;
+    border-radius:50%;
+    border:6px solid #0c4c72;
+    overflow:hidden;
+    background:white;
+    position:absolute;
+    top:64px;
+    left:50%;
+    transform:translateX(-50%);
+    z-index:6;
+}
+
+.photo img{
+    width:100%;
+    height:140%;
+    object-fit:cover;
+}
+
+/* TEXT */
+
+.name{
+    margin-top:170px;
+    text-align:center;
+    font-size:20px;
+    letter-spacing:2px;
+    color:#111;
+    font-weight:700;
+}
+
+.school-name{
+    color:white;
+    font-size:13px;
+    font-weight:700;
+    left:98px;
+    line-height:1.15;
+    position:absolute;
+    text-align:left;
+    text-shadow:0 1px 1px rgba(0,0,0,.28);
+    top:15px;
+    text-transform:uppercase;
+    z-index:6;
+}
+.school-address{
+  position:absolute;
+    font-size:12px;
+    color:#fdfbfb;
+    padding:0 20px;
+    line-height:1.2;
+}
+
+.student-school{
+    color:#555;
+    font-size:13px;
+    margin-top:2px;
+    text-align:center;
+    text-transform:uppercase;
+}
+
+
+.details{
+    margin-top:25px;
+    padding:0 26px;
+    position:relative;
+    z-index:5;
+}
+
+  .meta{
+      display:grid;
+    grid-template-columns:96px 10px minmax(0,1fr);
+    gap:4px;
+    align-items:start;
+    margin-bottom:5px;
+    font-size:13px;
+    line-height:2;
+     font-weight: 700;
+     }
+.row span:first-child{
+    font-weight:700;
+}
+
+.row span:last-child{
+    overflow-wrap:anywhere;
+}
+
+
+
+/* ===== BACK ===== */
+
+.line{
+    width:120px;
+    height:2px;
+    background:#444;
+    margin:8px auto;
+}
+
+.back-content{
+    margin:95px 28px 0;
+    position:relative;
+    z-index:5;
+    text-align:center;
+}
+
+.back-school-name{
+    color:#141414;
+    font-size:15px;
+    font-weight:700;
+    letter-spacing:.4px;
+    margin-bottom:12px;
+    text-transform:uppercase;
+}
+
+.back-title{
+    color:#0c4c72;
+    font-size:20px;
+    font-weight:700;
+    letter-spacing:1px;
+    margin-bottom:10px;
+    text-transform:uppercase;
+}
+
+.instructions{
+    margin:0;
+    padding-left:18px;
+    text-align:left;
+    line-height:1.35;
+    font-size:11px;
+    font-weight:700;
+}
+
+.instructions li{
+    margin-bottom:7px;
+}
+
+.school-details{
+    border-top:2px solid #0c4c72;
+    font-size:11px;
+    line-height:1.35;
+    margin-top:12px;
+    padding-top:9px;
+}
+
+.school-details h4{
+    color:#0c4c72;
+    display:block;
+    font-size:15px;
+    margin-bottom:3px;
+}
+
+.rule{
+      font-size:12px;
+      line-height:3;
+      color:#090909;
+      text-align: left;
+      margin-top: -15px;
+    }
+
+    </style>
+    </head>
+    <body>
+
+<div class="wrapper">
+
+    <!-- FRONT -->
+
+    <div class="holder">
+
+        <div class="card">
+
+            <svg class="front-header" viewBox="0 0 300 120" preserveAspectRatio="none" aria-hidden="true">
+                <path d="M0 0 H300 V92 C222 116 91 121 0 88 Z" fill="#0c4c72"/>
+            </svg>
+
+            <div class="logo">
+                <img data-school-logo alt="School Logo">
+            </div>
+
+            <div class="school-name"data-school><br>
+                school name
+          </div>
+<div class="school-address" data-school-address>
+       school address
+    </div>
+  
+
+            <div class="photo"><img data-photo alt="Student photo" hidden></div>
+
+          <div class="name" data-name>Student Name</div>
+            <div class="details">
+
+               
+<div class="meta">Class Name: <strong data-class>-</strong></div>
+          <div class="meta"> Roll No:<strong data-roll>-</strong></div>
+          <div class="meta">Father's Name: <strong data-parent>-</strong></div>
+         <div  class="meta">Blood Group: <strong data-blood>-</strong></div>
+            <div  class="meta">DOB: <strong data-dob>-</strong></div>
+        </div>
+    
+
+           
+
+            <svg class="front-footer" viewBox="0 0 300 132" preserveAspectRatio="none" aria-hidden="true">
+                <path d="M0 108 H300 V30 C222 72 132 100 0 108 Z" fill="#e1a925"/>
+                <path d="M0 108 H300 V48 C220 88 140 108 0 108 Z" fill="#0c4c72"/>
+                <path d="M0 91 C84 94 172 83 300 12 V28 C198 83 107 104 0 103 Z" fill="#ffffff"/>
+                <path d="M0 82 C95 86 185 68 300 0 V10 C190 72 100 94 0 91 Z" fill="#0c4c72"/>
+            </svg>
+
+        </div>
+
+    </div>
+
+
+    <!-- BACK -->
+
+    <div class="holder">
+
+        <div class="card">
+
+            <svg class="back-header" viewBox="0 0 300 104" preserveAspectRatio="none" aria-hidden="true">
+                
+                <path d="M0 58 L140 0 H168 L0 78 Z" fill="#e1a925"/>
+                <path d="M0 76 L168 0 H185 L0 90 Z" fill="#ffffff"/>
+                <path d="M0 88 L188 0 H200 L0 100 Z" fill="#0c4c72"/>
+            </svg>
+
+
+            <div class="back-content">
+                <div class="back-school-name"data-school>school name</div>
+
+                <div class="back-title">Instructions</div>
+
+                <ul class="instructions">
+                    <li>Wear this ID card during school hours.</li>
+                    <li>Do not bend, scratch, or damage this card.</li>
+                    <li>Lost cards should be reported to the office.</li>
+                    <li>This card is not transferable.</li>
+                </ul>
+
+                <div class="school-details">
+                    <h4>School Details</h4>
+                    
+                    <div class="rule">Address: <strong data-address>--</strong></div>
+                 <div class="rule">Phone: <strong data-phone>--</strong></div>
+         
+         
+       
+        </div>
+            </div>
+
+            <svg class="back-footer" viewBox="0 0 300 132" preserveAspectRatio="none" aria-hidden="true">
+                 <path d="M0 108 H300 V30 C222 72 132 100 0 108 Z" fill="#e1a925"/>
+                <path d="M0 108 H300 V48 C220 88 140 108 0 108 Z" fill="#0c4c72"/>
+                <path d="M0 91 C84 94 172 83 300 12 V28 C198 83 107 104 0 103 Z" fill="#ffffff"/>
+               <path d="M0 82 C95 86 185 68 300 0 V10 C190 72 100 94 0 91 Z" fill="#0c4c72"/>
+               
+            </svg>
+
+        </div>
+
+    </div>
+
+</div>
+
+
+    <script>
+    const p = new URLSearchParams(location.search);
+    const set = (sel, val) => document.querySelectorAll(sel).forEach((n) => (n.textContent = val || "--"));
+    const img = p.get("photo");
+    if (img) {
+      const el = document.querySelector("[data-photo]");
+      if (el) {
+        el.src = img;
+        el.hidden = false;
+      }
+    }
+    set("[data-school]", p.get("school"));
+    set("[data-name]", p.get("name"));
+    set("[data-class]", p.get("className"));
+    set("[data-admission]", p.get("admissionNo"));
+    set("[data-roll]", p.get("rollNo"));
+    set("[data-blood]", p.get("bloodGroup"));
+    set("[data-dob]", p.get("dob"));
+    set("[data-phone]", p.get("phone"));
+    set("[data-parent]", p.get("parent"));
+    set("[data-route]", p.get("route"));
+    set("[data-address]", p.get("address"));
+    set("[data-emergency]", p.get("emergency"));
+    if (p.get("print") === "1") {
+      window.addEventListener("load", () => setTimeout(() => window.print(), 250));
+      window.addEventListener("afterprint", () => window.close());
+    }
+  </script>
+  <script src="./idcard-common.js"></script>
+</body>
+</html>

@@ -1,0 +1,70 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>ID Card Template 7</title>
+  <style>
+    :root{--bg:#d0d0d0;--teal:#59b9b2;--orange:#ff8e1d;--ink:#22303a;--muted:#5f6b73}
+    *{box-sizing:border-box} html,body{width:100%;height:100%;overflow:hidden}
+    body{margin:0;background:linear-gradient(160deg,#d0d0d0 0 58%,#72c2ba 58% 100%);font-family:Arial,Helvetica,sans-serif;color:var(--ink)}
+    .page{width:760px;height:560px;margin:0 auto;padding:20px;overflow:hidden}
+    .title{font-size:20px;letter-spacing:.12em;color:#168e8b;text-align:center;font-weight:700;margin-bottom:14px}
+    .set{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:22px}
+    .card{background:#fff;border-radius:18px;overflow:hidden;box-shadow:0 18px 34px rgba(0,0,0,.16);position:relative}
+    .card:before,.card:after{content:"";position:absolute;left:0;width:100%;height:36px;background:var(--orange)}
+    .card:before{top:0;border-radius:0 0 36px 36px/0 0 20px 20px}
+    .card:after{bottom:0;border-radius:36px 36px 0 0/20px 20px 0 0}
+    .front,.back{padding:46px 18px 18px;display:grid;gap:8px;align-content:start}
+    .school{text-align:center;color:#168f8b;font-size:12px;font-weight:700;letter-spacing:.08em}
+    .name{text-align:center;font-size:18px;font-weight:700}
+    .photo{width:92px;height:110px;margin:2px auto;border:4px solid var(--orange);border-radius:8px;overflow:hidden;background:#eef5f8}
+    .photo img{width:100%;height:100%;object-fit:cover;display:block}
+    .meta{font-size:10px;line-height:1.4;color:#455a64;text-align:center}
+    .badge{justify-self:center;background:#eaf8f7;color:#168f8b;border-radius:999px;padding:4px 12px;font-size:9px;font-weight:700}
+    .back .line{height:1px;background:#d8e8e8;margin:4px 0}
+    .back .small{font-size:10px;color:#546e7a;line-height:1.45}
+    .qr{width:72px;height:72px;margin-top:10px;border:4px solid #f0f0f0;background:repeating-linear-gradient(90deg,#222 0 4px,transparent 4px 8px),linear-gradient(180deg,#fff,#eee)}
+    .stamp{display:inline-block;margin-top:10px;border:2px solid #168f8b;border-radius:12px;padding:6px 10px;color:#168f8b;font-size:10px;font-weight:700}
+  </style>
+</head>
+<body>
+  <div class="page">
+    <div class="title">ID CARDS TEMPLATE</div>
+    <div class="set">
+      <section class="card front">
+        <div class="school" data-school>School Name</div>
+        <div class="photo"><img data-photo alt="Student photo" hidden></div>
+        <div class="name" data-name>Student Name</div>
+        <div class="meta">Student ID: <strong data-admission>--</strong></div>
+        <div class="meta">Father's Name : <span data-parent>--</span></div>
+        <div class="meta">Class Name : <span data-class>--</span></div>
+        <div class="meta">Class Roll : <span data-roll>--</span></div>
+        <div class="badge">STUDENT ID</div>
+      </section>
+      <section class="card back">
+        <div class="school" data-school>School Name</div>
+        <div class="small">Contact: <strong data-phone>--</strong></div>
+        <div class="small">Blood Group: <strong data-blood>--</strong></div>
+        <div class="small">Date of Birth: <strong data-dob>--</strong></div>
+        <div class="small">Transport: <strong data-route>--</strong></div>
+        <div class="line"></div>
+        <div class="small">Emergency Contact: <strong data-emergency>--</strong></div>
+        <div class="small">Address: <strong data-address>--</strong></div>
+        <div class="qr"></div>
+        <div class="stamp">Principal Signature</div>
+      </section>
+    </div>
+  </div>
+  <script>
+    const p=new URLSearchParams(location.search),set=(sel,val)=>document.querySelectorAll(sel).forEach(n=>n.textContent=val||"--"),img=p.get("photo");
+    if(img){const e=document.querySelector("[data-photo]");if(e){e.src=img;e.hidden=false}}
+    set("[data-school]",p.get("school"));set("[data-name]",p.get("name"));set("[data-class]",p.get("className"));set("[data-admission]",p.get("admissionNo"));set("[data-roll]",p.get("rollNo"));set("[data-blood]",p.get("bloodGroup"));set("[data-dob]",p.get("dob"));set("[data-phone]",p.get("phone"));set("[data-parent]",p.get("parent"));set("[data-route]",p.get("route"));set("[data-address]",p.get("address"));set("[data-emergency]",p.get("emergency"));
+    if (p.get("print") === "1") {
+      window.addEventListener("load", () => setTimeout(() => window.print(), 250));
+      window.addEventListener("afterprint", () => window.close());
+    }
+  </script>
+  <script src="./idcard-common.js"></script>
+</body>
+</html>

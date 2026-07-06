@@ -1,0 +1,70 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>ID Card Template 8</title>
+  <style>
+    :root{--sky:#b7d7fb;--blue:#3169d8;--ink:#13315c;--muted:#44627c;--line:#d6e1ef}
+    *{box-sizing:border-box} html,body{width:100%;height:100%;overflow:hidden}
+    body{margin:0;background:linear-gradient(180deg,#a8cbf4 0,#d7e7fb 100%);font-family:Arial,Helvetica,sans-serif;color:var(--ink)}
+    .page{width:760px;height:560px;margin:0 auto;padding:18px;display:grid;place-items:center;gap:16px;overflow:hidden}
+    .hanger{width:86px;height:70px;border-top:10px solid #244c8d;border-left:10px solid transparent;border-right:10px solid transparent;border-radius:0 0 22px 22px}
+    .badge{width:248px;background:#fff;border-radius:18px;box-shadow:0 18px 36px rgba(19,49,92,.22);overflow:hidden;border:1px solid var(--line)}
+    .top{background:linear-gradient(180deg,#2f67d4,#3d79ea);color:#fff;padding:8px 10px 12px;text-align:center}
+    .top .school{font-size:11px;font-weight:700}
+    .top .mini{font-size:9px;opacity:.9}
+    .photo{width:72px;height:88px;margin:8px auto 0;border:3px solid #fff;border-radius:4px;overflow:hidden;background:#dfe8f4}
+    .photo img{width:100%;height:100%;object-fit:cover}
+    .name{font-size:14px;font-weight:700;line-height:1.1;margin-top:8px;text-align:center}
+    .body{padding:8px 12px 12px;text-align:center}
+    .id{font-size:10px;color:#fff;background:#2b58b5;display:inline-block;padding:2px 6px;border-radius:999px;margin:4px 0}
+    .row{font-size:9px;line-height:1.35;color:#24415f;margin-top:4px;text-align:center}
+    .bottom{background:linear-gradient(180deg,#f5f8ff,#e9f1ff);padding:8px 10px;text-align:center}
+    .sign{font-size:9px;color:#333;margin-top:8px}
+    .back{width:248px;background:#fff;border-radius:18px;box-shadow:0 18px 36px rgba(19,49,92,.18);overflow:hidden;border:1px solid var(--line);margin-top:10px}
+    .back .head{background:linear-gradient(90deg,#2f67d4,#3d79ea);color:#fff;padding:8px 10px;font-size:10px;font-weight:700}
+    .back .body{text-align:left;padding:10px 12px;font-size:9px;line-height:1.45;color:#24415f}
+    .barcode{height:54px;margin-top:8px;border-radius:10px;background:repeating-linear-gradient(90deg,#18315f 0 3px,transparent 3px 6px),linear-gradient(180deg,#fff,#e9eef6)}
+  </style>
+</head>
+<body>
+  <div class="page">
+    <div class="hanger"></div>
+    <section class="badge">
+      <div class="top"><div class="school" data-school>School Name</div><div class="mini">First Year / Second Year</div></div>
+      <div class="body">
+        <div class="photo"><img data-photo alt="Student photo" hidden></div>
+        <div class="name" data-name>Student Name</div>
+        <div class="id">ID CARD</div>
+        <div class="row">Father Name: <strong data-parent>--</strong></div>
+        <div class="row">Admission No: <strong data-admission>--</strong></div>
+        <div class="row">Date of Birth: <strong data-dob>--</strong></div>
+        <div class="row">Blood Group: <strong data-blood>--</strong></div>
+        <div class="row">Class: <strong data-class>--</strong> | Sec <strong data-section>--</strong></div>
+      </div>
+      <div class="bottom"><div class="sign">Principal Signature</div></div>
+    </section>
+    <section class="back">
+      <div class="head">Emergency / Rules</div>
+      <div class="body">
+        <div>Name: <strong data-name>--</strong></div>
+        <div>Phone: <strong data-phone>--</strong></div>
+        <div>Address: <strong data-address>--</strong></div>
+        <div>Emergency: <strong data-emergency>--</strong></div>
+        <div class="barcode"></div>
+      </div>
+    </section>
+  </div>
+  <script>
+    const p=new URLSearchParams(location.search),set=(sel,val)=>document.querySelectorAll(sel).forEach(n=>n.textContent=val||"--"),img=p.get("photo");
+    if(img){const e=document.querySelector("[data-photo]");if(e){e.src=img;e.hidden=false}}
+    set("[data-school]",p.get("school"));set("[data-name]",p.get("name"));set("[data-class]",p.get("className"));set("[data-section]",p.get("section"));set("[data-admission]",p.get("admissionNo"));set("[data-blood]",p.get("bloodGroup"));set("[data-dob]",p.get("dob"));set("[data-phone]",p.get("phone"));set("[data-parent]",p.get("parent"));set("[data-address]",p.get("address"));set("[data-emergency]",p.get("emergency"));
+    if (p.get("print") === "1") {
+      window.addEventListener("load", () => setTimeout(() => window.print(), 250));
+      window.addEventListener("afterprint", () => window.close());
+    }
+  </script>
+  <script src="./idcard-common.js"></script>
+</body>
+</html>

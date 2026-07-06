@@ -1,0 +1,104 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Academic Report</title>
+<style>
+@page { size: A4 landscape; margin: 10mm; }
+body { margin:0; padding:0; font-family:"Segoe UI",sans-serif; background:#fff; }
+.landscape-wrap { display:flex; gap:12px; width:100%; min-height:100%; }
+.side-banner { width:90px; border:2px solid #111; border-radius:6px; padding:8px; display:flex; flex-direction:column; align-items:center; justify-content:space-between; }
+.side-banner .logo { width:70px; height:70px; object-fit:contain; }
+.side-banner .school { writing-mode: vertical-rl; text-orientation: mixed; font-weight:700; font-size:14px; text-align:center; }
+.side-banner .title { writing-mode: vertical-rl; text-orientation: mixed; font-size:12px; }
+.landscape-content { flex:1; border:2px solid #111; padding:10px; border-radius:6px; }
+.report-header { display:grid; grid-template-columns:90px 1fr 90px; gap:8px; align-items:center; border-bottom:1px solid #999; padding-bottom:6px; margin-bottom:8px; }
+.report-header-logo img,.report-header-photo img{ width:80px; height:80px; object-fit:cover; border:1px solid #999; border-radius:4px; }
+.report-header-center { text-align:center; }
+.report-header-school { font-weight:800; font-size:16px; }
+.report-header-info { margin-top:4px; display:grid; grid-template-columns:repeat(3,1fr); gap:4px; font-size:11px; }
+.report-header-info div { border:1px solid #ccc; padding:3px 4px; background:#f7f7f7; }
+.section-title { font-weight:700; font-size:12px; background:#f0f3f7; border:1px solid #c7d3e0; padding:4px 6px; margin-top:6px; }
+.table-style, table { width:100%; border-collapse:collapse; font-size:11px; }
+th, td { border:1px solid #333; padding:4px; text-align:center; }
+th { background:#2c3e50; color:#fff; }
+.row-flex { display:flex; gap:8px; margin-top:6px; }
+.box, .small-box { flex:1; }
+.remarks { border:1px solid #333; padding:6px; font-size:11px; min-height:40px; }
+.signature-section { display:flex; justify-content:space-between; margin-top:10px; font-size:11px; }
+.signature-box { width:30%; text-align:center; }
+.signature-line { border-top:1px solid #333; margin-top:18px; }
+</style>
+<style data-report-theme="true">
+:root { --head:#2f5f93; --head-soft:#e3edf8; --line:#7aa0c7; --line-soft:#c7d9ee; --panel:#f4f8fd; --accent:#23456b; }
+.header, .report-header { border-bottom-color:#7aa0c7; }
+th { background:#2f5f93 !important; color:#fff !important; }
+.section-title, .box-title { background:#e3edf8 !important; border-color:#7aa0c7 !important; color:#2f5f93 !important; }
+.report-card::before, .report::before, .container::before { border-color:#2f5f93; }
+.school-name, .report-header-school { color:#2f5f93 !important; }
+</style>
+</head>
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<body>
+<div class="landscape-wrap">
+
+  <div class="landscape-content">
+    <div class="report-header">
+      <div class="report-header-logo"><img src="logo.png" class="logo" data-school-logo alt="School Logo"></div>
+      <div class="report-header-center">
+        <div class="report-header-school" data-school-name>ABC International School</div>
+        <div class="sub-title">Student Progress Report 2026</div>
+        <div class="report-header-info">
+          <div><strong>NAME:</strong> <span data-student-name>John Doe</span></div>
+          <div><strong>CLASS:</strong> <span data-student-class>8</span></div>
+          <div><strong>SECTION:</strong> <span data-student-section>A</span></div>
+          <div><strong>FATHER:</strong> <span data-student-father>-</span></div>
+          <div><strong>DOB:</strong> <span data-student-dob>-</span></div>
+          <div><strong>ADMISSION:</strong> <span data-student-admission>-</span></div>
+          <div><strong>PHONE:</strong> <span data-student-phone>-</span></div>
+          <div><strong>AADHAR:</strong> <span data-student-aadhar>-</span></div>
+          <div><strong>ADDRESS:</strong> <span data-student-address>-</span></div>
+        </div>
+      </div>
+      <div class="report-header-photo"><img data-student-photo alt="Student Photo"></div>
+    </div>
+
+    <div class="section-title">Scholastic Area</div>
+    <table class="table-style" data-academic-table>
+      <thead>
+        <tr>
+          <th>Subject</th><th>FA1</th><th>FA2</th><th>SA1</th><th>FA3</th><th>FA4</th><th>SA2</th><th>Marks</th><th>%</th><th>Grade</th>
+        </tr>
+      </thead>
+      <tbody><tr><td colspan="10">No data</td></tr></tbody>
+    </table>
+
+    <div class="row-flex">
+      <div class="small-box">
+        <div class="section-title">Attendance</div>
+        <table class="table-style" data-attendance-table>
+          <thead>
+            <tr><th>Month</th><th>Total</th><th>Present</th><th>Absent</th><th>%</th></tr>
+          </thead>
+          <tbody><tr><td colspan="5">No attendance data</td></tr></tbody>
+        </table>
+      </div>
+      <div class="small-box">
+        <div class="section-title">Graphical Report</div>
+        <div style="height:100px;"><canvas id="graphicalChart"></canvas></div>
+      </div>
+    </div>
+
+    <div class="section-title">Remarks</div>
+    <div class="remarks">Overall performance is satisfactory.</div>
+
+    <div class="signature-section">
+      <div class="signature-box"><div class="signature-line"></div>CLASS TEACHER</div>
+      <div class="signature-box"><div class="signature-line"></div>EXAMINATION IC</div>
+      <div class="signature-box"><div class="signature-line"></div>PRINCIPAL</div>
+    </div>
+  </div>
+</div>
+<script src="./reportDataBridge.js"></script>
+</body>
+</html>
