@@ -23,6 +23,8 @@ import assistantIcon from "../assets/Assistant.png";
 import Radiusselectingg from "../shared/radiusselcting.jsx";
 import AttendanceForms from "../shared/TeacherAttendanceTimeSetting.jsx";
 import { Toaster } from "react-hot-toast";
+import { FiHelpCircle } from "react-icons/fi";
+import HelpCenter from "../shared/HelpCenter.jsx";
 
 const sidebarItems = [
   { key: "dashboard", label: "Dashboard", icon: dashboardIcon, route: "/AdminDashboard" },
@@ -40,14 +42,9 @@ const quickCards = [
   { key: "assistant", title: "Assistant", subtitle: "Daily Activity check", icon: assistantIcon },
 ];
 
-const footerCards = [
-  { title: "12/02/2026", subtitle: "Strike", meta: "Announcements" },
-  { title: "14/04/2026", subtitle: "Gurunanak Jayn", meta: "Calendar" },
-  { title: "524 / 534", subtitle: "2 Fail / 8 Exits", meta: "Promotions" },
-  { title: "Complaints", subtitle: "Live Chat", meta: "Unofficial" },
-];
-
 const API_BASE = "https://cleezoclass.com:4000/api/admin";
+const ROOT_API_BASE = "https://cleezoclass.com:4000/api";
+const EXTRA_CLASS_STORAGE_PREFIX = "extraSpecialClassRequests";
 
 const formatDateLabel = (value) => {
   if (!value) return "-";
@@ -72,6 +69,48 @@ const formatChatDateTime = (dateValue, timeValue) => {
   const dateLabel = dateValue ? formatDateLabel(dateValue) : "-";
   const timeLabel = timeValue ? formatTimeLabel(timeValue) : "--";
   return `${dateLabel}, ${timeLabel}`;
+};
+
+const getArrayPayload = (payload) => {
+  if (Array.isArray(payload)) return payload;
+  if (Array.isArray(payload?.data)) return payload.data;
+  if (Array.isArray(payload?.rows)) return payload.rows;
+  if (Array.isArray(payload?.results)) return payload.results;
+  return [];
+};
+
+const getSettledArray = (result) =>
+  result.status === "fulfilled" ? getArrayPayload(result.value?.data) : [];
+
+const getSettledObject = (result) =>
+  result.status === "fulfilled" && result.value?.data && typeof result.value.data === "object"
+    ? result.value.data
+    : {};
+
+const parseDateValue = (value) => {
+  if (!value) return null;
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? null : date;
+};
+
+const isTestCalendarItem = (item) =>
+  /test|exam|assessment|fa-|fa\d|sa-|sa\d/i.test(
+    `${item?.eventName || ""} ${item?.eventType || ""} ${item?.title || ""}`
+  );
+
+const sortByDateAsc = (key) => (a, b) =>
+  (parseDateValue(a?.[key])?.getTime() || 0) - (parseDateValue(b?.[key])?.getTime() || 0);
+
+const getStoredExtraClassRequests = (schoolCode) => {
+  if (!schoolCode || typeof window === "undefined") return [];
+
+  try {
+    const storageKey = `${EXTRA_CLASS_STORAGE_PREFIX}:${schoolCode}`;
+    const requests = JSON.parse(localStorage.getItem(storageKey) || "[]");
+    return Array.isArray(requests) ? requests : [];
+  } catch {
+    return [];
+  }
 };
 
 const formatAttendanceClock = (value) => {
@@ -629,6 +668,10 @@ const AdiminAcademicsNew = () => {
   const [showRadiusPopup, setShowRadiusPopup] = useState(false);
   const [showTeacherAttendancePopup, setShowTeacherAttendancePopup] = useState(false);
   const [attendanceView, setAttendanceView] = useState("teacher");
+      const [openHelpSection, setOpenHelpSection] = useState(null);
+    const[isHelpOpen,setIsHelpOpen]=useState(false)
+    const userRole = localStorage.getItem("userRole")
+
   const [liveChatForm, setLiveChatForm] = useState({
     party1: "",
     className: "",
@@ -641,8 +684,63 @@ const AdiminAcademicsNew = () => {
   const [schoolLogo, setSchoolLogo] = useState("/default-logo.png");
   const [studentAlertTime, setStudentAlertTime] = useState(null);
   const [teacherAttendanceTimes, setTeacherAttendanceTimes] = useState(null);
-  const [attendanceRadius, setAttendanceRadius] = useState(localStorage.getItem("attendanceRadius") || "");
+const [attendanceRadius, setAttendanceRadius] = useState("");
+const [attendanceRadius1, setAttendanceRadius1] = useState( "");
   const [attendanceRadiusDate, setAttendanceRadiusDate] = useState(localStorage.getItem("attendanceRadiusDate") || "");
+  const [academicSnapshot, setAcademicSnapshot] = useState({
+    extraClasses: [],
+    tests: [],
+    announcements: [],
+    events: [],
+    complaints: [],
+    totals: {},
+  });
+  useEffect(() => {
+  getAttendanceRadius();
+}, []);
+
+const getAttendanceRadius = async () => {
+  try {
+    const schoolCode = localStorage.getItem("schoolCode");
+
+    const response = await axios.get(
+      `https://cleezoclass.com:4000/api/attendance-radius`,
+      {
+        params: { schoolCode },
+      }
+    );
+
+    if (response.data.success) {
+      setAttendanceRadius1(response.data.radius);
+    }
+  } catch (error) {
+    console.error(error);
+  }
+};
+    const [behaviour, setBehaviour] = useState({});
+
+  useEffect(() => {
+    getBehaviourPercentage();
+  }, []);
+
+  const getBehaviourPercentage = async () => {
+    try {
+      const schoolCode = localStorage.getItem("schoolCode");
+
+      const res = await axios.get(
+        "https://cleezoclass.com:4000/api/overall-behaviour-percentage",
+        {
+          params: { schoolCode },
+        }
+      );
+
+      if (res.data.success) {
+        setBehaviour(res.data.data);
+      }
+    } catch (err) {
+      console.error(err);
+    }
+  };
   const [userDropdownOpen, setUserDropdownOpen] = useState(false);
   const schoolCode = localStorage.getItem("schoolCode") || "";
   const assistantPanelItems = [
@@ -681,6 +779,51 @@ const AdiminAcademicsNew = () => {
     [chatRequests]
   );
 
+  const latestExtraClass = academicSnapshot.extraClasses[0] || null;
+  const latestTest = academicSnapshot.tests[0] || null;
+  const latestAnnouncement = academicSnapshot.announcements[0] || null;
+  const latestCalendarEvent = academicSnapshot.events[0] || null;
+  const upcomingTestEvent = useMemo(() => {
+    const startOfToday = new Date();
+    startOfToday.setHours(0, 0, 0, 0);
+    return [...academicSnapshot.events]
+      .filter((item) => {
+        const eventDate = parseDateValue(item?.eventDate);
+        return eventDate && eventDate >= startOfToday && isTestCalendarItem(item);
+      })
+      .sort(sortByDateAsc("eventDate"))[0] || null;
+  }, [academicSnapshot.events]);
+
+  const promotionTitle = academicSnapshot.totals?.totalTests
+    ? `${academicSnapshot.totals.totalTests} Tests`
+    : `${students.length || classList.length || 0} Records`;
+  const promotionSubtitle = academicSnapshot.totals?.poorPerformers != null
+    ? `${academicSnapshot.totals.poorPerformers} Low / ${academicSnapshot.totals.highPerformers || 0} High`
+    : "Live academics";
+
+  const dynamicFooterCards = [
+    {
+      title: latestAnnouncement ? formatDateLabel(latestAnnouncement.announcementDate) : "--",
+      subtitle: latestAnnouncement?.title || "No announcements",
+      meta: "Announcements",
+    },
+    {
+      title: latestCalendarEvent ? formatDateLabel(latestCalendarEvent.eventDate) : "--",
+      subtitle: latestCalendarEvent?.eventName || "No calendar events",
+      meta: "Calendar",
+    },
+    {
+      title: promotionTitle,
+      subtitle: promotionSubtitle,
+      meta: "Promotions",
+    },
+    {
+      title: `${academicSnapshot.complaints.length} Complaints`,
+      subtitle: `${requestItems.length} Live Chat`,
+      meta: "Unofficial",
+    },
+  ];
+
   const fetchPoItems = async () => {
     if (!schoolCode) return;
     setLoadingPoItems(true);
@@ -709,6 +852,63 @@ const AdiminAcademicsNew = () => {
 
   useEffect(() => {
     fetchPoItems();
+  }, [schoolCode]);
+
+  useEffect(() => {
+    if (!schoolCode) return;
+
+    const loadAcademicSnapshot = async () => {
+      const now = new Date();
+      const year = String(now.getFullYear());
+      const month = String(now.getMonth() + 1);
+      const monthValue = `${year}-${month.padStart(2, "0")}`;
+      const params = { schoolCode };
+
+      const [
+        extraClassRes,
+        testsRes,
+        announcementRes,
+        eventRes,
+        complaintsRes,
+        totalsRes,
+      ] = await Promise.allSettled([
+        axios.get(`${ROOT_API_BASE}/extra-special-class-requests`, {
+          params: { ...params, limit: 5 },
+        }),
+        axios.get(`${ROOT_API_BASE}/all-tests-ledger`, { params }),
+        axios.get(`${ROOT_API_BASE}/admin-announcements`, {
+          params: { ...params, year, month },
+        }),
+        axios.get(`${ROOT_API_BASE}/admin-events`, {
+          params: { ...params, year, month },
+        }),
+        axios.get(`${ROOT_API_BASE}/complaints`, { params }),
+        axios.get(`${ROOT_API_BASE}/dashboard-totals`, {
+          params: { ...params, month: monthValue },
+        }),
+      ]);
+
+      setAcademicSnapshot({
+        extraClasses: getSettledArray(extraClassRes),
+        tests: getSettledArray(testsRes),
+        announcements: getSettledArray(announcementRes),
+        events: getSettledArray(eventRes),
+        complaints: getSettledArray(complaintsRes),
+        totals: getSettledObject(totalsRes),
+      });
+    };
+
+    loadAcademicSnapshot().catch((error) => {
+      console.error("Failed to load academic dashboard snapshot", error);
+      setAcademicSnapshot({
+        extraClasses: [],
+        tests: [],
+        announcements: [],
+        events: [],
+        complaints: [],
+        totals: {},
+      });
+    });
   }, [schoolCode]);
 
   useEffect(() => {
@@ -845,7 +1045,6 @@ const AdiminAcademicsNew = () => {
       console.error("Failed to reset teacher attendance time", error);
     }
   };
-
   const handleTeacherCardClick = async (teacher) => {
     const teacherId = teacher?.teacher_id || teacher?.id || teacher?._id;
     if (!teacherId) return;
@@ -1309,6 +1508,38 @@ const AdiminAcademicsNew = () => {
   //     ignore = true;
   //   };
   // }, [students, schoolCode, className, section]);
+
+
+    const [performance, setPerformance] = useState({});
+
+    useEffect(() => {
+        getOverallPerformance();
+    }, []);
+
+    const getOverallPerformance = async () => {
+
+        try {
+
+            const schoolCode = localStorage.getItem("schoolCode");
+
+            const response = await axios.get(
+                "https://cleezoclass.com:4000/api/overall-performance-percentage",
+                {
+                    params: {
+                        schoolCode,
+                    },
+                }
+            );
+
+            if (response.data.success) {
+                setPerformance(response.data.data);
+            }
+
+        } catch (error) {
+            console.log(error);
+        }
+
+    };
   useEffect(() => {
     if (!selectedStudent || !schoolCode || !className || !section) return;
 
@@ -1553,6 +1784,23 @@ useEffect(() => {
       window.removeEventListener("popstate", handlePopState);
     };
   }, [showRadiusPopup]);
+  const academicPercentage = Number(performance.overallPercentage || 0);
+
+
+
+const behaviourPercentage =
+  100 -
+  (Number(behaviour.needsImprovementPercentage || 0) +
+   Number(behaviour.negativePercentage || 0));
+
+const overallPerformance = (
+  (
+    academicPercentage 
+   
+  
+  ) / 1
+).toFixed(1);
+const progressDegree = `${Number(overallPerformance || 0) * 3.6}deg`;
   return (
     <div className="dashboard-page dashboard-home-page frontdesk-dashboard-page accountant-dashboard-page accountant-dashboard-home-page admin-academics-page">
       <div className="dashboard-shell accountant-dashboard-shell">
@@ -1605,7 +1853,17 @@ useEffect(() => {
             </div>
 
             <div className="dashboard-topbar-right accountant-topbar-right">
-
+ <button
+           className="accountant-help-icon-btn"
+           onClick={() => setIsHelpOpen(true)}
+         >
+         <FiHelpCircle
+         style={{
+           color: "#e9818c",
+           fontSize: "34px"
+         }}
+       />
+         </button>
               <EditableProfileMenu showHrSwitch />
             </div>
           </div>
@@ -1620,25 +1878,28 @@ useEffect(() => {
               </div>
 
               <div className="admin-academics-summary accountant-card">
-                <div className="admin-academics-summary-ring">
-                  <div className="admin-academics-summary-ring-inner">
-                    {staffAttendanceStats.average ? `${staffAttendanceStats.average}%` : "70%"}
-                  </div>
-                </div>
+<div
+  className="accountant-progress-panel"
+  style={{
+    "--admission-progress": progressDegree,
+  }}
+>
+  <div className="accountant-progress-ring">
+    <div className="accountant-progress-ring-inner">
+{performance.overallPercentage || 0}%    </div>
+  </div>
+</div>
                 <div className="admin-academics-summary-stats">
-                  <p>
-                    <span>Performance - staff:</span>
-                    <strong>
-                      {loadingTeacherAttendance
-                        ? "..."
-                        : staffAttendanceStats.average
-                          ? `${staffAttendanceStats.average}%`
-                          : "70%"}
-                    </strong>
-                  </p>
-                  <p><span>Performance - student:</span> <strong>89%</strong></p>
-                  <p><span>Behavior:</span> <strong>0 Misbehavior</strong></p>
-                  <p><span>Staff overtime:</span> <strong>6 Teachers</strong></p>
+         
+
+                  <p><span>Performance - student:</span> <strong>{performance.overallPercentage || 0}%</strong></p>
+                  
+      <p> Positive: <strong>{behaviour.positivePercentage || 0}%</strong></p>
+
+          <p>Needs Improvement: <strong>{behaviour.needsImprovementPercentage || 0}%</strong></p>
+
+      <p> Negative: <strong>{behaviour.negativePercentage || 0}%</strong></p>
+                  {/* <p><span>Staff overtime:</span> <strong>6 Teachers</strong></p> */}
                 </div>
                 <div className="admin-academics-summary-right">
                   <button type="button" className="collect-filter">
@@ -1646,7 +1907,11 @@ useEffect(() => {
                   </button>
                   <div className="admin-academics-exam">
                     <h3>Exam Schedule</h3>
-                    <p>SA-2 | 15/04/2026</p>
+                    <p>
+                      {upcomingTestEvent
+                        ? `${upcomingTestEvent.eventName || "Test"} | ${formatDateLabel(upcomingTestEvent.eventDate)}`
+                        : "No upcoming test"}
+                    </p>
                   </div>
                 </div>
               </div>
@@ -2185,47 +2450,69 @@ useEffect(() => {
                   </div>
                 </div>
 
-                <div className="admin-academics-test-item admin-academics-alert-item">
-                  <strong>Attendance Radius</strong>
-                  <span>{attendanceRadiusSummary}</span>
-                  {attendanceRadiusAddedDate ? <span>{attendanceRadiusAddedDate}</span> : null}
-                  <div className="admin-academics-alert-action-wrap">
-             <button
-                      type="button"
-                      className="btn-solid admin-academics-alert-action"
-                      onClick={() => {
-                        setShowRadiusPopup(true);
-                        window.history.pushState({ popup: true }, "");
+        <div className="admin-academics-test-item admin-academics-alert-item">
+  <strong>Attendance Radius</strong>
 
-                      }}
-                    >
-                      {hasAttendanceRadius ? "Update Radius" : "Set Radius"}
-                    </button>
-                  </div>
-                </div>
+  <span>{attendanceRadius1} meters</span>
+
+  {attendanceRadiusAddedDate && (
+    <small className="attendance-radius-date">
+      Updated:{" "}
+      {new Date(attendanceRadiusAddedDate).toLocaleString("en-IN", {
+        day: "2-digit",
+        month: "short",
+        year: "numeric",
+        hour: "2-digit",
+        minute: "2-digit",
+        hour12: true,
+      })}
+    </small>
+  )}
+
+  <div className="admin-academics-alert-action-wrap">
+    <button
+      type="button"
+      className="btn-solid admin-academics-alert-action"
+      onClick={() => {
+        setShowRadiusPopup(true);
+        window.history.pushState({ popup: true }, "");
+      }}
+    >
+      {hasAttendanceRadius ? "Update Radius" : "Set Radius"}
+    </button>
+  </div>
+</div>
               </div>
 
               <div className="admin-academics-tests accountant-card">
                 <div className="admin-academics-test-item">
                   <strong>Extra Classes</strong>
-                  <span>9A - 5:00PM</span>
-                  <small>01/04/2026</small>
+                  <span>
+                    {latestExtraClass
+                      ? `${latestExtraClass.class_name || "-"} - ${formatStoredTime(latestExtraClass.start_time)}`
+                      : "No extra class requests"}
+                  </span>
+                  <small>{latestExtraClass ? formatDateLabel(latestExtraClass.request_date) : "--"}</small>
                 </div>
                 <div className="admin-academics-test-item">
                   <strong>Upcoming Test</strong>
-                  <span>SA-2</span>
-                  <small>14/04/2026</small>
+                  <span>{upcomingTestEvent?.eventName || "No upcoming test"}</span>
+                  <small>{upcomingTestEvent ? formatDateLabel(upcomingTestEvent.eventDate) : "--"}</small>
                 </div>
                 <div className="admin-academics-test-item emphasis">
                   <strong>Previous Test</strong>
-                  <span>FA-3, 100% Attk.</span>
-                  <small>13/03/2026</small>
+                  <span>
+                    {latestTest
+                      ? `${latestTest.test_type || "Test"}${latestTest.subject ? `, ${latestTest.subject}` : ""}`
+                      : "No test records"}
+                  </span>
+                  <small>{latestTest ? formatDateLabel(latestTest.createdAt) : "--"}</small>
                 </div>
               </div>
 
               <div className="admin-academics-footer-cards accountant-card">
-                {footerCards.map((item) => (
-                  <div key={item.title} className="admin-academics-footer-item">
+                {dynamicFooterCards.map((item) => (
+                  <div key={item.meta} className="admin-academics-footer-item">
                     <strong>{item.title}</strong>
                     <span>{item.subtitle}</span>
                     <small>{item.meta}</small>
@@ -2680,6 +2967,18 @@ useEffect(() => {
           </div>
         </div>
       ) : null}
+            {
+        isHelpOpen && (
+          <>
+          <HelpCenter
+          userRole={userRole}
+          openHelpSection={openHelpSection}
+              setOpenHelpSection={setOpenHelpSection}
+          setIsHelpOpen={setIsHelpOpen}
+          />
+          </>
+        )
+      }
 
       <div className="accountant-footer-brand">
         <span>Powered By:</span>

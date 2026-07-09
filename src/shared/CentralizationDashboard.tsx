@@ -5,6 +5,7 @@ import { useNavigate } from 'react-router-dom';
 import { Pencil, Trash2 } from 'lucide-react';
 import StudentEditingPopup from './StudentEditingPopup.jsx';
 import { IoClose } from "react-icons/io5";
+
 type UploadAsset = File | string | null;
 type TabName = 'Details' | 'Management' | 'Staff' | 'Student' | 'Uploads';
 type StepTitle = 'Details' | 'Management' | 'Staff' | 'Students' | 'Uploaded Files';
@@ -41,10 +42,8 @@ interface FormDataState {
     radius: string;
     use_radius: string;
     institute_authorized_person: string;
-email: string;
-email_app_key: string;
-
-
+    email: string;
+    email_app_key: string;
 }
 
 interface SchoolApiResponse {
@@ -186,7 +185,7 @@ const managementDesignationOptions = [
     { label: 'Accountant', value: 'accountant' },
     { label: 'HR', value: 'hr' },
     { label: 'Bus Manager', value: 'Bus Manager' },
-    {label: 'Bus Driver', value: 'Bus Driver'},
+    { label: 'Bus Driver', value: 'Bus Driver' },
 ] as const;
 
 const initialFormData: FormDataState = {
@@ -211,9 +210,8 @@ const initialFormData: FormDataState = {
     radius: '',
     use_radius: '',
     institute_authorized_person: '',
-email: '',
-email_app_key: '',
-
+    email: '',
+    email_app_key: '',
 };
 
 const photoFields: Array<{ key: FileFieldKey; label: string }> = [
@@ -237,9 +235,7 @@ const clickHiddenInput = (id: string) => {
 
 const normalizePhotoUrl = (rawPhoto: any) => {
     if (!rawPhoto) return '';
-
     let photoPath = rawPhoto;
-
     if (typeof photoPath === 'object' && photoPath.type === 'Buffer' && Array.isArray(photoPath.data)) {
         try {
             photoPath = new TextDecoder().decode(new Uint8Array(photoPath.data));
@@ -247,15 +243,12 @@ const normalizePhotoUrl = (rawPhoto: any) => {
             return '';
         }
     }
-
     if (typeof photoPath !== 'string') return '';
     photoPath = photoPath.trim();
     if (!photoPath) return '';
-
     if (photoPath.startsWith('data:image') || photoPath.startsWith('http')) {
         return photoPath;
     }
-
     if (photoPath.startsWith('0x')) {
         try {
             const hex = photoPath.slice(2);
@@ -268,19 +261,15 @@ const normalizePhotoUrl = (rawPhoto: any) => {
             return '';
         }
     }
-
     if (photoPath.startsWith('/public/uploads/')) {
         photoPath = photoPath.replace('/public', '');
     }
-
     if (photoPath.startsWith('uploads/')) {
         photoPath = `/${photoPath}`;
     }
-
     if (!photoPath.startsWith('/uploads/')) {
         photoPath = `/uploads/${photoPath.replace(/^\/+/, '')}`;
     }
-
     return `https://cleezoclass.com:4000${photoPath}`;
 };
 
@@ -353,6 +342,11 @@ const CentralizationDashboard: React.FC = () => {
         student: 0,
         management: 0,
     });
+    useEffect(() => {
+        setExcelFile(null);
+        setUploadedData([]);
+        setPreviewData([]);
+    }, [activeTab]);
     const [roleUsers, setRoleUsers] = useState<any[]>([]);
     const [roleLoading, setRoleLoading] = useState(false);
     const [actionUser, setActionUser] = useState<any | null>(null);
@@ -485,8 +479,6 @@ const CentralizationDashboard: React.FC = () => {
         loadRoleUsers();
     }, [activeRoleTab, formData.school_code]);
 
-    
-
     const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
         const { name, value } = e.target;
         setFormData((prev) => ({ ...prev, [name as FormFieldKey]: value }));
@@ -511,18 +503,9 @@ const CentralizationDashboard: React.FC = () => {
 
     const uploadStudentPhoto = async () => {
         if (!studentPhotoFile) return addUserForm.photo || '';
-
         const schoolCode = formData.school_code || localStorage.getItem('schoolCode');
         const uploadData = new FormData();
         uploadData.append('photo', studentPhotoFile);
-
-        console.log('[CentralizationDashboard] uploadStudentPhoto start', {
-            userModalMode,
-            editingUserId,
-            schoolCode,
-            fileName: studentPhotoFile.name,
-            fileSize: studentPhotoFile.size,
-        });
 
         const response = await axios.post(
             'https://cleezoclass.com:4000/api/upload-photo',
@@ -532,8 +515,6 @@ const CentralizationDashboard: React.FC = () => {
                 params: { schoolCode },
             }
         );
-
-        console.log('[CentralizationDashboard] uploadStudentPhoto response', response.data);
         return response.data?.photoPath || addUserForm.photo || '';
     };
 
@@ -548,10 +529,6 @@ const CentralizationDashboard: React.FC = () => {
         ).sort((a, b) => a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' }));
 
     const openAddUserModal = (userType: UserType) => {
-        console.log('[CentralizationDashboard] openAddUserModal', {
-            activeRoleTab,
-            userType,
-        });
         setUserModalMode('add');
         setEditingUserId(null);
         setCreatedCredentials(null);
@@ -634,13 +611,6 @@ const CentralizationDashboard: React.FC = () => {
             return;
         }
 
-        console.log('[CentralizationDashboard] openEditUserModal', {
-            activeRoleTab,
-            resolvedId,
-            userType,
-            user,
-        });
-
         setUserModalMode('edit');
         setEditingUserId(resolvedId);
         setCreatedCredentials(null);
@@ -650,63 +620,8 @@ const CentralizationDashboard: React.FC = () => {
         setIsAddUserOpen(true);
     };
 
-    const buildUserSubmitPayload = (form: AddUserFormState, schoolCode: string) => {
-        const basePayload: Record<string, unknown> = {
-            user_type: form.user_type,
-            category: form.user_type,
-            name: form.name,
-            username: form.username,
-            password: form.password,
-            gender: form.gender,
-            phone_no: form.user_type === 'student' ? form.father_phone_no || form.phone_no : form.phone_no,
-            aadhar_no: form.aadhar_no,
-            father_name: form.father_name,
-            school_name: form.school_name || formData.school_name || localStorage.getItem('instituteName') || '',
-            address: form.address || formData.address || '',
-            dob: form.dob,
-            photo: typeof form.photo === 'string' ? form.photo : '',
-            schoolCode,
-            curriculum: form.curriculum || formData.curriculum || '',
-            Curriculum: form.curriculum || formData.curriculum || '',
-            designation: form.designation || '',
-        };
-
-        if (form.user_type === 'student') {
-            return {
-                ...basePayload,
-                father_phone_no: form.father_phone_no,
-                class_name: form.class_name,
-                section: form.section,
-                class_teacher: form.class_teacher,
-                admission_no: form.admission_no,
-                cbse_reg_no: form.cbse_reg_no,
-            };
-        }
-
-        if (form.user_type === 'teacher') {
-            return {
-                ...basePayload,
-                teaches_to_1: form.teaches_to_1,
-                teaches_to_2: form.teaches_to_2,
-                teaches_to_3: form.teaches_to_3,
-                teaches_to_4: form.teaches_to_4,
-                teaches_to_5: form.teaches_to_5,
-                teaches_to_6: form.teaches_to_6,
-                teaches_to_7: form.teaches_to_7,
-                teaches_to_8: form.teaches_to_8,
-                teaches_to_9: form.teaches_to_9,
-                teaches_to_10: form.teaches_to_10,
-                teaches_to_11: form.teaches_to_11,
-                teaches_to_12: form.teaches_to_12,
-            };
-        }
-
-        return basePayload;
-    };
-
     const reloadRoleUsers = async () => {
         if (!activeRoleTab) return;
-
         const schoolCode = formData.school_code || localStorage.getItem('schoolCode');
         if (!schoolCode) return;
 
@@ -717,26 +632,55 @@ const CentralizationDashboard: React.FC = () => {
         setRoleUsers(Array.isArray(response.data) ? response.data : []);
     };
 
-const handleAddUserChange = (
-  e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>
-) => {
-  const { name, value } = e.target;
-  const field = name as keyof AddUserFormState;
+    const handleAddUserChange = (
+        e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>
+    ) => {
+        const { name, value } = e.target;
+        const field = name as keyof AddUserFormState;
 
-  // Regex to allow only alphabets, spaces, hyphens, and apostrophes
-  const nameRegex = /^[A-Za-z\s'-]*$/;
+        // Regex to allow only alphabets, spaces, hyphens, and apostrophes
+        const nameRegex = /^[A-Za-z\s'-]*$/;
 
-  // If the field is 'name' or 'father_name', validate the input
-  if ((field === 'name' || field === 'father_name') && !nameRegex.test(value)) {
-    return; // Skip updating the state if the input is invalid
-  }
+        // If the field is 'name' or 'father_name', validate the input
+        if ((field === 'name' || field === 'father_name') && !nameRegex.test(value)) {
+            return; // Skip updating the state if the input is invalid
+        }
 
-  setAddUserForm((prev) => ({ ...prev, [field]: value }));
-};
+        // Phone Validation (Only digits, maximum 10 length)
+    if (field === 'phone_no' || field === 'father_phone_no') {
+    let numericValue = value.replace(/\D/g, '');
+
+    // Limit to 10 digits
+    if (numericValue.length > 10) {
+        numericValue = numericValue.slice(0, 10);
+    }
+
+    // First digit must be 6, 7, 8, or 9
+    if (numericValue.length > 0 && !/^[6-9]/.test(numericValue)) {
+        return;
+    }
+
+    setAddUserForm((prev) => ({
+        ...prev,
+        [field]: numericValue,
+    }));
+
+    return;
+}
+
+        // Aadhar Validation (Only digits, maximum 12 length)
+        if (field === 'aadhar_no') {
+            const numericValue = value.replace(/\D/g, '');
+            if (numericValue.length > 12) return;
+            setAddUserForm((prev) => ({ ...prev, [field]: numericValue }));
+            return;
+        }
+
+        setAddUserForm((prev) => ({ ...prev, [field]: value }));
+    };
 
     const handleAddUserSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
         e.preventDefault();
-
         const schoolCode = formData.school_code || localStorage.getItem('schoolCode');
         if (!schoolCode) {
             alert('School Code missing');
@@ -745,14 +689,16 @@ const handleAddUserChange = (
 
         const userType = addUserForm.user_type;
 
-        console.log('[CentralizationDashboard] handleAddUserSubmit start', {
-            userModalMode,
-            editingUserId,
-            userType,
-            schoolCode,
-            addUserForm,
-            hasPhotoFile: Boolean(studentPhotoFile),
-        });
+        // Additional final length validations before processing payload
+        const activePhone = userType === 'student' ? addUserForm.father_phone_no : addUserForm.phone_no;
+        if (activePhone && activePhone.length !== 10) {
+            alert('Phone number must be exactly 10 digits.');
+            return;
+        }
+        if (addUserForm.aadhar_no && addUserForm.aadhar_no.length !== 12) {
+            alert('Aadhar number must be exactly 12 digits.');
+            return;
+        }
 
         try {
             setIsAddUserSubmitting(true);
@@ -763,13 +709,11 @@ const handleAddUserChange = (
                     ...addUserForm,
                     photo: normalizedPhotoPath,
                 };
-                console.log('[CentralizationDashboard] edit payload', editPayload);
                 const response = await axios.put(
                     `https://cleezoclass.com:4000/api/users/${editingUserId}`,
                     editPayload,
                     { params: { schoolCode }, headers: { 'Content-Type': 'application/json' } }
                 );
-                console.log('[CentralizationDashboard] edit response', response.data);
                 alert(response.data?.message || `${userType} updated successfully`);
             } else {
                 const photoPath = studentPhotoFile ? await uploadStudentPhoto() : '';
@@ -780,7 +724,6 @@ const handleAddUserChange = (
                     schoolCode,
                     category: userType,
                 };
-                console.log('[CentralizationDashboard] add payload', addPayload);
                 const response = await axios.post(
                     'https://cleezoclass.com:4000/api/submit-studentData',
                     addPayload,
@@ -789,7 +732,6 @@ const handleAddUserChange = (
                         headers: { 'Content-Type': 'application/json' },
                     }
                 );
-                console.log('[CentralizationDashboard] add response', response.data);
 
                 const responseData = response.data?.data || {};
                 setCreatedCredentials({
@@ -804,7 +746,6 @@ const handleAddUserChange = (
 
             try {
                 await reloadRoleUsers();
-                console.log('[CentralizationDashboard] reloadRoleUsers completed');
             } catch (reloadError) {
                 console.error('Failed to refresh role users after save:', reloadError);
             }
@@ -817,30 +758,22 @@ const handleAddUserChange = (
                 setUserModalMode('add');
             }
         } catch (error: any) {
-            console.error('[CentralizationDashboard] Error saving user:', error?.response?.data || error?.message || error);
+            console.error('Error saving user:', error?.response?.data || error?.message || error);
             alert(error?.response?.data?.message || (userModalMode === 'edit' ? 'Failed to update user' : 'Failed to add user'));
         } finally {
             setIsAddUserSubmitting(false);
-            console.log('[CentralizationDashboard] handleAddUserSubmit finished', {
-                userModalMode,
-                editingUserId,
-                userType,
-            });
         }
     };
 
     const copyCredentials = async (text: string) => {
         try {
             await navigator.clipboard.writeText(text);
-        } catch {
-            // Clipboard access can fail in some browser contexts; the text is still visible.
-        }
+        } catch { }
     };
 
     const handleUpdate = () => {
         const schoolCode = localStorage.getItem('schoolCode');
         const uploadData = new FormData();
-
         (Object.keys(formData) as Array<keyof FormDataState>).forEach((key) => {
             const value = formData[key];
             if (key === 'authorized_logo') {
@@ -849,7 +782,6 @@ const handleAddUserChange = (
                 }
                 return;
             }
-
             uploadData.append(key, value instanceof File ? value : value ?? '');
         });
 
@@ -861,15 +793,12 @@ const handleAddUserChange = (
             .catch(() => alert('Update failed'));
     };
 
-
     const handleFileUpload = async (category: string) => {
         if (!excelFile) {
             alert('Please choose an Excel file first');
             return;
         }
-
         const schoolCode = formData.school_code || localStorage.getItem('schoolCode');
-
         if (!schoolCode) {
             alert('School Code missing');
             return;
@@ -882,7 +811,6 @@ const handleAddUserChange = (
         try {
             setUploading(true);
             setPreviewCategory(getUploadPreviewCategory(activeRoleTab));
-
             const apiCategory = category.toLowerCase() === 'staff' ? 'teacher' : category.toLowerCase();
 
             const response = await axios.post<UploadResponse>(
@@ -894,20 +822,11 @@ const handleAddUserChange = (
                 }
             );
 
-            const {
-                insertedRecords,
-                duplicates,
-                replacedRecords = [],
-                skippedRows = 0,
-            } = response.data;
+            const { insertedRecords, duplicates, replacedRecords = [], skippedRows = 0 } = response.data;
             setUploadedData(insertedRecords);
             setPreviewData(insertedRecords);
             setIsExcelPreviewOpen(true);
-
-            alert(
-                `Upload Successful!\nInserted: ${insertedRecords.length}\nReplaced: ${replacedRecords.length || duplicates.length}\nSkipped: ${skippedRows}`
-            );
-
+            alert(`Upload Successful!\nInserted: ${insertedRecords.length}\nReplaced: ${replacedRecords.length || duplicates.length}\nSkipped: ${skippedRows}`);
             setExcelFile(null);
         } catch (error) {
             console.error('Excel upload failed:', error);
@@ -918,47 +837,14 @@ const handleAddUserChange = (
     };
 
     const getExcelTemplateHeaders = (category: string) => {
-        const baseHeaders = [
-            'name',
-            'gender',
-            'dob',
-            'phone_no',
-            'aadhar_no',
-            'father_name',
-            'address',
-        ];
-
-        const studentHeaders = [
-            ...baseHeaders,
-            'class_name',
-            'section',
-            'class_teacher',
-            'admission_no',
-            'curriculum',
-            'cbse_reg_no',
-        ];
-
+        const baseHeaders = ['name', 'gender', 'dob', 'phone_no', 'aadhar_no', 'father_name', 'address'];
+        const studentHeaders = [...baseHeaders, 'class_name', 'section', 'class_teacher', 'admission_no', 'curriculum', 'cbse_reg_no'];
         const teacherHeaders = [
             ...baseHeaders,
-            'designation',
-            'teaches_to_1',
-            'teaches_to_2',
-            'teaches_to_3',
-            'teaches_to_4',
-            'teaches_to_5',
-            'teaches_to_6',
-            'teaches_to_7',
-            'teaches_to_8',
-            'teaches_to_9',
-            'teaches_to_10',
-            'teaches_to_11',
-            'teaches_to_12',
+            'designation', 'teaches_to_1', 'teaches_to_2', 'teaches_to_3', 'teaches_to_4', 'teaches_to_5',
+            'teaches_to_6', 'teaches_to_7', 'teaches_to_8', 'teaches_to_9', 'teaches_to_10', 'teaches_to_11', 'teaches_to_12'
         ];
-
-        const managementHeaders = [
-            ...baseHeaders,
-            'designation',
-        ];
+        const managementHeaders = [...baseHeaders, 'designation'];
 
         if (category === 'Staff') return teacherHeaders;
         if (category === 'Management') return managementHeaders;
@@ -971,207 +857,141 @@ const handleAddUserChange = (
         const worksheet = XLSX.utils.aoa_to_sheet([headers]);
         const sheetName = category === 'Staff' ? 'TeacherTemplate' : `${category}Template`;
         XLSX.utils.book_append_sheet(workbook, worksheet, sheetName);
-        XLSX.writeFile(
-            workbook,
-            `${category === 'Staff' ? 'teacher' : category.toLowerCase()}_template.xlsx`
-        );
+        XLSX.writeFile(workbook, `${category === 'Staff' ? 'teacher' : category.toLowerCase()}_template.xlsx`);
     };
 
-const getValue = (row: any, keys: string[]) => {
-  for (const key of keys) {
-    const foundKey = Object.keys(row).find(
-      (col) => col.toLowerCase().replace(/\s+/g, "_") === key.toLowerCase()
-    );
+    const getValue = (row: any, keys: string[]) => {
+        for (const key of keys) {
+            const foundKey = Object.keys(row).find(
+                (col) => col.toLowerCase().replace(/\s+/g, "_") === key.toLowerCase()
+            );
+            if (foundKey && row[foundKey] !== undefined) {
+                return row[foundKey];
+            }
+        }
+        return "";
+    };
 
-    if (foundKey && row[foundKey] !== undefined) {
-      return row[foundKey];
-    }
-  }
-  return "";
-};
-const formatPreviewDob = (value: any) => {
-  if (value === undefined || value === null || String(value).trim() === "") {
-    return "";
-  }
+    const formatPreviewDob = (value: any) => {
+        if (value === undefined || value === null || String(value).trim() === "") return "";
+        if (value instanceof Date && !Number.isNaN(value.getTime())) {
+            return value.toISOString().slice(0, 10);
+        }
+        const numericValue = Number(value);
+        if (Number.isFinite(numericValue) && XLSX.SSF?.parse_date_code) {
+            const parsed = XLSX.SSF.parse_date_code(numericValue);
+            if (parsed?.y && parsed?.m && parsed?.d) {
+                const month = String(parsed.m).padStart(2, "0");
+                const day = String(parsed.d).padStart(2, "0");
+                return `${parsed.y}-${month}-${day}`;
+            }
+        }
+        const parsedDate = new Date(String(value).trim());
+        if (!Number.isNaN(parsedDate.getTime())) {
+            return parsedDate.toISOString().slice(0, 10);
+        }
+        return String(value).trim();
+    };
 
-  if (value instanceof Date && !Number.isNaN(value.getTime())) {
-    return value.toISOString().slice(0, 10);
-  }
+    const formatExcelColumnLabel = (key: string) =>
+        key.replace(/_/g, ' ').replace(/\b\w/g, (char) => char.toUpperCase());
 
-  const numericValue = Number(value);
-  if (Number.isFinite(numericValue) && XLSX.SSF?.parse_date_code) {
-    const parsed = XLSX.SSF.parse_date_code(numericValue);
-    if (parsed?.y && parsed?.m && parsed?.d) {
-      const month = String(parsed.m).padStart(2, "0");
-      const day = String(parsed.d).padStart(2, "0");
-      return `${parsed.y}-${month}-${day}`;
-    }
-  }
+    const formatExcelCellValue = (value: unknown) => {
+        if (value === null || value === undefined) return '-';
+        if (typeof value === 'string') return value.trim() || '-';
+        if (typeof value === 'number' || typeof value === 'boolean') return String(value);
+        if (value instanceof Date && !Number.isNaN(value.getTime())) return value.toISOString().slice(0, 10);
+        if (typeof value === 'object') {
+            try { return JSON.stringify(value); } catch { return '-'; }
+        }
+        return String(value);
+    };
 
-  const parsedDate = new Date(String(value).trim());
-  if (!Number.isNaN(parsedDate.getTime())) {
-    return parsedDate.toISOString().slice(0, 10);
-  }
+    const getUploadPreviewCategory = (roleTab: RoleTab): UploadPreviewCategory =>
+        roleTab === 'Staff' ? 'Staff' : roleTab === 'Management' ? 'Management' : 'Student';
 
-  return String(value).trim();
-};
+    const buildPreviewRows = (rawData: any[], category: UploadPreviewCategory) => {
+        if (category === 'Staff') {
+            return rawData.map((row: any) => ({
+                name: getValue(row, ['name', 'teacher_name', 'teacher', 'staff_name']).toString().toUpperCase() || '',
+                gender: getValue(row, ['gender', 'sex']),
+                phone_no: getValue(row, ['phone_no', 'phone number', 'phone', 'mobile']),
+                aadhar_no: getValue(row, ['aadhar_no', 'aadhar number', 'aadhar', 'aadhaar']),
+                dob: formatPreviewDob(getValue(row, ['dob', 'date_of_birth', 'date of birth', 'birth_date'])),
+                father_name: getValue(row, ['father_name', 'father name']).toString().toUpperCase() || '',
+                address: getValue(row, ['address', 'staff_address']),
+                designation: getValue(row, ['designation', 'subject', 'role']),
+                teaches_to_1: getValue(row, ['teaches_to_1', 'class 1']),
+                teaches_to_2: getValue(row, ['teaches_to_2', 'class 2']),
+                teaches_to_3: getValue(row, ['teaches_to_3', 'class 3']),
+                teaches_to_4: getValue(row, ['teaches_to_4', 'class 4']),
+                teaches_to_5: getValue(row, ['teaches_to_5', 'class 5']),
+                teaches_to_6: getValue(row, ['teaches_to_6', 'class 6']),
+                teaches_to_7: getValue(row, ['teaches_to_7', 'class 7']),
+                teaches_to_8: getValue(row, ['teaches_to_8', 'class 8']),
+                teaches_to_9: getValue(row, ['teaches_to_9', 'class 9']),
+                teaches_to_10: getValue(row, ['teaches_to_10', 'class 10']),
+                teaches_to_11: getValue(row, ['teaches_to_11', 'class 11']),
+                teaches_to_12: getValue(row, ['teaches_to_12', 'class 12']),
+            }));
+        }
 
-const formatExcelColumnLabel = (key: string) =>
-  key.replace(/_/g, ' ').replace(/\b\w/g, (char) => char.toUpperCase());
+        if (category === 'Management') {
+            return rawData.map((row: any) => ({
+                name: getValue(row, ['name', 'manager_name', 'staff_name']).toString().toUpperCase() || '',
+                gender: getValue(row, ['gender', 'sex']),
+                phone_no: getValue(row, ['phone_no', 'phone number', 'phone', 'mobile']),
+                aadhar_no: getValue(row, ['aadhar_no', 'aadhar number', 'aadhar', 'aadhaar']),
+                dob: formatPreviewDob(getValue(row, ['dob', 'date_of_birth', 'date of birth', 'birth_date'])),
+                father_name: getValue(row, ['father_name', 'father name']).toString().toUpperCase() || '',
+                address: getValue(row, ['address', 'management_address']),
+                designation: getValue(row, ['designation', 'role']),
+            }));
+        }
 
-const formatExcelCellValue = (value: unknown) => {
-  if (value === null || value === undefined) return '-';
-  if (typeof value === 'string') {
-    const trimmed = value.trim();
-    return trimmed || '-';
-  }
-  if (typeof value === 'number' || typeof value === 'boolean') {
-    return String(value);
-  }
-  if (value instanceof Date && !Number.isNaN(value.getTime())) {
-    return value.toISOString().slice(0, 10);
-  }
-  if (typeof value === 'object') {
-    try {
-      return JSON.stringify(value);
-    } catch {
-      return '-';
-    }
-  }
-  return String(value);
-};
+        return rawData.map((row: any) => ({
+            student_name: getValue(row, ['student_name', 'student name', 'name', 'student']).toString().toUpperCase() || '',
+            gender: getValue(row, ['gender', 'sex']),
+            phone_number: getValue(row, ['phone_no','phone_number', 'phone number', 'phone', 'mobile', 'father_phone', 'father_mobile']),
+            aadhar_number: getValue(row, ['aadhar_no','aadhar_number', 'aadhar number', 'aadhar', 'aadhaar']),
+            dob: formatPreviewDob(getValue(row, ['dob', 'date_of_birth', 'date of birth', 'birth_date'])),
+            father_name: getValue(row, ['father_name', 'father name', 'dad_name', 'dad', 'father']).toString().toUpperCase() || '',
+            class: getValue(row, ['class', 'class_name', 'grade']),
+            section: getValue(row, ['section', 'sec']),
+            class_teacher: getValue(row, ['class_teacher', 'teacher', 'teacher_name']).toString().toUpperCase() || '',
+            address: getValue(row, ['address', 'student_address']),
+        }));
+    };
 
-const getUploadPreviewCategory = (roleTab: RoleTab): UploadPreviewCategory =>
-  roleTab === 'Staff' ? 'Staff' : roleTab === 'Management' ? 'Management' : 'Student';
-
-const buildPreviewRows = (rawData: any[], category: UploadPreviewCategory) => {
-  if (category === 'Staff') {
-    return rawData.map((row: any) => ({
-      name: getValue(row, ['name', 'teacher_name', 'teacher', 'staff_name'])
-        .toString()
-        .toUpperCase() || '',
-      gender: getValue(row, ['gender', 'sex']),
-      phone_no: getValue(row, ['phone_no', 'phone number', 'phone', 'mobile']),
-      aadhar_no: getValue(row, ['aadhar_no', 'aadhar number', 'aadhar', 'aadhaar']),
-      dob: formatPreviewDob(getValue(row, ['dob', 'date_of_birth', 'date of birth', 'birth_date'])),
-      father_name: getValue(row, ['father_name', 'father name']).toString().toUpperCase() || '',
-      address: getValue(row, ['address', 'staff_address']),
-      designation: getValue(row, ['designation', 'subject', 'role']),
-      teaches_to_1: getValue(row, ['teaches_to_1', 'class 1']),
-      teaches_to_2: getValue(row, ['teaches_to_2', 'class 2']),
-      teaches_to_3: getValue(row, ['teaches_to_3', 'class 3']),
-      teaches_to_4: getValue(row, ['teaches_to_4', 'class 4']),
-      teaches_to_5: getValue(row, ['teaches_to_5', 'class 5']),
-      teaches_to_6: getValue(row, ['teaches_to_6', 'class 6']),
-      teaches_to_7: getValue(row, ['teaches_to_7', 'class 7']),
-      teaches_to_8: getValue(row, ['teaches_to_8', 'class 8']),
-      teaches_to_9: getValue(row, ['teaches_to_9', 'class 9']),
-      teaches_to_10: getValue(row, ['teaches_to_10', 'class 10']),
-      teaches_to_11: getValue(row, ['teaches_to_11', 'class 11']),
-      teaches_to_12: getValue(row, ['teaches_to_12', 'class 12']),
-    }));
-  }
-
-  if (category === 'Management') {
-    return rawData.map((row: any) => ({
-      name: getValue(row, ['name', 'manager_name', 'staff_name'])
-        .toString()
-        .toUpperCase() || '',
-      gender: getValue(row, ['gender', 'sex']),
-      phone_no: getValue(row, ['phone_no', 'phone number', 'phone', 'mobile']),
-      aadhar_no: getValue(row, ['aadhar_no', 'aadhar number', 'aadhar', 'aadhaar']),
-      dob: formatPreviewDob(getValue(row, ['dob', 'date_of_birth', 'date of birth', 'birth_date'])),
-      father_name: getValue(row, ['father_name', 'father name']).toString().toUpperCase() || '',
-      address: getValue(row, ['address', 'management_address']),
-      designation: getValue(row, ['designation', 'role']),
-    }));
-  }
-
-  return rawData.map((row: any) => ({
-    student_name: getValue(row, [
-      'student_name',
-      'student name',
-      'name',
-      'student',
-    ]).toString().toUpperCase() || '',
-    gender: getValue(row, ['gender', 'sex']),
-    phone_number: getValue(row, [
-      'phone_number',
-      'phone number',
-      'phone',
-      'mobile',
-      'father_phone',
-      'father_mobile',
-    ]),
-    aadhar_number: getValue(row, [
-      'aadhar_number',
-      'aadhar number',
-      'aadhar',
-      'aadhaar',
-    ]),
-    dob: formatPreviewDob(getValue(row, ['dob', 'date_of_birth', 'date of birth', 'birth_date'])),
-    father_name: getValue(row, [
-      'father_name',
-      'father name',
-      'dad_name',
-      'dad',
-      'father',
-    ]).toString().toUpperCase() || '',
-    class: getValue(row, ['class', 'class_name', 'grade']),
-    section: getValue(row, ['section', 'sec']),
-    class_teacher: getValue(row, [
-      'class_teacher',
-      'teacher',
-      'teacher_name',
-    ]).toString().toUpperCase() || '',
-    address: getValue(row, ['address', 'student_address']),
-  }));
-};
-const [actionMenuPosition, setActionMenuPosition] = useState<{ x: number; y: number } | null>(null);
     const handlePreview = (file: File, category: UploadPreviewCategory) => {
-    const reader = new FileReader();
-
-    reader.onload = (e) => {
-        const data = e.target?.result;
-        const workbook = XLSX.read(data, { type: 'binary' });
-
-        const sheetName = workbook.SheetNames[0];
-        const worksheet = workbook.Sheets[sheetName];
-
-        const rawData = XLSX.utils.sheet_to_json(worksheet);
-        const formattedData = buildPreviewRows(rawData, category);
-
-        setPreviewData(formattedData);
-        setPreviewCategory(category);
-        setIsExcelPreviewOpen(true);
+        const reader = new FileReader();
+        reader.onload = (e) => {
+            const data = e.target?.result;
+            const workbook = XLSX.read(data, { type: 'binary' });
+            const sheetName = workbook.SheetNames[0];
+            const worksheet = workbook.Sheets[sheetName];
+            const rawData = XLSX.utils.sheet_to_json(worksheet);
+            const formattedData = buildPreviewRows(rawData, category);
+            setPreviewData(formattedData);
+            setPreviewCategory(category);
+            setIsExcelPreviewOpen(true);
+        };
+        reader.readAsBinaryString(file);
     };
 
-    reader.readAsBinaryString(file);
-};
-const [isMobile, setIsMobile] = useState(window.innerWidth < 768);
-
-useEffect(() => {
-  const handleResize = () => setIsMobile(window.innerWidth < 768);
-  window.addEventListener("resize", handleResize);
-  return () => window.removeEventListener("resize", handleResize);
-}, []);
     const downloadExcel = () => {
         if (uploadedData.length === 0) {
             alert('No data to download');
             return;
         }
-
         const dataWithWhatsapp = uploadedData.map((item) => {
             const itemPhone = typeof item.phone === 'string' ? item.phone : '';
             const phoneNo = typeof item.phone_no === 'string' ? item.phone_no : '';
-            const fatherPhoneNo =
-                typeof item.father_phone_no === 'string' ? item.father_phone_no : '';
+            const fatherPhoneNo = typeof item.father_phone_no === 'string' ? item.father_phone_no : '';
             const phone = itemPhone.trim() !== '' ? itemPhone : phoneNo || fatherPhoneNo || '';
             const whatsappLink = phone ? `https://wa.me/${phone}` : 'N/A';
-
             return { ...item, phone, whatsappLink };
         });
-
         const wb = XLSX.utils.book_new();
         const ws = XLSX.utils.json_to_sheet(dataWithWhatsapp);
         XLSX.utils.book_append_sheet(wb, ws, 'UploadedData');
@@ -1183,59 +1003,37 @@ useEffect(() => {
     const filteredRoleUsers =
         activeRoleTab === 'Student'
             ? roleUsers.filter((user) => {
-                  const classMatch = studentClassFilter
-                      ? String(user?.class_name || '').trim().toLowerCase() ===
-                        String(studentClassFilter).trim().toLowerCase()
-                      : true;
-                  const sectionMatch = studentSectionFilter
-                      ? String(user?.section || '').trim().toLowerCase() ===
-                        String(studentSectionFilter).trim().toLowerCase()
-                      : true;
-                  const nameMatch = studentNameFilter
-                      ? String(user?.name || '')
-                            .trim()
-                            .toLowerCase()
-                            .includes(String(studentNameFilter).trim().toLowerCase())
-                      : true;
-                  return classMatch && sectionMatch && nameMatch;
-              })
+                const classMatch = studentClassFilter
+                    ? String(user?.class_name || '').trim().toLowerCase() === String(studentClassFilter).trim().toLowerCase()
+                    : true;
+                const sectionMatch = studentSectionFilter
+                    ? String(user?.section || '').trim().toLowerCase() === String(studentSectionFilter).trim().toLowerCase()
+                    : true;
+                const nameMatch = studentNameFilter
+                    ? String(user?.name || '').trim().toLowerCase().includes(String(studentNameFilter).trim().toLowerCase())
+                    : true;
+                return classMatch && sectionMatch && nameMatch;
+            })
             : roleUsers;
 
     const studentClassOptions = Array.from(
-        new Set(
-            roleUsers
-                .map((user) => String(user?.class_name || '').trim())
-                .filter(Boolean)
-        )
+        new Set(roleUsers.map((user) => String(user?.class_name || '').trim()).filter(Boolean))
     ).sort((a, b) => a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' }));
 
     const studentSectionOptions = Array.from(
         new Set(
             roleUsers
-                .filter((user) =>
-                    studentClassFilter
-                        ? String(user?.class_name || '').trim().toLowerCase() ===
-                          String(studentClassFilter).trim().toLowerCase()
-                        : true
-                )
+                .filter((user) => studentClassFilter ? String(user?.class_name || '').trim().toLowerCase() === String(studentClassFilter).trim().toLowerCase() : true)
                 .map((user) => String(user?.section || '').trim())
                 .filter(Boolean)
         )
     ).sort((a, b) => a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' }));
 
     const getUserRecordId = (user: any) =>
-        user?.id ??
-        user?.ID ??
-        user?.Id ??
-        user?.user_id ??
-        user?.userId ??
-        user?.staff_id ??
-        user?.management_id ??
-        null;
+        user?.id ?? user?.ID ?? user?.Id ?? user?.user_id ?? user?.userId ?? user?.staff_id ?? user?.management_id ?? null;
 
     const isUserDisabled = (user: any) =>
-        Number(user?.is_disabled || user?.disabled || 0) === 1 ||
-        String(user?.status || '').trim().toLowerCase() === 'disabled';
+        Number(user?.is_disabled || user?.disabled || 0) === 1 || String(user?.status || '').trim().toLowerCase() === 'disabled';
 
     const deleteUser = async (user: any) => {
         const schoolCode = formData.school_code || localStorage.getItem('schoolCode');
@@ -1286,26 +1084,17 @@ useEffect(() => {
 
     useEffect(() => {
         const schoolCode = formData.school_code || localStorage.getItem('schoolCode');
+        if (!schoolCode) return;
 
-        console.log('🔍 [Tracker Sync] Checking for schoolCode in localStorage...');
-        if (!schoolCode) {
-            console.warn('⚠️ [Tracker Sync] No schoolCode found. Skipping API call.');
-            return;
-        }
-
-        console.log(`📡 [Tracker Sync] Fetching stats for: ${schoolCode}`);
         axios
             .get<TrackingApiResponse>(`https://cleezoclass.com:4000/track-records/${schoolCode}`)
             .then((res) => {
                 if (res.data.success) {
-                    console.log('✅ [Tracker Sync] Data received successfully:', res.data.stats);
                     setTrackingStats(res.data.stats);
-                } else {
-                    console.error('❌ [Tracker Sync] API responded but success was false:', res.data);
                 }
             })
             .catch((err: Error) => {
-                console.error('🔥 [Tracker Sync] Critical error during fetch:', err.message);
+                console.error('Tracker Sync Critical error during fetch:', err.message);
             });
     }, [uploadedData, formData.school_code]);
 
@@ -1327,22 +1116,13 @@ useEffect(() => {
     };
 
     const handleLogout = () => {
-        localStorage.removeItem('instituteName');
-        localStorage.removeItem('username');
-        localStorage.removeItem('schoolCode');
-        localStorage.removeItem('userRole');
-        localStorage.removeItem('userType');
-        localStorage.removeItem('name');
+        localStorage.clear();
         sessionStorage.clear();
         navigate('/', { replace: true });
     };
 
     const addUserTypeLabel =
-        addUserForm.user_type === 'management'
-            ? 'Management'
-            : addUserForm.user_type === 'teacher'
-              ? 'Teacher'
-              : 'Student';
+        addUserForm.user_type === 'management' ? 'Management' : addUserForm.user_type === 'teacher' ? 'Teacher' : 'Student';
     const addUserSubmitLabel = `Add ${addUserTypeLabel.toLowerCase()}`;
     const isAddStudent = addUserForm.user_type === 'student';
     const isAddTeacher = addUserForm.user_type === 'teacher';
@@ -1351,64 +1131,37 @@ useEffect(() => {
     return (
         <div style={styles.container}>
             {/* HEADER */}
-       {/* HEADER */}
-<div style={styles.header}>
-  
-  {/* LEFT: Logo + Name */}
-  <div style={{ display: "flex", alignItems: "center", gap: "15px", flex: 1 }}>
-    
-    <div 
-      style={styles.logoBox} 
-      onClick={() => clickHiddenInput('file-authorized_logo')}
-    >
-      {formData.authorized_logo ? (
-        <img 
-          src={
-            formData.authorized_logo instanceof File 
-              ? URL.createObjectURL(formData.authorized_logo) 
-              : formData.authorized_logo
-          } 
-          alt="School Logo" 
-          style={{ width: '100%', height: '100%', objectFit: 'contain' }} 
-        />
-      ) : (
-        <>School Logo</>
-      )}
-
-      <input
-        id="file-authorized_logo"
-        type="file"
-        accept="image/*"
-        onChange={(e) => handlePhotoChange(e, 'authorized_logo')}
-        style={{ display: 'none' }}
-      />
-    </div>
-
-    <div style={styles.schoolNameBox}>
-      {formData.school_name || 'School Name'}
-    </div>
-
-  </div>
-
-  {/* RIGHT: Logout */}
-  <button style={styles.logoutBtn} onClick={handleLogout}>
-    Logout
-  </button>
-
-</div>
-            {/* NAV BAR */}
-            {/* <div style={styles.navBar}>
-                {(['Details', 'Management', 'Staff', 'Student', 'Uploads'] as TabName[]).map((tab) => (
-                    <div
-                        key={tab}
-                        style={{ ...styles.navTab, ...(activeTab === tab ? styles.activeTab : {}) }}
-                        onClick={() => setActiveTab(tab)}
-                    >
-                        {tab}
+            <div style={styles.header}>
+                <div style={{ display: "flex", alignItems: "center", gap: "15px", flex: 1 }}>
+                    <div style={styles.logoBox} onClick={() => clickHiddenInput('file-authorized_logo')}>
+                        {formData.authorized_logo ? (
+                            <img
+                                src={formData.authorized_logo instanceof File ? URL.createObjectURL(formData.authorized_logo) : formData.authorized_logo}
+                                alt="School Logo"
+                                style={{ width: '100%', height: '100%', objectFit: 'contain' }}
+                            />
+                        ) : (
+                            <>School Logo</>
+                        )}
+                        <input
+                            id="file-authorized_logo"
+                            type="file"
+                            accept="image/*"
+                            onChange={(e) => handlePhotoChange(e, 'authorized_logo')}
+                            style={{ display: 'none' }}
+                        />
                     </div>
-                ))}
-            </div> */}
-         <div style={styles.navBar}>
+                    <div style={styles.schoolNameBox}>
+                        {formData.school_name || 'School Name'}
+                    </div>
+                </div>
+                <button style={styles.logoutBtn} onClick={handleLogout}>
+                    Logout
+                </button>
+            </div>
+
+            {/* NAV BAR */}
+            <div style={styles.navBar}>
                 {(['Details', 'Management', 'Staff', 'Student'] as TabName[]).map((tab) => (
                     <div
                         key={tab}
@@ -1421,13 +1174,7 @@ useEffect(() => {
             </div>
 
             {/* MAIN CONTENT AREA */}
-            <div
-                style={
-                    activeTab === 'Uploads'
-                        ? styles.uploadsMainContent
-                        : styles.mainContent
-                }
-            >
+            <div style={activeTab === 'Uploads' ? styles.uploadsMainContent : styles.mainContent}>
                 {activeRoleTab && (
                     <div style={styles.managementContainer}>
                         <div style={styles.tabActionHeader}>
@@ -1453,11 +1200,7 @@ useEffect(() => {
                                 <input
                                     type="text"
                                     placeholder="File Type"
-                                    value={
-                                        excelFile
-                                            ? excelFile.name.split('.').pop()?.toUpperCase() ?? ''
-                                            : ''
-                                    }
+                                    value={excelFile ? excelFile.name.split('.').pop()?.toUpperCase() ?? '' : ''}
                                     readOnly
                                     style={{ ...styles.input, ...styles.uploadFieldInput }}
                                 />
@@ -1481,7 +1224,6 @@ useEffect(() => {
                                 </button>
                             </div>
                         </div>
-
                     </div>
                 )}
 
@@ -1491,112 +1233,73 @@ useEffect(() => {
 
                     return (
                         <div style={styles.excelPreviewOverlay} onClick={() => setIsExcelPreviewOpen(false)}>
-                            <div
-                                style={styles.excelPreviewModal}
-                                onClick={(e) => e.stopPropagation()}
-                            >
+                            <div style={styles.excelPreviewModal} onClick={(e) => e.stopPropagation()}>
                                 <div style={styles.excelPreviewHeader}>
                                     <div>
                                         <h4 style={styles.excelPreviewTitle}>
                                             {previewCategory === 'Staff'
-                                                ? uploadedData.length > 0
-                                                    ? 'Uploaded Staff Details'
-                                                    : 'Staff Excel Preview'
+                                                ? uploadedData.length > 0 ? 'Uploaded Staff Details' : 'Staff Excel Preview'
                                                 : previewCategory === 'Management'
-                                                  ? uploadedData.length > 0
-                                                      ? 'Uploaded Management Details'
-                                                      : 'Management Excel Preview'
-                                                  : uploadedData.length > 0
-                                                    ? 'Uploaded Student Details'
-                                                    : 'Student Excel Preview'}
+                                                    ? uploadedData.length > 0 ? 'Uploaded Management Details' : 'Management Excel Preview'
+                                                    : uploadedData.length > 0 ? 'Uploaded Student Details' : 'Student Excel Preview'}
                                         </h4>
                                         <p style={styles.excelPreviewSubtitle}>
                                             {rows.length} record{rows.length === 1 ? '' : 's'} ready for review
                                         </p>
                                     </div>
                                     <div style={styles.excelPreviewActions}>
-                                       {/* Choose File - show until upload completes */}
-    {uploadedData.length === 0 && (
-        <label style={styles.excelPreviewPickBtn}>
-            Choose Excel File
-            <input
-                type="file"
-                accept=".xlsx,.xls"
-                hidden
-                onChange={(e) => {
-                    const file = e.target.files?.[0] ?? null;
-                    setExcelFile(file);
-
-                    if (file) {
-                        setUploadedData([]);
-                        handlePreview(
-                            file,
-                            getUploadPreviewCategory(activeRoleTab)
-                        );
-                    } else {
-                        setPreviewData([]);
-                    }
-                }}
-            />
-        </label>
-    )}
-    {}
-                                         {/* Show Template only before file selection */}
-    {!excelFile && uploadedData.length === 0 && (
-        <button
-            type="button"
-            onClick={() =>
-                downloadExcelTemplate(
-                    roleTabConfig[activeRoleTab].templateCategory
-                )
-            }
-            style={styles.excelPreviewTemplateBtn}
-        >
-            Download Template
-        </button>
-    )}
-
-                                            {/* Show Submit after file selected */}
-{excelFile && (
-    <button
-        type="button"
-        onClick={() =>
-            handleFileUpload(
-                roleTabConfig[activeRoleTab].templateCategory
-            )
-        }
-        disabled={uploading}
-        style={{
-            ...styles.excelPreviewSubmitBtn,
-            backgroundColor: "#404040",
-        }}
-    >
-        {uploading ? "Uploading..." : "Submit Excel"}
-    </button>
-)}
-                                        {uploadedData.length > 0 && (
+                                        {uploadedData.length === 0 && (
+                                            <label style={styles.excelPreviewPickBtn}>
+                                                Choose Excel File
+                                                <input
+                                                    type="file"
+                                                    accept=".xlsx,.xls"
+                                                    hidden
+                                                    onChange={(e) => {
+                                                        const file = e.target.files?.[0] ?? null;
+                                                        setExcelFile(file);
+                                                        if (file) {
+                                                            setUploadedData([]);
+                                                            handlePreview(file, getUploadPreviewCategory(activeRoleTab));
+                                                        } else {
+                                                            setPreviewData([]);
+                                                        }
+                                                    }}
+                                                />
+                                            </label>
+                                        )}
+                                        {!excelFile && uploadedData.length === 0 && (
                                             <button
                                                 type="button"
-                                                onClick={downloadExcel}
-                                                style={styles.uploadPreviewDownloadBtn}
+                                                onClick={() => downloadExcelTemplate(roleTabConfig[activeRoleTab].templateCategory)}
+                                                style={styles.excelPreviewTemplateBtn}
                                             >
+                                                Download Template
+                                            </button>
+                                        )}
+                                        {excelFile && (
+                                            <button
+                                                type="button"
+                                                onClick={() => handleFileUpload(roleTabConfig[activeRoleTab].templateCategory)}
+                                                disabled={uploading}
+                                                style={{ ...styles.excelPreviewSubmitBtn, backgroundColor: "#404040" }}
+                                            >
+                                                {uploading ? "Uploading..." : "Submit Excel"}
+                                            </button>
+                                        )}
+                                        {uploadedData.length > 0 && (
+                                            <button type="button" onClick={downloadExcel} style={styles.uploadPreviewDownloadBtn}>
                                                 Uploaded Data
                                             </button>
                                         )}
-                                        <button
-                                            type="button"
-                                            onClick={() => setIsExcelPreviewOpen(false)}
-                                            style={styles.excelPreviewCloseBtn}
-                                        >
-                                          <IoClose/>
+                                        <button type="button" onClick={() => setIsExcelPreviewOpen(false)} style={styles.excelPreviewCloseBtn}>
+                                            <IoClose />
                                         </button>
                                     </div>
                                 </div>
 
                                 <div style={styles.excelPreviewSummary}>
-                                    <span>
-                                        Selected file: {excelFile ? excelFile.name : 'No file selected'}
-                                    </span>
+                                    <span>Selected file: {excelFile ? excelFile.name : 'No file selected'}</span>
                                 </div>
 
                                 {rows.length > 0 ? (
@@ -1613,13 +1316,7 @@ useEffect(() => {
                                             </thead>
                                             <tbody>
                                                 {rows.map((row, rowIndex) => (
-                                                    <tr
-                                                        key={rowIndex}
-                                                        style={{
-                                                            backgroundColor:
-                                                                rowIndex % 2 === 0 ? '#ffffff' : '#f8fafc',
-                                                        }}
-                                                    >
+                                                    <tr key={rowIndex} style={{ backgroundColor: rowIndex % 2 === 0 ? '#ffffff' : '#f8fafc' }}>
                                                         {columns.map((column) => (
                                                             <td key={column} style={styles.uploadPreviewTd}>
                                                                 {formatExcelCellValue(row[column])}
@@ -1643,887 +1340,569 @@ useEffect(() => {
                 {/* --- DETAILS TAB VIEW --- */}
                 {activeTab === 'Details' && (
                     <>
-                        {/* LEFT COLUMN */}
-           <div>
-  {/* School Name + Curriculum */}
-  <div style={styles.row}>
-    <div style={{ ...styles.inputGroup, flex: 1, marginRight: '15px' }}>
-      <label style={styles.label}>School Name</label>
-      <input
-        name="school_name"
-        value={formData.school_name}
-        onChange={handleChange}
-        placeholder="Enter School Name"
-        style={styles.input}
-      />
-    </div>
+                        <div>
+                            {/* School Name + Curriculum */}
+                            <div style={styles.row}>
+                                <div style={{ ...styles.inputGroup, flex: 1, marginRight: '15px' }}>
+                                    <label style={styles.label}>School Name</label>
+                                    <input
+                                        name="school_name"
+                                        value={formData.school_name}
+                                        onChange={handleChange}
+                                        placeholder="Enter School Name"
+                                        style={{ ...styles.input, backgroundColor: '#f1f5f9', cursor: 'not-allowed' }}
+                                        readOnly
+                                    />
+                                </div>
 
-    <div style={{ ...styles.inputGroup, flex: 1 }}>
-      <label style={styles.label}>Curriculum</label>
-      <select
-        name="curriculum"
-        value={formData.curriculum}
-        onChange={handleChange}
-        style={styles.input}
-      >
-        <option value="" disabled>Select Curriculum</option>
-        <option value="CBSE">CBSE</option>
-        <option value="ICSE">ICSE</option>
-      </select>
-    </div>
-  </div>
+                                <div style={{ ...styles.inputGroup, flex: 1 }}>
+                                    <label style={styles.label}>Curriculum</label>
+                                    <select
+                                        name="curriculum"
+                                        value={formData.curriculum}
+                                        onChange={handleChange}
+                                        style={styles.input}
+                                    >
+                                        <option value="" disabled>Select Curriculum</option>
+                                        <option value="CBSE">CBSE</option>
+                                        <option value="ICSE">ICSE</option>
+                                    </select>
+                                </div>
+                            </div>
 
-  {/* Address */}
-  <div style={{ ...styles.inputGroup, marginBottom: '15px' }}>
-    <label style={styles.label}>Address</label>
-    <input
-      name="address"
-      value={formData.address}
-      onChange={handleChange}
-      placeholder="Enter Address"
-      style={styles.input}
-    />
-  </div>
-  {/* AUTHORIZED PERSON 1 */}
-<div style={styles.row}>
-  <div style={styles.inputGroup}>
-    <label style={styles.label}>Authorized Person</label>
-    <input
-      name="institute_authorized_person"
-      value={formData.institute_authorized_person}
-      onChange={handleChange}
-      placeholder="Enter Name"
-      style={styles.input}
-    />
-  </div>
+                            {/* Address */}
+                            <div style={{ ...styles.inputGroup, marginBottom: '15px' }}>
+                                <label style={styles.label}>Address</label>
+                                <input
+                                    name="address"
+                                    value={formData.address}
+                                    onChange={handleChange}
+                                    placeholder="Enter Address"
+                                    style={{ ...styles.input, backgroundColor: '#f1f5f9', cursor: 'not-allowed' }}
+                                    readOnly
+                                />
+                            </div>
 
-  <div style={styles.inputGroup}>
-    <label style={styles.label}>Email</label>
-    <input
-      name="email"
-      value={formData.email}
-      onChange={handleChange}
-      placeholder="Enter Email"
-      style={styles.input}
-    />
-  </div>
+                            {/* AUTHORIZED PERSON 1 */}
+                            <div style={styles.row}>
+                                <div style={styles.inputGroup}>
+                                    <label style={styles.label}>Authorized Person</label>
+                                    <input
+                                        name="institute_authorized_person"
+                                        value={formData.institute_authorized_person}
+                                        onChange={handleChange}
+                                        placeholder="Enter Name"
+                                        style={styles.input}
+                                    />
+                                </div>
+                                <div style={styles.inputGroup}>
+                                    <label style={styles.label}>Email</label>
+                                    <input
+                                        name="email"
+                                        value={formData.email}
+                                        onChange={handleChange}
+                                        placeholder="Enter Email"
+                                        style={styles.input}
+                                    />
+                                </div>
+                                <div style={styles.inputGroup}>
+                                    <label style={styles.label}>Email App Key</label>
+                                    <input
+                                        name="email_app_key"
+                                        value={formData.email_app_key}
+                                        onChange={handleChange}
+                                        placeholder="Enter App Key"
+                                        style={styles.input}
+                                    />
+                                </div>
+                            </div>
 
-  <div style={styles.inputGroup}>
-    <label style={styles.label}>Email App Key</label>
-    <input
-      name="email_app_key"
-      value={formData.email_app_key}
-      onChange={handleChange}
-      placeholder="Enter App Key"
-      style={styles.input}
-    />
-  </div>
-</div>
+                            {/* City + State */}
+                            <div style={styles.row}>
+                                <div style={{ ...styles.inputGroup, flex: 1, marginRight: '15px' }}>
+                                    <label style={styles.label}>City</label>
+                                    <input
+                                        name="city"
+                                        value={formData.city}
+                                        onChange={handleChange}
+                                        placeholder="Enter City"
+                                        style={styles.input}
+                                    />
+                                </div>
+                                <div style={{ ...styles.inputGroup, flex: 1 }}>
+                                    <label style={styles.label}>State</label>
+                                    <select
+                                        name="state"
+                                        value={formData.state}
+                                        onChange={handleChange}
+                                        style={styles.input}
+                                    >
+                                        <option value="" disabled>Select State</option>
+                                        <option value="Telangana">Telangana</option>
+                                        <option value="Andhra Pradesh">Andhra Pradesh</option>
+                                    </select>
+                                </div>
+                            </div>
 
-  {/* City + State */}
-  <div style={styles.row}>
-    <div style={{ ...styles.inputGroup, flex: 1, marginRight: '15px' }}>
-      <label style={styles.label}>City</label>
-      <input
-        name="city"
-        value={formData.city}
-        onChange={handleChange}
-        placeholder="Enter City"
-        style={styles.input}
-      />
-    </div>
+                            <div style={{ display: 'flex', gap: '15px', alignItems: 'center', marginBottom: '15px' }}>
+                                <div style={{ ...styles.inputGroup, flex: 1 }}>
+                                    <label style={styles.label}>Pincode</label>
+                                    <input
+                                        name="pincode"
+                                        value={formData.pincode}
+                                        onChange={handleChange}
+                                        placeholder="Enter Pincode"
+                                        style={styles.input}
+                                    />
+                                </div>
+                                <div style={{ flex: 1, display: 'flex', justifyContent: 'flex-end' }}>
+                                    <button style={{ ...styles.nextBtn, width: 'auto', padding: '10px 20px' }}>
+                                        Next &gt;
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
 
-    <div style={{ ...styles.inputGroup, flex: 1 }}>
-      <label style={styles.label}>State</label>
-      <select
-        name="state"
-        value={formData.state}
-        onChange={handleChange}
-        style={styles.input}
-      >
-        <option value="" disabled>Select State</option>
-        <option value="Telangana">Telangana</option>
-        <option value="Andhra Pradesh">Andhra Pradesh</option>
-      </select>
-    </div>
-  </div>
-<div style={{ display: 'flex', gap: '15px', alignItems: 'center', marginBottom: '15px' }}>
-  {/* Pincode */}
-  <div style={{ ...styles.inputGroup, flex: 1 }}>
-    <label style={styles.label}>Pincode</label>
-    <input
-      name="pincode"
-      value={formData.pincode}
-      onChange={handleChange}
-      placeholder="Enter Pincode"
-      style={styles.input}
-    />
-  </div>
-
-  {/* Next Button */}
-  <div style={{ flex: 1, display: 'flex', justifyContent: 'flex-end' }}>
-    <button style={{ ...styles.nextBtn, width: 'auto', padding: '10px 20px' }}>
-      Next &gt;
-    </button>
-  </div>
-</div>
-
-</div>
                         {/* MIDDLE COLUMN */}
-                      <div style={{ borderLeft: '4px solid #ccc', paddingLeft: '30px' }}>
-<div style={{ ...styles.row }}>
-  <div style={{ ...styles.inputGroup, flex: 1 }}>
-        <label style={styles.label}>School code.</label>
+                        <div style={{ borderLeft: '4px solid #ccc', paddingLeft: '30px' }}>
+                            <div style={{ ...styles.row }}>
+                                <div style={{ ...styles.inputGroup, flex: 1 }}>
+                                    <label style={styles.label}>School code.</label>
+                                    <input
+                                        name="school_code"
+                                        value={formData.school_code}
+                                        placeholder="School Code"
+                                        style={{ ...styles.input, width: '100%' }}
+                                        readOnly
+                                    />
+                                </div>
+                                <div style={{ ...styles.inputGroup, flex: 1, marginLeft: '15px' }}>
+                                    <label style={styles.label}>School Reg. No.</label>
+                                    <input
+                                        name="registration_no"
+                                        value={formData.registration_no}
+                                        onChange={handleChange}
+                                        placeholder="Enter Registration Number"
+                                        style={{ ...styles.input, width: '100%' }}
+                                    />
+                                </div>
+                            </div>
 
-    <input
-      name="school_code"
-      value={formData.school_name}
-      placeholder="School Code"
-      style={{ ...styles.input, width: '100%' }}
-    />
-  </div>
+                            <div style={styles.row}>
+                                <input
+                                    name="school_strength"
+                                    value={formData.school_strength}
+                                    onChange={handleChange}
+                                    placeholder="No. of Students"
+                                    style={styles.input}
+                                />
+                                <input
+                                    name="staff_strength"
+                                    value={formData.staff_strength}
+                                    onChange={handleChange}
+                                    placeholder="No. of Staff"
+                                    style={styles.input}
+                                />
+                            </div>
 
-  <div style={{ ...styles.inputGroup, flex: 1, marginLeft: '15px' }}>
-    <label style={styles.label}>School Reg. No.</label>
-<input
-  name="registration_no"               
-  value={formData.registration_no}
-  onChange={handleChange}             
-  placeholder="Enter Registration Number"
-  style={{ ...styles.input, width: '100%' }}
-/>
+                            <div style={styles.row}>
+                                <div style={styles.inputGroup}>
+                                    <label style={styles.label}>Departments *</label>
+                                    <select style={styles.input}>
+                                        <option value="" disabled>Select Department</option>
+                                        <option>Store / Library</option>
+                                    </select>
+                                </div>
+                                <div style={styles.inputGroup}>
+                                    <label style={styles.label}>Activities *</label>
+                                    <select style={styles.input}>
+                                        <option value="" disabled>Select Activity</option>
+                                        <option>Skating / Karate</option>
+                                    </select>
+                                </div>
+                            </div>
 
-  </div>
-</div>
-
-  <div style={styles.row}>
-    <input
-      name="school_strength"
-      value={formData.school_strength}
-      onChange={handleChange}
-      placeholder="No. of Students"
-      style={styles.input}
-    />
-
-    <input
-      name="staff_strength"
-      value={formData.staff_strength}
-      onChange={handleChange}
-      placeholder="No. of Staff"
-      style={styles.input}
-    />
-  </div>
-
-  <div style={styles.row}>
-    <div style={styles.inputGroup}>
-      <label style={styles.label}>Departments *</label>
-      <select style={styles.input}>
-        <option value="" disabled>Select Department</option>
-        <option>Store / Library</option>
-      </select>
-    </div>
-    <div style={styles.inputGroup}>
-      <label style={styles.label}>Activities *</label>
-      <select style={styles.input}>
-        <option value="" disabled>Select Activity</option>
-        <option>Skating / Karate</option>
-      </select>
-    </div>
-  </div>
-
-<div style={{ display: 'flex', gap: '15px', alignItems: 'center', marginBottom: '15px' }}>
-  <input
-    name="tagline"
-    value={formData.tagline}
-    onChange={handleChange}
-    placeholder="Enter branches"
-    style={{ ...styles.input, flex: 1 }} // flex:1 makes input take remaining width
-  />
-
-    <button style={{ ...styles.nextBtn, width: 'auto', padding: '10px 20px' }}>
-      Next &gt;
-    </button>
-</div>
-
-</div>
+                            <div style={{ display: 'flex', gap: '15px', alignItems: 'center', marginBottom: '15px' }}>
+                                <input
+                                    name="tagline"
+                                    value={formData.tagline}
+                                    onChange={handleChange}
+                                    placeholder="Enter branches"
+                                    style={{ ...styles.input, flex: 1 }}
+                                />
+                                <button style={{ ...styles.nextBtn, width: 'auto', padding: '10px 20px' }}>
+                                    Next &gt;
+                                </button>
+                            </div>
+                        </div>
 
                         {/* RIGHT COLUMN (PHOTOS) */}
-                  <div
-  style={{
-    borderLeft: '4px solid #ccc',
-    paddingLeft: '30px',
-  }}
->
-  {/* Photo Uploads */}
-  <div
-    style={{
-      display: 'grid',
-      gridTemplateColumns: 'repeat(2, 180px)',
-      gap: '20px 20px',
-      justifyContent: 'center',
-    }}
-  >
-    {photoFields.map((photo) => {
-      const photoValue = formData[photo.key];
-
-      return (
-        <div key={photo.key} style={{ textAlign: 'left' }}>
-          <label style={styles.label1}>{photo.label}</label>
-
-          <div
-            style={styles.photoBox}
-            onClick={() => clickHiddenInput(`file-${photo.key}`)}
-          >
-            {photoValue ? (
-              <img
-                src={
-                  photoValue instanceof File
-                    ? URL.createObjectURL(photoValue)
-                    : photoValue
-                }
-                alt={photo.label}
-                style={styles.previewImage}
-              />
-            ) : (
-              <img
-                src={cameraIcon}
-                alt="camera"
-                style={styles.iconStyle}
-              />
-            )}
-          </div>
-
-          <input
-            id={`file-${photo.key}`}
-            type="file"
-            accept="image/*"
-            onChange={(e) => handlePhotoChange(e, photo.key)}
-            style={{ display: 'none' }}
-          />
-        </div>
-      );
-    })}
-  </div>
-
-  {/* Update Button Below Photos */}
-  <div
-    style={{
-      display: 'flex',
-      justifyContent: 'center',
-      marginTop: '30px',
-    }}
-  >
-    <div
-      style={{
-        ...styles.photoBox,
-        width: '100px',
-        height: '100px',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-      }}
-    >
-      <img
-        src={applicationIcon}
-        alt="Update"
-        onClick={handleUpdate}
-        style={{
-          ...styles.updateIconStyle,
-          width: '80%',
-          height: '80%',
-          objectFit: 'contain',
-          filter:
-            'invert(35%) sepia(100%) saturate(5000%) hue-rotate(180deg) brightness(95%) contrast(90%)',
-          transition: 'transform 0.2s',
-          cursor: 'pointer',
-        }}
-        onMouseOver={(e) =>
-          (e.currentTarget.style.transform = 'scale(1.1)')
-        }
-        onMouseOut={(e) =>
-          (e.currentTarget.style.transform = 'scale(1.0)')
-        }
-      />
-    </div>
-  </div>
-</div>
-                    </>
-                )}
-
-                {/* --- UPLOADS TAB VIEW (AS PER IMAGE) --- */}
-                {activeTab === 'Uploads' && (
-                    <>
-                        {/* 1. Time Table */}
-                        <div style={styles.uploadSection}>
-                            <h3 style={styles.sectionHeading}>Time Table</h3>
-                            <div style={styles.inputGrid}>
-                                <div style={styles.inputGroup}><label style={styles.label}>Class</label><select style={styles.input}><option>Select</option></select></div>
-                                <div style={styles.inputGroup}><label style={styles.label}>Section</label><select style={styles.input}><option>Select</option></select></div>
-                                <div style={styles.inputGroup}><label style={styles.label}>Teacher</label><select style={styles.input}><option>Select</option></select></div>
-                                <div style={styles.inputGroup}><label style={styles.label}>Day</label><select style={styles.input}><option>Select</option></select></div>
+                        <div style={{ borderLeft: '4px solid #ccc', paddingLeft: '30px' }}>
+                            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 180px)', gap: '20px 20px', justifyContent: 'center' }}>
+                                {photoFields.map((photo) => {
+                                    const photoValue = formData[photo.key];
+                                    return (
+                                        <div key={photo.key} style={{ textAlign: 'left' }}>
+                                            <label style={styles.label1}>{photo.label}</label>
+                                            <div style={styles.photoBox} onClick={() => clickHiddenInput(`file-${photo.key}`)}>
+                                                {photoValue ? (
+                                                    <img
+                                                        src={photoValue instanceof File ? URL.createObjectURL(photoValue) : photoValue}
+                                                        alt={photo.label}
+                                                        style={styles.previewImage}
+                                                    />
+                                                ) : (
+                                                    <img src={cameraIcon} alt="camera" style={styles.iconStyle} />
+                                                )}
+                                            </div>
+                                            <input
+                                                id={`file-${photo.key}`}
+                                                type="file"
+                                                accept="image/*"
+                                                onChange={(e) => handlePhotoChange(e, photo.key)}
+                                                style={{ display: 'none' }}
+                                            />
+                                        </div>
+                                    );
+                                })}
                             </div>
-                            <div style={styles.uploadButtonGroup}>
-                                <button style={styles.actionBtn}>Upload Time Table</button>
-                                <span style={styles.orLabel}>(or)</span>
-                                <button style={styles.actionBtn}>Generate New</button>
+
+                            <div style={{ display: 'flex', justifycontent: 'center', marginTop: '30px' }}>
+                                <div style={{ ...styles.photoBox, width: '100px', height: '100px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                                    <img
+                                        src={applicationIcon}
+                                        alt="Update"
+                                        onClick={handleUpdate}
+                                        style={{
+                                            ...styles.updateIconStyle,
+                                            width: '80%', height: '80%', objectFit: 'contain',
+                                            filter: 'invert(35%) sepia(100%) saturate(5000%) hue-rotate(180deg) brightness(95%) contrast(90%)',
+                                            transition: 'transform 0.2s', cursor: 'pointer'
+                                        }}
+                                        onMouseOver={(e) => (e.currentTarget.style.transform = 'scale(1.1)')}
+                                        onMouseOut={(e) => (e.currentTarget.style.transform = 'scale(1.0)')}
+                                    />
+                                </div>
                             </div>
                         </div>
-
-                        {/* 2. School Calendar */}
-                        <div style={{ ...styles.uploadSection, borderLeft: '2px solid #ddd', borderRight: '2px solid #ddd' }}>
-                            <h3 style={styles.sectionHeading}>School Calendar</h3>
-                            <div style={styles.inputGrid}>
-                                <div style={styles.inputGroup}><label style={styles.label}>First Day *</label><input type="date" style={styles.input} /></div>
-                                <div style={styles.inputGroup}><label style={styles.label}>Last Day *</label><input type="date" style={styles.input} /></div>
-                                <div style={styles.inputGroup}><label style={styles.label}>Annual Day</label><input type="date" style={styles.input} /></div>
-                                <div style={styles.inputGroup}><label style={styles.label}>Freshers Day</label><input type="date" style={styles.input} /></div>
-                            </div>
-                            <div style={styles.uploadButtonGroup}>
-                                <button style={styles.actionBtn}>Upload Calendar</button>
-                                <span style={styles.orLabel}>(or)</span>
-                                <button style={styles.actionBtn}>Generate New</button>
-                            </div>
-                        </div>
-
-                        {/* 3. School Radius Setup */}
-                    <div style={styles.uploadSection}>
-  <h3 style={styles.sectionHeading}>School Radius Setup</h3>
-  <div style={styles.inputGrid}>
-    {/* Branch / School Name */}
-    <div style={styles.inputGroup}>
-      <label style={styles.label}>Branch *</label>
-      <input
-        name="school_name"
-        value={formData.school_name}
-        onChange={handleChange}
-        placeholder="Enter School Name"
-        style={styles.input}
-      />
-    </div>
-
-    {/* Address */}
-    <div style={styles.inputGroup}>
-      <label style={styles.label}>Address</label>
-      <input
-        name="address"
-        value={formData.address}
-        onChange={handleChange}
-        placeholder="Enter Address"
-        style={styles.input}
-      />
-    </div>
-
-    {/* Latitude */}
-    <div style={styles.inputGroup}>
-      <label style={styles.label}>Latitude *</label>
-      <input
-        name="latitude"
-        placeholder="Lat"
-        value={formData.latitude}
-        onChange={handleChange}
-        style={styles.input}
-      />
-    </div>
-
-    {/* Longitude */}
-    <div style={styles.inputGroup}>
-      <label style={styles.label}>Longitude *</label>
-      <input
-        name="longitude"
-        placeholder="Long"
-        value={formData.longitude}
-        onChange={handleChange}
-        style={styles.input}
-      />
-    </div>
-
-    {/* Radius */}
-{/* Radius */}
-<div style={styles.inputGroup}>
-  <label style={styles.label}>Radius (meters)</label>
-  <input
-    name="radius"
-    placeholder="Enter Radius"
-    value={formData.radius}
-    onChange={handleChange}
-    style={styles.input}
-  />
-</div>
-
-{/* Use Radius as text input */}
-<div style={styles.inputGroup}>
-  <label style={styles.label}>Use Radius</label>
-  <input
-    type="text"
-    name="use_radius"
-    placeholder="Enter Use Radius"
-    value={formData.use_radius}
-    onChange={handleChange}
-    style={styles.input}
-  />
-</div>
-
-  </div>
-
-  <button
-    style={{ ...styles.actionBtn, width: '100%', marginTop: '30px' }}
-    onClick={handleUpdate}
-  >
-    Submit
-  </button>
-</div>
-
                     </>
                 )}
             </div>
-{isAddUserOpen && userModalMode === 'edit' && (
-  <StudentEditingPopup
-    isOpen={isAddUserOpen}
-    editingId={editingUserId}
-    userType={addUserForm.user_type}
-    formData={addUserForm}
-    onFieldChange={(field, value) => {
-      setAddUserForm((prev) => ({ ...prev, [field]: value }));
-    }}
-    onClassChange={(className) => {
-      setAddUserForm((prev) => ({ ...prev, class_name: className, section: '' }));
-    }}
-    classOptions={studentClassOptions}
-    getSectionsForClass={getStudentSectionsForClass}
-    photoPreview={studentPhotoPreview}
-    photoFile={studentPhotoFile}
-    onPhotoChange={handleStudentPhotoChange}
-    onRemovePhoto={() => {
-      setStudentPhotoFile(null);
-      setStudentPhotoPreview(normalizePhotoUrl(addUserForm.photo));
-    }}
-    onCancel={closeAddUserModal}
-    onSubmit={handleAddUserSubmit}
-    isLoading={isAddUserSubmitting}
-  />
-)}
-{isAddUserOpen && userModalMode === 'add' && (
-  <div style={styles.modalOverlay}>
-    <div style={styles.modalCard}>
-      <div style={styles.modalHeader}>
-        <div>
-          <h3 style={styles.modalTitle}>{`Add ${addUserTypeLabel}`}</h3>
-          <p style={styles.modalSubtitle}>{`Create a new ${addUserForm.user_type} account for this school.`}</p>
-        </div>
-        <button type="button" onClick={closeAddUserModal} style={styles.modalCloseBtn}>
-          ×
-        </button>
-      </div>
 
-      {createdCredentials && (
-        <div style={styles.credentialsCard}>
-          <div style={styles.credentialsHeader}>
-            <div style={styles.credentialsHeaderLeft}>
-              <div style={styles.credentialsIconWrap}>✓</div>
-              <div>
-                <div style={styles.credentialsTitle}>User created successfully</div>
-                <div style={styles.credentialsSubtitle}>
-                  Copy these login details before closing the panel.
-                </div>
-              </div>
-            </div>
-            <span style={styles.credentialsBadge}>{createdCredentials.user_type}</span>
-          </div>
-          <div style={styles.credentialsGrid}>
-            <div style={styles.credentialsBlock}>
-              <div style={styles.credentialsLabel}>Name</div>
-              <div style={styles.credentialsValue}>{createdCredentials.name || '-'}</div>
-            </div>
-            <div style={styles.credentialsBlock}>
-              <div style={styles.credentialsLabel}>Username</div>
-              <div style={styles.credentialsValueRow}>
-                <span style={styles.credentialsMono}>{createdCredentials.username || '-'}</span>
-                <button
-                  type="button"
-                  style={styles.copyMiniBtn}
-                  onClick={() => copyCredentials(createdCredentials.username || '')}
-                  disabled={!createdCredentials.username}
-                >
-                  Copy
-                </button>
-              </div>
-            </div>
-            <div style={styles.credentialsBlock}>
-              <div style={styles.credentialsLabel}>Password</div>
-              <div style={styles.credentialsValueRow}>
-                <span style={styles.credentialsMono}>{createdCredentials.password || '-'}</span>
-                <button
-                  type="button"
-                  style={styles.copyMiniBtn}
-                  onClick={() => copyCredentials(createdCredentials.password || '')}
-                  disabled={!createdCredentials.password}
-                >
-                  Copy
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-
-      <form onSubmit={handleAddUserSubmit} style={styles.modalForm}>
-        <div style={styles.modalSection}>
-          <h4 style={styles.modalSectionTitle}>Personal Information</h4>
-          <div style={{ ...styles.modalGrid, gridTemplateColumns: 'repeat(auto-fit, minmax(210px, 1fr))' }}>
-            <div style={styles.inputGroup}>
-              <label style={styles.label}>Full Name *</label>
-        <input
-  name="name"
-  value={addUserForm.name}
-  onChange={handleAddUserChange}
-  style={{ ...styles.input, textTransform: 'uppercase' }}
-  placeholder="Enter full name"
-  pattern="[A-Za-z\s'-]*"
-  title="Only alphabets, spaces, hyphens, and apostrophes are allowed."
-/>
-            </div>
-
-            {/* <div style={styles.inputGroup}>
-              <label style={styles.label}>Username</label>
-              <input
-                name="username"
-                value={addUserForm.username}
-                onChange={handleAddUserChange}
-                style={styles.input}
-                placeholder="Optional"
-              />
-            </div>
-
-            <div style={styles.inputGroup}>
-              <label style={styles.label}>Password</label>
-              <input
-                name="password"
-                value={addUserForm.password}
-                onChange={handleAddUserChange}
-                style={styles.input}
-                placeholder="Optional"
-              />
-            </div> */}
-
-            <div style={styles.inputGroup}>
-              <label style={styles.label}>Gender</label>
-              <select
-                name="gender"
-                value={addUserForm.gender}
-                onChange={handleAddUserChange}
-                style={styles.input}
-              >
-                <option value="">Select Gender</option>
-                <option value="Male">Male</option>
-                <option value="Female">Female</option>
-                <option value="Other">Other</option>
-              </select>
-            </div>
-
-            <div style={styles.inputGroup}>
-              <label style={styles.label}>Date of Birth</label>
-              <input
-                type="date"
-                name="dob"
-                value={addUserForm.dob}
-                onChange={handleAddUserChange}
-                style={styles.input}
-              />
-            </div>
-          </div>
-        </div>
-
-        <div style={styles.modalSection}>
-          <h4 style={styles.modalSectionTitle}>Contact Information</h4>
-          <div style={{ ...styles.modalGrid, gridTemplateColumns: 'repeat(auto-fit, minmax(210px, 1fr))' }}>
-            <div style={styles.inputGroup}>
-              <label style={styles.label}>
-                {isAddStudent ? "Father's Phone Number" : 'Phone Number'}
-              </label>
-              <input
-                name={isAddStudent ? 'father_phone_no' : 'phone_no'}
-                value={isAddStudent ? addUserForm.father_phone_no : addUserForm.phone_no}
-                onChange={handleAddUserChange}
-                style={styles.input}
-                placeholder="Enter phone number"
-              />
-            </div>
-
-            <div style={styles.inputGroup}>
-              <label style={styles.label}>Aadhar Number</label>
-              <input
-                name="aadhar_no"
-                value={addUserForm.aadhar_no}
-                onChange={handleAddUserChange}
-                style={styles.input}
-                placeholder="Enter Aadhar number"
-              />
-            </div>
-
-            <div style={styles.inputGroup}>
-              <label style={styles.label}>Father Name</label>
-    <input
-  name="father_name"
-  value={addUserForm.father_name}
-  onChange={handleAddUserChange}
-  style={styles.input}
-  placeholder="Enter father name"
-  pattern="[A-Za-z\s'-]*"
-  title="Only alphabets, spaces, hyphens, and apostrophes are allowed."
-/>
-            </div>
-
-            <div style={styles.inputGroup}>
-              <label style={styles.label}>School Name</label>
-              <input
-                name="school_name"
-                value={addUserForm.school_name}
-                onChange={handleAddUserChange}
-                style={styles.input}
-                placeholder="School name"
-              />
-            </div>
-
-            <div style={styles.inputGroup}>
-              <label style={styles.label}>Address</label>
-              <textarea
-                name="address"
-                value={addUserForm.address}
-                onChange={handleAddUserChange}
-                style={{ ...styles.input, minHeight: '84px', resize: 'vertical' }}
-                placeholder="Enter address"
-              />
-            </div>
-          </div>
-        </div>
-
-        {isAddStudent && (
-          <>
-            <div style={styles.modalSection}>
-              <h4 style={styles.modalSectionTitle}>Student Details</h4>
-              <div style={{ ...styles.modalGrid, gridTemplateColumns: 'repeat(auto-fit, minmax(210px, 1fr))' }}>
-                <div style={styles.inputGroup}>
-                  <label style={styles.label}>Class*</label>
-                  <select
-                    name="class_name"
-                    value={addUserForm.class_name}
-                    onChange={(e) => {
-                      setAddUserForm((prev) => ({
-                        ...prev,
-                        class_name: e.target.value,
-                        section: '',
-                      }));
+            {isAddUserOpen && userModalMode === 'edit' && (
+                <StudentEditingPopup
+                    isOpen={isAddUserOpen}
+                    editingId={editingUserId}
+                    userType={addUserForm.user_type}
+                    formData={addUserForm}
+                    onFieldChange={(field, value) => {
+                        setAddUserForm((prev) => ({ ...prev, [field]: value }));
                     }}
-                    style={styles.input}
-                  >
-                    <option value="">-- Select Class --</option>
-                    {studentClassOptions.map((className) => (
-                      <option key={className} value={className}>
-                        {className}
-                      </option>
-                    ))}
-                  </select>
+                    onClassChange={(className) => {
+                        setAddUserForm((prev) => ({ ...prev, class_name: className, section: '' }));
+                    }}
+                    classOptions={studentClassOptions}
+                    getSectionsForClass={getStudentSectionsForClass}
+                    photoPreview={studentPhotoPreview}
+                    photoFile={studentPhotoFile}
+                    onPhotoChange={handleStudentPhotoChange}
+                    onRemovePhoto={() => {
+                        setStudentPhotoFile(null);
+                        setStudentPhotoPreview(normalizePhotoUrl(addUserForm.photo));
+                    }}
+                    onCancel={closeAddUserModal}
+                    onSubmit={handleAddUserSubmit}
+                    isLoading={isAddUserSubmitting}
+                />
+            )}
+
+            {isAddUserOpen && userModalMode === 'add' && (
+                <div style={styles.modalOverlay}>
+                    <div style={styles.modalCard}>
+                        <div style={styles.modalHeader}>
+                            <div>
+                                <h3 style={styles.modalTitle}>{`Add ${addUserTypeLabel}`}</h3>
+                                <p style={styles.modalSubtitle}>{`Create a new ${addUserForm.user_type} account for this school.`}</p>
+                            </div>
+                            <button type="button" onClick={closeAddUserModal} style={styles.modalCloseBtn}>
+                                ×
+                            </button>
+                        </div>
+
+                        {createdCredentials && (
+                            <div style={styles.credentialsCard}>
+                                <div style={styles.credentialsHeader}>
+                                    <div style={styles.credentialsHeaderLeft}>
+                                        <div style={styles.credentialsIconWrap}>✓</div>
+                                        <div>
+                                            <div style={styles.credentialsTitle}>User created successfully</div>
+                                            <div style={styles.credentialsSubtitle}>Copy these login details before closing the panel.</div>
+                                        </div>
+                                    </div>
+                                    <span style={styles.credentialsBadge}>{createdCredentials.user_type}</span>
+                                </div>
+                                <div style={styles.credentialsGrid}>
+                                    <div style={styles.credentialsBlock}>
+                                        <div style={styles.credentialsLabel}>Name</div>
+                                        <div style={styles.credentialsValue}>{createdCredentials.name || '-'}</div>
+                                    </div>
+                                    <div style={styles.credentialsBlock}>
+                                        <div style={styles.credentialsLabel}>Username</div>
+                                        <div style={styles.credentialsValueRow}>
+                                            <span style={styles.credentialsMono}>{createdCredentials.username || '-'}</span>
+                                            <button
+                                                type="button" style={styles.copyMiniBtn}
+                                                onClick={() => copyCredentials(createdCredentials.username || '')}
+                                                disabled={!createdCredentials.username}
+                                            >Copy</button>
+                                        </div>
+                                    </div>
+                                    <div style={styles.credentialsBlock}>
+                                        <div style={styles.credentialsLabel}>Password</div>
+                                        <div style={styles.credentialsValueRow}>
+                                            <span style={styles.credentialsMono}>{createdCredentials.password || '-'}</span>
+                                            <button
+                                                type="button" style={styles.copyMiniBtn}
+                                                onClick={() => copyCredentials(createdCredentials.password || '')}
+                                                disabled={!createdCredentials.password}
+                                            >Copy</button>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        )}
+
+                        <form onSubmit={handleAddUserSubmit} style={styles.modalForm}>
+                            <div style={styles.modalSection}>
+                                <h4 style={styles.modalSectionTitle}>Personal Information</h4>
+                                <div style={{ ...styles.modalGrid, gridTemplateColumns: 'repeat(auto-fit, minmax(210px, 1fr))' }}>
+                                    <div style={styles.inputGroup}>
+                                        <label style={styles.label}>Full Name *</label>
+                                        <input
+                                            name="name"
+                                            value={addUserForm.name}
+                                            onChange={handleAddUserChange}
+                                            style={{ ...styles.input, textTransform: 'uppercase' }}
+                                            placeholder="Enter full name"
+                                            pattern="[A-Za-z\s'-]*"
+                                            title="Only alphabets, spaces, hyphens, and apostrophes are allowed."
+                                        />
+                                    </div>
+                                    <div style={styles.inputGroup}>
+                                        <label style={styles.label}>Gender</label>
+                                        <select name="gender" value={addUserForm.gender} onChange={handleAddUserChange} style={styles.input}>
+                                            <option value="">Select Gender</option>
+                                            <option value="Male">Male</option>
+                                            <option value="Female">Female</option>
+                                            <option value="Other">Other</option>
+                                        </select>
+                                    </div>
+                                    <div style={styles.inputGroup}>
+                                        <label style={styles.label}>Date of Birth</label>
+                                        <input type="date" name="dob" value={addUserForm.dob} onChange={handleAddUserChange} style={styles.input} />
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div style={styles.modalSection}>
+                                <h4 style={styles.modalSectionTitle}>Contact Information</h4>
+                                <div style={{ ...styles.modalGrid, gridTemplateColumns: 'repeat(auto-fit, minmax(210px, 1fr))' }}>
+                                    <div style={styles.inputGroup}>
+                                        <label style={styles.label}>
+                                            {isAddStudent ? "Father's Phone Number *" : 'Phone Number *'}
+                                        </label>
+                                        <input
+                                            name={isAddStudent ? 'father_phone_no' : 'phone_no'}
+                                            value={isAddStudent ? addUserForm.father_phone_no : addUserForm.phone_no}
+                                            onChange={handleAddUserChange}
+                                            style={styles.input}
+                                            placeholder="10-digit number"
+                                            maxLength={10}
+                                        />
+                                    </div>
+                                    <div style={styles.inputGroup}>
+                                        <label style={styles.label}>Aadhar Number</label>
+                                        <input
+                                            name="aadhar_no"
+                                            value={addUserForm.aadhar_no}
+                                            onChange={handleAddUserChange}
+                                            style={styles.input}
+                                            placeholder="12-digit number"
+                                            maxLength={12}
+                                        />
+                                    </div>
+                                    <div style={styles.inputGroup}>
+                                        <label style={styles.label}>Father Name</label>
+                                        <input
+                                            name="father_name"
+                                            value={addUserForm.father_name}
+                                            onChange={handleAddUserChange}
+                                            style={styles.input}
+                                            placeholder="Enter father name"
+                                            pattern="[A-Za-z\s'-]*"
+                                            title="Only alphabets, spaces, hyphens, and apostrophes are allowed."
+                                        />
+                                    </div>
+                                    <div style={styles.inputGroup}>
+                                        <label style={styles.label}>School Name</label>
+                                        <input
+                                            name="school_name"
+                                            value={addUserForm.school_name}
+                                            onChange={handleAddUserChange}
+                                            style={{ ...styles.input, backgroundColor: '#f1f5f9', cursor: 'not-allowed' }}
+                                            readOnly
+                                        />
+                                    </div>
+                                    <div style={styles.inputGroup}>
+                                        <label style={styles.label}>Address</label>
+                                        <textarea
+                                            name="address"
+                                            value={addUserForm.address}
+                                            onChange={handleAddUserChange}
+                                            style={{ ...styles.input, minHeight: '84px', resize: 'vertical', backgroundColor: '#f1f5f9', cursor: 'not-allowed' }}
+                                            readOnly
+                                        />
+                                    </div>
+                                </div>
+                            </div>
+
+                            {isAddStudent && (
+                                <>
+                                    <div style={styles.modalSection}>
+                                        <h4 style={styles.modalSectionTitle}>Student Details</h4>
+                                        <div style={{ ...styles.modalGrid, gridTemplateColumns: 'repeat(auto-fit, minmax(210px, 1fr))' }}>
+                                            <div style={styles.inputGroup}>
+                                                <label style={styles.label}>Class*</label>
+                                                <select
+                                                    name="class_name" value={addUserForm.class_name}
+                                                    onChange={(e) => {
+                                                        setAddUserForm((prev) => ({ ...prev, class_name: e.target.value, section: '' }));
+                                                    }} style={styles.input}
+                                                >
+                                                    <option value="">-- Select Class --</option>
+                                                    {studentClassOptions.map((className) => (
+                                                        <option key={className} value={className}>{className}</option>
+                                                    ))}
+                                                </select>
+                                            </div>
+                                            <div style={styles.inputGroup}>
+                                                <label style={styles.label}>Section</label>
+                                                <select name="section" value={addUserForm.section} onChange={handleAddUserChange} style={styles.input} disabled={!addUserForm.class_name}>
+                                                    <option value="">-- Select Section --</option>
+                                                    {getStudentSectionsForClass(addUserForm.class_name).map((sec) => (
+                                                        <option key={sec} value={sec}>{sec}</option>
+                                                    ))}
+                                                </select>
+                                            </div>
+                                            <div style={styles.inputGroup}>
+                                                <label style={styles.label}>Class Teacher</label>
+                                                <input type="text" name="class_teacher" value={addUserForm.class_teacher} onChange={handleAddUserChange} style={styles.input} />
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    <div style={styles.modalSection}>
+                                        <h4 style={styles.modalSectionTitle}>Academic IDs</h4>
+                                        <div style={{ ...styles.modalGrid, gridTemplateColumns: 'repeat(auto-fit, minmax(210px, 1fr))' }}>
+                                            <div style={styles.inputGroup}>
+                                                <label style={styles.label}>Admission No.</label>
+                                                <input type="text" name="admission_no" value={addUserForm.admission_no} onChange={handleAddUserChange} style={styles.input} />
+                                            </div>
+                                            <div style={styles.inputGroup}>
+                                                <label style={styles.label}>Curriculum</label>
+                                                <input type="text" name="curriculum" value={addUserForm.curriculum || ''} onChange={handleAddUserChange} placeholder="e.g. CBSE / ICSE" style={styles.input} />
+                                            </div>
+                                            <div style={styles.inputGroup}>
+                                                <label style={styles.label}>CBSE Reg No.</label>
+                                                <input type="text" name="cbse_reg_no" value={addUserForm.cbse_reg_no} onChange={handleAddUserChange} style={styles.input} />
+                                            </div>
+                                        </div>
+                                    </div>
+                                </>
+                            )}
+
+                            {(isAddTeacher || isAddManagement) && (
+                                <div style={styles.modalSection}>
+                                    <h4 style={styles.modalSectionTitle}>Designation</h4>
+                                    <div style={{ ...styles.modalGrid, gridTemplateColumns: '1fr' }}>
+                                        <div style={styles.inputGroup}>
+                                            <label style={styles.label}>Designation</label>
+                                            {isAddManagement ? (
+                                                <select name="designation" value={addUserForm.designation} onChange={handleAddUserChange} style={styles.input}>
+                                                    <option value="">Select designation</option>
+                                                    {managementDesignationOptions.map((option) => (
+                                                        <option key={option.value} value={option.value}>{option.label}</option>
+                                                    ))}
+                                                </select>
+                                            ) : (
+                                                <input type="text" name="designation" value={addUserForm.designation || ''} onChange={handleAddUserChange} style={styles.input} placeholder="Enter designation" />
+                                            )}
+                                        </div>
+                                    </div>
+                                </div>
+                            )}
+
+                            {isAddTeacher && (
+                                <div style={styles.modalSection}>
+                                    <h4 style={styles.modalSectionTitle}>Teaching Classes</h4>
+                                    <div style={{ ...styles.modalGrid, gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))' }}>
+                                        {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12].map((num) => {
+                                            const fieldName = `teaches_to_${num}` as keyof AddUserFormState;
+                                            return (
+                                                <div style={styles.inputGroup} key={fieldName}>
+                                                    <label style={styles.label}>Teaches to Class {num}</label>
+                                                    <input type="text" name={fieldName} value={String(addUserForm[fieldName] || '')} onChange={handleAddUserChange} style={styles.input} placeholder={`Class ${num}`} />
+                                                </div>
+                                            );
+                                        })}
+                                    </div>
+                                </div>
+                            )}
+
+                            <div style={styles.modalActions}>
+                                <button type="button" onClick={closeAddUserModal} style={styles.cancelActionBtn}>Cancel</button>
+                                <button type="submit" style={styles.primaryActionBtn} disabled={isAddUserSubmitting}>
+                                    {isAddUserSubmitting ? 'Saving...' : addUserSubmitLabel}
+                                </button>
+                            </div>
+                        </form>
+                    </div>
                 </div>
-                <div style={styles.inputGroup}>
-                  <label style={styles.label}>Section</label>
-                  <select
-                    name="section"
-                    value={addUserForm.section}
-                    onChange={handleAddUserChange}
-                    style={styles.input}
-                    disabled={!addUserForm.class_name}
-                  >
-                    <option value="">-- Select Section --</option>
-                    {getStudentSectionsForClass(addUserForm.class_name).map((sec) => (
-                      <option key={sec} value={sec}>
-                        {sec}
-                      </option>
-                    ))}
-                  </select>
+            )}
+
+            <div style={styles.progressFooter}>
+                <div style={styles.trackerRow}>
+                    {([
+                        { title: 'Details', sub: 'Details Submitted' },
+                        { title: 'Management', sub: 'Logins Created' },
+                        { title: 'Staff', sub: 'Staff Created' },
+                        { title: 'Students', sub: 'Students Created' },
+                    ] as Array<{ title: StepTitle; sub: string }>).map((step, i, arr) => {
+                        const isDone = isStepComplete(step.title);
+                        const color = isDone ? stepColors[i] : '#cfcfcf';
+                        return (
+                            <React.Fragment key={i}>
+                                <div style={{ textAlign: 'center', minWidth: '110px' }}>
+                                    <div style={{ ...styles.stepCircle, borderColor: color, color: color, backgroundColor: isDone ? `${color}15` : '#fff', borderStyle: isDone ? 'solid' : 'dashed', fontWeight: 'bold' }}>
+                                        {i + 1}
+                                    </div>
+                                    <div style={{ ...styles.stepLabel, color: isDone ? '#333' : '#999' }}>
+                                        <strong>{step.title}</strong>
+                                    </div>
+                                    <div style={styles.subLabel}>{step.sub}</div>
+                                </div>
+                                {i !== arr.length - 1 && (
+                                    <div style={styles.connectorWrapper}>
+                                        <div style={{ ...styles.connectorLine, backgroundColor: isDone ? color : '#cfcfcf' }} />
+                                        <div style={{ ...styles.connectorArrow, borderLeftColor: isDone ? color : '#cfcfcf' }} />
+                                    </div>
+                                )}
+                            </React.Fragment>
+                        );
+                    })}
                 </div>
-                <div style={styles.inputGroup}>
-                  <label style={styles.label}>Class Teacher</label>
-                  <input
-                    type="text"
-                    name="class_teacher"
-                    value={addUserForm.class_teacher}
-                    onChange={handleAddUserChange}
-                    style={styles.input}
-                  />
-                </div>
-              </div>
             </div>
 
-            <div style={styles.modalSection}>
-              <h4 style={styles.modalSectionTitle}>Academic IDs</h4>
-              <div style={{ ...styles.modalGrid, gridTemplateColumns: 'repeat(auto-fit, minmax(210px, 1fr))' }}>
-                <div style={styles.inputGroup}>
-                  <label style={styles.label}>Admission No.</label>
-                  <input
-                    type="text"
-                    name="admission_no"
-                    value={addUserForm.admission_no}
-                    onChange={handleAddUserChange}
-                    style={styles.input}
-                  />
-                </div>
-                <div style={styles.inputGroup}>
-                  <label style={styles.label}>Curriculum</label>
-                  <input
-                    type="text"
-                    name="curriculum"
-                    value={addUserForm.curriculum || ''}
-                    onChange={handleAddUserChange}
-                    placeholder="e.g. CBSE / ICSE / State Board"
-                    style={styles.input}
-                  />
-                </div>
-                <div style={styles.inputGroup}>
-                  <label style={styles.label}>CBSE Reg No.</label>
-                  <input
-                    type="text"
-                    name="cbse_reg_no"
-                    value={addUserForm.cbse_reg_no}
-                    onChange={handleAddUserChange}
-                    style={styles.input}
-                  />
-                </div>
-              </div>
-            </div>
-          </>
-        )}
-
-        {(isAddTeacher || isAddManagement) && (
-          <div style={styles.modalSection}>
-            <h4 style={styles.modalSectionTitle}>Designation</h4>
-            <div style={{ ...styles.modalGrid, gridTemplateColumns: '1fr' }}>
-              <div style={styles.inputGroup}>
-                <label style={styles.label}>Designation</label>
-                {isAddManagement ? (
-                  <select
-                    name="designation"
-                    value={addUserForm.designation}
-                    onChange={handleAddUserChange}
-                    style={styles.input}
-                  >
-                    <option value="">Select designation</option>
-                    {managementDesignationOptions.map((option) => (
-                      <option key={option.value} value={option.value}>
-                        {option.label}
-                      </option>
-                    ))}
-                  </select>
-                ) : (
-                  <input
-                    type="text"
-                    name="designation"
-                    value={addUserForm.designation || ''}
-                    onChange={handleAddUserChange}
-                    style={styles.input}
-                    placeholder="Enter designation"
-                  />
-                )}
-              </div>
-            </div>
-          </div>
-        )}
-
-        {isAddTeacher && (
-          <div style={styles.modalSection}>
-            <h4 style={styles.modalSectionTitle}>Teaching Classes</h4>
-            <div style={{ ...styles.modalGrid, gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))' }}>
-              {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12].map((num) => {
-                const fieldName = `teaches_to_${num}` as keyof AddUserFormState;
-                return (
-                  <div style={styles.inputGroup} key={fieldName}>
-                    <label style={styles.label}>Teaches to Class {num}</label>
-                    <input
-                      type="text"
-                      name={fieldName}
-                      value={String(addUserForm[fieldName] || '')}
-                      onChange={handleAddUserChange}
-                      style={styles.input}
-                      placeholder={`Class ${num}`}
-                    />
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-        )}
-
-        <div style={styles.modalActions}>
-          <button type="button" onClick={closeAddUserModal} style={styles.cancelActionBtn}>
-            Cancel
-          </button>
-          <button type="submit" style={styles.primaryActionBtn} disabled={isAddUserSubmitting}>
-            {isAddUserSubmitting ? 'Saving...' : addUserSubmitLabel}
-          </button>
-        </div>
-      </form>
-    </div>
-  </div>
-)}
-          <div style={styles.progressFooter}>
-<div style={styles.trackerRow}>
-  {([
-    { title: 'Details', sub: 'Details Submitted' },
-    { title: 'Management', sub: 'Logins Created' },
-    { title: 'Staff', sub: 'Staff Created' },
-    { title: 'Students', sub: 'Students Created' },
-    // { title: 'Uploaded Files', sub: 'Files Uploaded' },
-  ] as Array<{ title: StepTitle; sub: string }>).map((step, i, arr) => {
-    const isDone = isStepComplete(step.title);
-    const color = isDone ? stepColors[i] : '#cfcfcf'; 
-
-    
-    return (
-      <React.Fragment key={i}>
-        <div style={{ textAlign: 'center', minWidth: '110px' }}>
-          <div
-            style={{
-              ...styles.stepCircle,
-              borderColor: color,
-              color: color,
-              // Keep background light color if done, else white
-              backgroundColor: isDone ? `${color}15` : '#fff', 
-              // Switch from dashed to solid border when done
-              borderStyle: isDone ? 'solid' : 'dashed',
-              fontWeight: 'bold'
-            }}
-          >
-            {/* CHANGED THIS LINE: Always show the index + 1 */}
-            {i + 1}
-          </div>
-          <div style={{ ...styles.stepLabel, color: isDone ? '#333' : '#999' }}>
-            <strong>{step.title}</strong>
-          </div>
-          <div style={styles.subLabel}>{step.sub}</div>
-        </div>
-
-        {/* CONNECTOR */}
-        {i !== arr.length - 1 && (
-          <div style={styles.connectorWrapper}>
-            <div
-              style={{
-                ...styles.connectorLine,
-                backgroundColor: isDone ? color : '#cfcfcf',
-              }}
-            />
-            <div
-              style={{
-                ...styles.connectorArrow,
-                borderLeftColor: isDone ? color : '#cfcfcf',
-              }}
-            />
-          </div>
-        )}
-      </React.Fragment>
-    );
-  })}
-</div>
-       
-             </div>
             {activeRoleTab && (
                 <div style={styles.roleRecordsSection}>
                     <h3 style={styles.sectionHeading}>{roleTabConfig[activeRoleTab].detailsTitle}</h3>
@@ -2536,40 +1915,26 @@ useEffect(() => {
                                     onChange={(e) => {
                                         setStudentClassFilter(e.target.value);
                                         setStudentSectionFilter('');
-                                    }}
-                                    style={styles.input}
+                                    }} style={styles.input}
                                 >
                                     <option value="">All Classes</option>
                                     {studentClassOptions.map((className) => (
-                                        <option key={className} value={className}>
-                                            {className}
-                                        </option>
+                                        <option key={className} value={className}>{className}</option>
                                     ))}
                                 </select>
                             </div>
                             <div style={styles.studentFilterField}>
                                 <label style={styles.label}>Section</label>
-                                <select
-                                    value={studentSectionFilter}
-                                    onChange={(e) => setStudentSectionFilter(e.target.value)}
-                                    style={styles.input}
-                                >
+                                <select value={studentSectionFilter} onChange={(e) => setStudentSectionFilter(e.target.value)} style={styles.input}>
                                     <option value="">All Sections</option>
                                     {studentSectionOptions.map((section) => (
-                                        <option key={section} value={section}>
-                                            {section}
-                                        </option>
+                                        <option key={section} value={section}>{section}</option>
                                     ))}
                                 </select>
                             </div>
                             <div style={styles.studentFilterField}>
                                 <label style={styles.label}>Name</label>
-                                <input
-                                    value={studentNameFilter}
-                                    onChange={(e) => setStudentNameFilter(e.target.value)}
-                                    placeholder="Search student name"
-                                    style={styles.input}
-                                />
+                                <input value={studentNameFilter} onChange={(e) => setStudentNameFilter(e.target.value)} placeholder="Search student name" style={styles.input} />
                             </div>
                         </div>
                     )}
@@ -2583,9 +1948,7 @@ useEffect(() => {
                                 <thead>
                                     <tr style={styles.roleRecordsHeadRow}>
                                         {roleTabConfig[activeRoleTab].columns.map((column) => (
-                                            <th key={column.key} style={styles.roleRecordsHeadCell}>
-                                                {column.label}
-                                            </th>
+                                            <th key={column.key} style={styles.roleRecordsHeadCell}>{column.label}</th>
                                         ))}
                                         <th style={styles.roleRecordsHeadCell}>Actions</th>
                                     </tr>
@@ -2595,55 +1958,31 @@ useEffect(() => {
                                         const userId = getUserRecordId(user) ?? `${user.username || user.name}-${index}`;
                                         const disabled = isUserDisabled(user);
                                         return (
-                                        <tr
-                                            key={userId}
-                                            style={disabled ? styles.disabledRoleRow : undefined}
-                                            onClick={() => {
-                                                if (disabled) setActionUser(user);
-                                            }}
-                                        >
-                                            {roleTabConfig[activeRoleTab].columns.map((column) => {
-                                                const value =
-                                                    column.key === 'phone'
-                                                        ? user.phone_no || user.father_phone_no || user.phone || '-'
-                                                        : user[column.key] || '-';
-                                                return (
-                                                    <td key={column.key} style={styles.roleRecordsCell}>
-                                                        {value}
-                                                    </td>
-                                                );
-                                            })}
-                                            <td style={styles.roleRecordsCell}>
-                                                <div style={styles.rowActionGroup}>
-                                                    <button
-                                                        type="button"
-                                                        style={styles.rowEditIconBtn}
-                                                        onClick={(event) => {
-                                                            event.stopPropagation();
-                                                            if (disabled) {
-                                                                setActionUser(user);
-                                                                return;
-                                                            }
-                                                            openEditUserModal(user);
-                                                        }}
-                                                        aria-label="Edit user"
-                                                    >
-                                                        <Pencil size={16} strokeWidth={2.2} />
-                                                    </button>
-                                                    <button
-                                                        type="button"
-                                                        style={styles.rowDeleteIconBtn}
-                                                        onClick={(event) => {
-                                                            event.stopPropagation();
-                                                            setActionUser(user);
-                                                        }}
-                                                        aria-label="Open delete options"
-                                                    >
-                                                        <Trash2 size={16} strokeWidth={2.2} />
-                                                    </button>
-                                                </div>
-                                            </td>
-                                        </tr>
+                                            <tr key={userId} style={disabled ? styles.disabledRoleRow : undefined} onClick={() => { if (disabled) setActionUser(user); }}>
+                                                {roleTabConfig[activeRoleTab].columns.map((column) => {
+                                                    const value = column.key === 'phone' ? user.phone_no || user.father_phone_no || user.phone || '-' : user[column.key] || '-';
+                                                    return (
+                                                        <td key={column.key} style={styles.roleRecordsCell}>{value}</td>
+                                                    );
+                                                })}
+                                                <td style={styles.roleRecordsCell}>
+                                                    <div style={styles.rowActionGroup}>
+                                                        <button
+                                                            type="button" style={styles.rowEditIconBtn}
+                                                            onClick={(event) => {
+                                                                event.stopPropagation();
+                                                                if (disabled) { setActionUser(user); return; }
+                                                                openEditUserModal(user);
+                                                            }} aria-label="Edit user"
+                                                        ><Pencil size={16} strokeWidth={2.2} /></button>
+                                                        <button
+                                                            type="button" style={styles.rowDeleteIconBtn}
+                                                            onClick={(event) => { event.stopPropagation(); setActionUser(user); }}
+                                                            aria-label="Open delete options"
+                                                        ><Trash2 size={16} strokeWidth={2.2} /></button>
+                                                    </div>
+                                                </td>
+                                            </tr>
                                         );
                                     })}
                                 </tbody>
@@ -2652,53 +1991,25 @@ useEffect(() => {
                     )}
                 </div>
             )}
+
             {actionUser && (
                 <div style={styles.accountActionOverlay} onClick={() => setActionUser(null)}>
-                    <div
-                        style={styles.accountActionCard}
-                        role="dialog"
-                        aria-modal="true"
-                        aria-labelledby="account-action-title"
-                        onClick={(event) => event.stopPropagation()}
-                    >
-                        <h3 id="account-action-title" style={styles.accountActionTitle}>
-                            Account actions
-                        </h3>
-                        <p style={styles.accountActionText}>
-                            Choose an action for <strong>{actionUser?.name || 'this user'}</strong>.
-                        </p>
-                        <button
-                            type="button"
-                            style={styles.accountActionButton}
-                            onClick={() => toggleUserDisabled(actionUser)}
-                        >
+                    <div style={styles.accountActionCard} role="dialog" aria-modal="true" aria-labelledby="account-action-title" onClick={(event) => event.stopPropagation()}>
+                        <h3 id="account-action-title" style={styles.accountActionTitle}>Account actions</h3>
+                        <p style={styles.accountActionText}>Choose an action for <strong>{actionUser?.name || 'this user'}</strong>.</p>
+                        <button type="button" style={styles.accountActionButton} onClick={() => toggleUserDisabled(actionUser)}>
                             {isUserDisabled(actionUser) ? 'Enable login' : 'Disable login'}
                         </button>
-                        <button
-                            type="button"
-                            style={{
-                                ...styles.accountActionButton,
-                                ...styles.accountActionDangerButton,
-                            }}
-                            onClick={() => deleteUser(actionUser)}
-                        >
+                        <button type="button" style={{ ...styles.accountActionButton, ...styles.accountActionDangerButton }} onClick={() => deleteUser(actionUser)}>
                             Delete permanently
                         </button>
-                        <button
-                            type="button"
-                            style={styles.accountActionCancelButton}
-                            onClick={() => setActionUser(null)}
-                        >
-                            Cancel
-                        </button>
+                        <button type="button" style={styles.accountActionCancelButton} onClick={() => setActionUser(null)}>Cancel</button>
                     </div>
                 </div>
             )}
         </div>
     );
 };
-
-// 2. UPDATED STYLES
 const styles: Record<string, React.CSSProperties> = {
   container: {
     fontFamily: "Arial, sans-serif",
@@ -3631,4 +2942,5 @@ schoolNameBox: {
     textAlign: "center",
   },
 };
+
 export default CentralizationDashboard;

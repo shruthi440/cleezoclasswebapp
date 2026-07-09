@@ -27,6 +27,8 @@ import assistantIcon from "../assets/Assistant.png";
 import logoab from "../assets/logoab.png";
 import userAvatar from "../assets/user.png";
 import GlobalLoader from "../shared/GlobelLoading.js";
+import { FiHelpCircle } from "react-icons/fi";
+import HelpCenter from "../shared/HelpCenter.jsx";
 
 const quickCards = [
   { icon: createFeeIcon, title: "Create Expense", text: "Expense type & category" },
@@ -157,6 +159,9 @@ const AccountantExpensesPageNew = () => {
   const [ledgerFromDate, setLedgerFromDate] = useState("");
   const [ledgerToDate, setLedgerToDate] = useState("");
   const [expenseSearch, setExpenseSearch] = useState("");
+    const [openHelpSection, setOpenHelpSection] = useState(null);
+  const[isHelpOpen,setIsHelpOpen]=useState(false)
+  const userRole = localStorage.getItem("userRole")
   const studentManagementPopupUrl =
     typeof window === "undefined"
       ? ""
@@ -562,7 +567,7 @@ const AccountantExpensesPageNew = () => {
   };
 
   // Updated validation logic to only require expenseType and expenseName
-  const isFormValid = expenseTransactionForm.expenseType && expenseTransactionForm.expenseName;
+  const isFormValid = expenseTransactionForm.expenseType && expenseTransactionForm.expenseName && expenseTransactionForm.description;
 
 
 // ==========================================
@@ -787,6 +792,17 @@ const handleDownloadExpensePDF = () => {
             </div>
 
             <div className="accountant-topbar-right">
+                <button
+                 className="accountant-help-icon-btn"
+                 onClick={() => setIsHelpOpen(true)}
+               >
+               <FiHelpCircle
+               style={{
+                 color: "#e9818c",
+                 fontSize: "34px"
+               }}
+             />
+               </button>
               <EditableProfileMenu />
             </div>
           </div>
@@ -1372,7 +1388,7 @@ const handleDownloadExpensePDF = () => {
                     >
                       <div className="accountant-progress-ring-inner">{expenseDuePercentLabel}</div>
                     </div>
-                    <div className="blockText">Income & Exp.</div>
+                    <div className="blockText">Expenses.</div>
                     <div className="normalText">Percentile Profit</div>
                   </div>
 
@@ -1611,28 +1627,43 @@ const handleDownloadExpensePDF = () => {
                           <option value="CHECK">CHECK</option>
                         </select>
                       </label>
-                      <label className="accountant-create-fee-label">
-                        Total Amount
-                        <input
-                          type="number"
-                          value={expensePaymentForm.totalAmount}
-                          onChange={(event) =>
-                            setExpensePaymentForm((prev) => ({ ...prev, totalAmount: event.target.value }))
-                          }
-                          placeholder="Total Amount"
-                        />
-                      </label>
-                      <label className="accountant-create-fee-label">
-                        Paid
-                        <input
-                          type="number"
-                          value={expensePaymentForm.paidAmount}
-                          onChange={(event) =>
-                            setExpensePaymentForm((prev) => ({ ...prev, paidAmount: event.target.value }))
-                          }
-                          placeholder="Paid Amount"
-                        />
-                      </label>
+              <label className="accountant-create-fee-label">
+  Total Amount
+  <input
+    type="number"
+    value={expensePaymentForm.totalAmount}
+    onChange={(event) =>
+      setExpensePaymentForm((prev) => ({
+        ...prev,
+        totalAmount: event.target.value,
+      }))
+    }
+    placeholder="Total Amount"
+  />
+</label>
+
+<label className="accountant-create-fee-label">
+  Paid
+  <input
+    type="number"
+    value={expensePaymentForm.paidAmount}
+    onChange={(event) => {
+      const paid = Number(event.target.value);
+      const total = Number(expensePaymentForm.totalAmount);
+
+      if (paid > total) {
+        alert("Paid amount cannot be greater than the total amount.");
+        return;
+      }
+
+      setExpensePaymentForm((prev) => ({
+        ...prev,
+        paidAmount: event.target.value,
+      }));
+    }}
+    placeholder="Paid Amount"
+  />
+</label>
                       <label className="accountant-create-fee-label">
                         Balance
                         <input type="text" value={expensePaymentForm.balance} readOnly />
@@ -1743,6 +1774,18 @@ const handleDownloadExpensePDF = () => {
         onClose={() => setPopup({ message: "", type: "" })}
       />
       {expenseRowsLoading && <GlobalLoader timeoutSeconds={7}/>}
+      {
+  isHelpOpen && (
+    <>
+    <HelpCenter
+    userRole={userRole}
+    openHelpSection={openHelpSection}
+        setOpenHelpSection={setOpenHelpSection}
+    setIsHelpOpen={setIsHelpOpen}
+    />
+    </>
+  )
+}
     </div>
   
   );

@@ -4,8 +4,7 @@ import './Frontdesk_Communication.css'
 import './FrontDesk_TestAndCouncelling.css';
 import axios from "axios";
 import { FaUser } from "react-icons/fa";
-import Select from "react-select";
-import  MultiValue  from "react-select";
+import Select, { MultiValue } from "react-select";
 import ErrorPopup from "../shared/ErrorPopup";
 
 // --- Interfaces ---

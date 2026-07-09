@@ -22,6 +22,8 @@ import addFeesIcon from "../assets/add-fee.png";
 import assistantIcon from "../assets/Assistant.png";
 import logoab from "../assets/logoab.png";
 import userAvatar from "../assets/user.png";
+import { FiHelpCircle } from "react-icons/fi";
+import HelpCenter from "../shared/HelpCenter.jsx";
 
 const quickCards = [
   { icon: createFeeIcon, title: "Create Fee type", text: "Create custom fee categories" },
@@ -230,8 +232,8 @@ const AccountantFeesPageNew = () => {
   const [paymentSummaryMap, setPaymentSummaryMap] = useState({});
   const [dynamicFeeTypes, setDynamicFeeTypes] = useState([]);
   const [selectedClassFeeStructure, setSelectedClassFeeStructure] = useState(null);
-  const [selectedClassFilter, setSelectedClassFilter] = useState("All");
-  const [selectedSectionFilter, setSelectedSectionFilter] = useState("All");
+  const [selectedClassFilter, setSelectedClassFilter] = useState(null);
+  const [selectedSectionFilter, setSelectedSectionFilter] = useState(null);
   const [studentSearchTerm, setStudentSearchTerm] = useState("");
   const [isPaymentPopupOpen, setIsPaymentPopupOpen] = useState(false);
   const [selectedStudentCardId, setSelectedStudentCardId] = useState(null);
@@ -250,6 +252,10 @@ const AccountantFeesPageNew = () => {
   const [discountsData, setDiscountsData] = useState([]);
   const [discountsLoading, setDiscountsLoading] = useState(false);
     const [popupKey, setPopupKey] = useState(0);
+      const [isHelpOpen, setIsHelpOpen] = useState(false);
+const [openHelpSection, setOpenHelpSection] = useState(null);
+
+const userRole = localStorage.getItem("userRole");
   const [discountsError, setDiscountsError] = useState("");
   const [addFeePreview, setAddFeePreview] = useState({
     className: "",
@@ -932,57 +938,96 @@ const getPaymentBreakdownSummary = useCallback((paymentSummary) => {
         setDynamicFeeTypes([]);
       });
   }, []);
+const handleCreateFeeType = useCallback(
+  async (event) => {
+    event.preventDefault();
 
-  const handleCreateFeeType = useCallback(
-    async (event) => {
-      event.preventDefault();
-      const schoolCode = localStorage.getItem("schoolCode");
-      if (!schoolCode) {
-        setCreateFeeTypeError("School code is missing.");
-        return;
-      }
+    const schoolCode = localStorage.getItem("schoolCode");
+    if (!schoolCode) {
+      setCreateFeeTypeError("School code is missing.");
+      return;
+    }
 
-      setCreateFeeTypeLoading(true);
-      setCreateFeeTypeError("");
+    const feeName = newFeeTypeForm.feesType.trim();
 
-      const nextFeeType = {
-        feeName: newFeeTypeForm.feesType.trim() || "Custom Fee",
-        feesType: newFeeTypeForm.feesType.trim() || "Custom Fee",
-        priority: dynamicFeeTypes.length + 1,
-        scope: newFeeTypeForm.scope || "All",
-        frequency: newFeeTypeForm.frequency || "One time",
-        installments:
-          (newFeeTypeForm.frequency || "One time") === "Term wise"
-            ? Math.max(1, Number(newFeeTypeForm.installments) || 1)
-            : 1,
+    // Required field validations
+    if (!feeName) {
+      setCreateFeeTypeError("Fee name is required.");
+      return;
+    }
+
+    if (!newFeeTypeForm.scope) {
+      setCreateFeeTypeError("Please select a scope.");
+      return;
+    }
+
+    if (!newFeeTypeForm.frequency) {
+      setCreateFeeTypeError("Please select a frequency.");
+      return;
+    }
+
+    // Duplicate fee type validation
+    const alreadyExists = dynamicFeeTypes.some(
+      (item) =>
+        String(item.feeName || "")
+          .trim()
+          .toLowerCase() === feeName.toLowerCase()
+    );
+
+    if (alreadyExists) {
+      setCreateFeeTypeError("This fee type already exists.");
+      return;
+    }
+
+    setCreateFeeTypeLoading(true);
+    setCreateFeeTypeError("");
+
+    const nextFeeType = {
+      feeName,
+      feesType: feeName,
+      priority: dynamicFeeTypes.length + 1,
+      scope: newFeeTypeForm.scope,
+      frequency: newFeeTypeForm.frequency,
+      installments:
+        newFeeTypeForm.frequency === "Term wise"
+          ? Math.max(1, Number(newFeeTypeForm.installments) || 1)
+          : 1,
+    };
+
+    try {
+      const payload = {
+        schoolCode,
+        ...nextFeeType,
       };
 
-      try {
-        const payload = {
-          schoolCode,
-          ...nextFeeType,
-        };
-        await axios.post("https://cleezoclass.com:4000/api/fee-types", payload);
-        setDynamicFeeTypes((prev) => [
-          ...prev,
-          { id: `${Date.now()}`, ...nextFeeType },
-        ]);
-        setNewFeeTypeForm({
-          feesType: "",
-          scope: "",
-          frequency: "",
-          installments: "",
-        });
-        setIsCreateFeeTypePopupOpen(false);
-      } catch (error) {
-        setCreateFeeTypeError(error?.response?.data?.message || "Failed to save fee type.");
-      } finally {
-        setCreateFeeTypeLoading(false);
-      }
-    },
-    [dynamicFeeTypes.length, newFeeTypeForm]
-  );
+      await axios.post(
+        "https://cleezoclass.com:4000/api/fee-types",
+        payload
+      );
 
+      setDynamicFeeTypes((prev) => [
+        ...prev,
+        { id: `${Date.now()}`, ...nextFeeType },
+      ]);
+
+      setNewFeeTypeForm({
+        feesType: "",
+        scope: "",
+        frequency: "",
+        installments: "",
+      });
+
+      setIsCreateFeeTypePopupOpen(false);
+    } catch (error) {
+      setCreateFeeTypeError(
+        error?.response?.data?.message || "Failed to save fee type."
+      );
+    } finally {
+      setCreateFeeTypeLoading(false);
+    }
+  },
+  [dynamicFeeTypes, newFeeTypeForm]
+);
   const normalizedOutstandingStudents = useCallback(() => {
     const sourceStudents =
       selectedClassFilter !== "All" && selectedSectionFilter !== "All" && classSectionStudents.length
@@ -1746,6 +1791,18 @@ const sectionOptions = [
             </div>
 
             <div className="accountant-topbar-right">
+              
+                                   <button
+  className="accountant-help-icon-btn"
+  onClick={() => setIsHelpOpen(true)}
+>
+  <FiHelpCircle
+    style={{
+      color: "#e9818c",
+      fontSize: "34px",
+    }}
+  />
+</button>
               <EditableProfileMenu />
             </div>
           </div>
@@ -1869,31 +1926,40 @@ const sectionOptions = [
                         onChange={(event) => setStudentSearchTerm(event.target.value)}
                       />
 
-                      <select
-                        className="accountant-card-filter"
-                        value={selectedClassFilter}
-                   onChange={(event) => {
-  setSelectedClassFilter(event.target.value);
-}}
-                      >
-                        {classOptions.map((cls) => (
-                          <option key={cls} value={cls}>
-                            {cls}
-                          </option>
-                        ))}
-                      </select>
+                     <select
+  className="accountant-card-filter"
+  value={selectedClassFilter}
+  onChange={(event) => {
+    setSelectedClassFilter(event.target.value);
+    setSelectedSectionFilter(""); // Reset section when class changes
+  }}
+>
+  <option value="">Select Class</option>
 
-                      <select
-                        className="accountant-card-filter"
-                        value={selectedSectionFilter}
-                        onChange={(event) => setSelectedSectionFilter(event.target.value)}
-                      >
-                        {sectionOptions.map((sec) => (
-                          <option key={sec} value={sec}>
-                            {sec}
-                          </option>
-                        ))}
-                      </select>
+  {classOptions.map((cls) => (
+    <option key={cls} value={cls}>
+      {cls}
+    </option>
+  ))}
+</select>
+
+<select
+  className="accountant-card-filter"
+  value={selectedSectionFilter}
+  onChange={(event) => setSelectedSectionFilter(event.target.value)}
+  disabled={!selectedClassFilter}
+>
+  <option value="">
+    {selectedClassFilter ? "Select Section" : "Select Class First"}
+  </option>
+
+  {selectedClassFilter &&
+    sectionOptions.map((sec) => (
+      <option key={sec} value={sec}>
+        {sec}
+      </option>
+    ))}
+</select>
                     </div>
                   </div>
 
@@ -2494,6 +2560,14 @@ const sectionOptions = [
           document.body
         )}
         {dashboardLoading && <GlobalLoader timeoutSeconds={7}/>}
+                   {isHelpOpen && (
+  <HelpCenter
+    userRole={userRole}
+    openHelpSection={openHelpSection}
+    setOpenHelpSection={setOpenHelpSection}
+    setIsHelpOpen={setIsHelpOpen}
+  />
+)}
     </div>
   );
 };

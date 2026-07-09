@@ -3,8 +3,7 @@ import '../STYLES/solidbutton.css';
 import './Frontdesk_Communication.css'
 import axios from "axios";
 import { FaUser } from "react-icons/fa";
-import Select  from "react-select";
-import MultiValue from "react-select";
+import Select, { MultiValue } from "react-select";
 import applicationIcon from '../assets/application.png';
 import "./FrontDesk_Admission.css";
 import html2pdf from "html2pdf.js";

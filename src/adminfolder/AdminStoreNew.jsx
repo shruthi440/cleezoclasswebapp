@@ -21,7 +21,9 @@ import timelineIcon from "../assets/Timeline.png";
 import followupIcon from "../assets/Profile.png";
 import assistantIcon from "../assets/Assistant.png";
 import communicationIcon from "../assets/Communication Assign.png";
-
+import axios from "axios";
+import HelpCenter from "../shared/HelpCenter.jsx";
+import { FiHelpCircle } from "react-icons/fi";
 
 
 
@@ -199,6 +201,9 @@ const AdminStoreNew = () => {
   const [classOptions, setClassOptions] = useState([]);
   const [sectionOptions, setSectionOptions] = useState([]);
   const [studentOptions, setStudentOptions] = useState([]);
+          const [openHelpSection, setOpenHelpSection] = useState(null);
+        const[isHelpOpen,setIsHelpOpen]=useState(false)
+        const userRole = localStorage.getItem("userRole")
   const [liveChatForm, setLiveChatForm] = useState({
     party1: "",
     className: "",
@@ -531,7 +536,36 @@ const AdminStoreNew = () => {
       setIsSubmitting(false);
     }
   };
-
+   const [performance, setPerformance] = useState({});
+  
+      useEffect(() => {
+          getOverallPerformance();
+      }, []);
+  
+      const getOverallPerformance = async () => {
+  
+          try {
+  
+              const schoolCode = localStorage.getItem("schoolCode");
+  
+              const response = await axios.get(
+                  "https://cleezoclass.com:4000/api/overall-performance-percentage",
+                  {
+                      params: {
+                          schoolCode,
+                      },
+                  }
+              );
+  
+              if (response.data.success) {
+                  setPerformance(response.data.data);
+              }
+  
+          } catch (error) {
+              console.log(error);
+          }
+  
+      };
   return (
     <div className="dashboard-page dashboard-home-page frontdesk-dashboard-page accountant-dashboard-page accountant-dashboard-home-page">
       <div className="dashboard-shell accountant-dashboard-shell">
@@ -587,6 +621,17 @@ const AdminStoreNew = () => {
               <button className="accountant-branch-btn" type="button" onClick={() => navigate("/HrDashboard")}>
                 Switch to HR <span className="accountant-branch-caret">▼</span>
               </button>
+                    <button
+                   className="accountant-help-icon-btn"
+                   onClick={() => setIsHelpOpen(true)}
+                 >
+                 <FiHelpCircle
+                 style={{
+                   color: "#e9818c",
+                   fontSize: "34px"
+                 }}
+               />
+                 </button>
               <EditableProfileMenu showHrSwitch />
             </div>
           </div>
@@ -841,7 +886,7 @@ const AdminStoreNew = () => {
               <div className="admin-events-side-stack">
                 <div className="admin-events-metrics">
                   <div className="admin-events-metric accountant-card">
-                    <div className="admin-events-ring">45%</div>
+                    <div className="admin-events-ring">{performance.overallPercentage }%</div>
                     <h4>Performance</h4>
                     <span>Students Track</span>
                   </div>
@@ -960,7 +1005,18 @@ const AdminStoreNew = () => {
           </div>
         </div>
       )}
-
+ {
+              isHelpOpen && (
+                <>
+                <HelpCenter
+                userRole={userRole}
+                openHelpSection={openHelpSection}
+                    setOpenHelpSection={setOpenHelpSection}
+                setIsHelpOpen={setIsHelpOpen}
+                />
+                </>
+              )
+            }
       <ErrorPopup message={popupMessage} onClose={() => setPopupMessage("")} />
     </div>
   );

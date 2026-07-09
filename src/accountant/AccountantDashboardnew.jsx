@@ -30,6 +30,7 @@ import userAvatar from "../assets/user.png";
 import premiumIcon from "../assets/Go Premium.png";
 import GlobalLoader from "../shared/GlobelLoading.tsx";
 import { FiHelpCircle } from "react-icons/fi";
+import HelpCenter from "../shared/HelpCenter.jsx";
 
 const ADMIN_API_BASE = "https://cleezoclass.com:4000/api/admin";
 
@@ -608,6 +609,7 @@ const AccountantDashboard = () => {
   const [ticketError, setTicketError] = useState("");
   const [openHelpSection, setOpenHelpSection] = useState(null);
   const[isHelpOpen,setIsHelpOpen]=useState(false)
+  const userRole = localStorage.getItem("userRole")
   const [isAddFeesPopupOpen, setIsAddFeesPopupOpen] = useState(false);
   const [addFeesPanelTab, setAddFeesPanelTab] = useState("fees");
   const [addFeePreview, setAddFeePreview] = useState({
@@ -4058,12 +4060,24 @@ const getStudentCardDue = (student) => {
         setCreateFeeTypeError("School code not found.");
         return;
       }
+const feeName = String(newFeeTypeForm.feesType || "").trim();
+const scope = String(newFeeTypeForm.scope || "").trim();
+const frequency = String(newFeeTypeForm.frequency || "").trim();
 
-      const feeName = String(newFeeTypeForm.feesType || "").trim();
-      if (!feeName) {
-        setCreateFeeTypeError("Fee name is required.");
-        return;
-      }
+if (!feeName) {
+  setCreateFeeTypeError("Fee name is required.");
+  return;
+}
+
+if (!scope) {
+  setCreateFeeTypeError("Scope is required.");
+  return;
+}
+
+if (!frequency) {
+  setCreateFeeTypeError("Frequency is required.");
+  return;
+}
 
       const normalizedName = feeName.toLowerCase();
       const alreadyExists = dynamicFeeTypes.some(
@@ -4077,17 +4091,17 @@ const getStudentCardDue = (student) => {
       setCreateFeeTypeLoading(true);
       setCreateFeeTypeError("");
 
-      const nextFeeType = {
-        feeName,
-        feesType: feeName,
-        priority: dynamicFeeTypes.length + 1,
-        scope: newFeeTypeForm.scope || "All",
-        frequency: newFeeTypeForm.frequency || "One time",
-        installments:
-          (newFeeTypeForm.frequency || "One time") === "Term wise"
-            ? Math.max(1, Number(newFeeTypeForm.installments) || 1)
-            : 1,
-      };
+ const nextFeeType = {
+  feeName,
+  feesType: feeName,
+  priority: dynamicFeeTypes.length + 1,
+  scope: newFeeTypeForm.scope,
+  frequency: newFeeTypeForm.frequency,
+  installments:
+    newFeeTypeForm.frequency === "Term wise"
+      ? Math.max(1, Number(newFeeTypeForm.installments) || 1)
+      : 1,
+};
 
       try {
         const payload = {
@@ -4340,7 +4354,7 @@ const openCreateFeeTypePopup = useCallback(() => {
   const topbarRight = (
     <>
 
-         {/* <button
+         <button
            className="accountant-help-icon-btn"
            onClick={() => setIsHelpOpen(true)}
          >
@@ -4350,7 +4364,7 @@ const openCreateFeeTypePopup = useCallback(() => {
            fontSize: "34px"
          }}
        />
-         </button> */}
+         </button>
 
       <div ref={userDropdownRef} className="header-profile-wrap">
         <button
@@ -4650,18 +4664,22 @@ return (
     </option>
   ))}
 </select>
-      <select
+    <select
   className="accountant-card-filter"
   value={selectedSectionFilter}
   onChange={(event) => setSelectedSectionFilter(event.target.value)}
+  disabled={!selectedClassFilter}
 >
-  <option value="">Select Section</option>
+  <option value="">
+    {selectedClassFilter ? "Select Section" : "Select Class First"}
+  </option>
 
-  {sectionOptions.map((sec) => (
-    <option key={sec} value={sec}>
-      {sec}
-    </option>
-  ))}
+  {selectedClassFilter &&
+    sectionOptions.map((sec) => (
+      <option key={sec} value={sec}>
+        {sec}
+      </option>
+    ))}
 </select>
       </div>
     </div>
@@ -4669,17 +4687,25 @@ return (
     <div className="accountant-student-list">
       {visibleOutstandingStudents.length ? (
         visibleOutstandingStudents.map((student, index) => (
-          <div
-            key={student.id}
-            className={`accountant-student-mini ${index === 0 ? "is-active" : ""}`}
-            onClick={() => openPaymentGrid(student)}
-            role="button"
-            tabIndex={0}
-            onKeyDown={(event) => {
-              if (event.key === "Enter" || event.key === " ") openPaymentGrid(student);
-            }}
-            style={{ cursor: "pointer" }}
-          >
+      <div
+  key={student.id}
+  className={`accountant-student-mini ${index === 0 ? "is-active" : ""}`}
+  onClick={() => {
+    if (!selectedClassFilter) return; // Don't open popup
+    openPaymentGrid(student);
+  }}
+  role="button"
+  tabIndex={0}
+  onKeyDown={(event) => {
+    if ((event.key === "Enter" || event.key === " ") && selectedClassFilter) {
+      openPaymentGrid(student);
+    }
+  }}
+  style={{
+    cursor: selectedClassFilter ? "pointer" : "not-allowed",
+    opacity: selectedClassFilter ? 1 : 0.6,
+  }}
+>
             <div className="accountant-student-avatar-wrap">
               <img src={userAvatar} alt="" />
             </div>
@@ -5274,7 +5300,7 @@ return (
 
   <div className="accountant-bottom-right">
     <div className="accountant-income-card accountant-card">
-      {renderProgressRing(45, "45%", "accountant-income-ring")}
+      {renderProgressRing(0, "0%", "accountant-income-ring")}
       <div className="blockText">Income & Exp.</div>
       <div className="normalText">Percentile Profit</div>
     </div>
@@ -6067,93 +6093,19 @@ return (
       </div>
       </div>
   )}
-      {isHelpOpen && (
-  <div
-    className="accountant-help-overlay"
-    onClick={() => setIsHelpOpen(false)}
-  >
-    <div
-      className="accountant-help-sidebar"
-      onClick={(e) => e.stopPropagation()}
-    >
-      <div className="accountant-help-header">
-      <div className="accountant-help-banner">
-  <h4>Welcome to Help Center 👋</h4>
-  <p>
-    Browse tutorials & watch below videos, walkthroughs and training videos for your role.
-  </p>
-</div>
+{
+  isHelpOpen && (
+    <>
+    <HelpCenter
+    userRole={userRole}
+    openHelpSection={openHelpSection}
+        setOpenHelpSection={setOpenHelpSection}
+    setIsHelpOpen={setIsHelpOpen}
+    />
+    </>
+  )
+}
 
-        <button
-          type="button"
-          className="accountant-help-close"
-          onClick={() => setIsHelpOpen(false)}
-        >
-          ×
-        </button>
-      </div>
-
-    <div className="accountant-help-accordion">
-
-  {helpSections.map((section) => (
-    <div
-      key={section.id}
-      className="accountant-help-accordion-item"
-    >
-      <button
-        className="accountant-help-accordion-header"
-        onClick={() =>
-          setOpenHelpSection(
-            openHelpSection === section.id
-              ? null
-              : section.id
-          )
-        }
-      >
-        <span>{section.title}</span>
-
-        <span>
-          {openHelpSection === section.id ? "−" : "+"}
-        </span>
-      </button>
-
-      {openHelpSection === section.id && (
-        <div className="accountant-help-accordion-content">
-
-          {section.videos.map((video, index) => (
-            <div
-              key={index}
-              className="accountant-help-video-card"
-            >
-              <h5>{video.title}</h5>
-
-          <button
-  className="accountant-help-video-open-btn"
-
-  onClick={() => {
-     setIsHelpOpen(false);
-  window.open(
-    `http://localhost:5175/help?tutorial=${section.id}`,
-    "_blank"
-  );
-}}
->
-  ▶ Watch Tutorial
-</button>
-            </div>
-          ))}
-
-        </div>
-      )}
-
-    </div>
-  ))}
-
-
-</div>
-    </div>
-  </div>
-)}
 
 
   </>

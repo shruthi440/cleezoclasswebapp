@@ -4,7 +4,7 @@ import "../STYLES/solidbutton.css";
 import { useEffect, useState } from "react";
 import axios from "axios";
 import loader from "../assets/loader.gif";
-// import { CampaignStatus } from "./FrontDesk_Admission";
+import { CampaignStatus } from "./FrontDesk_Admission";
 import cleezo from "../assets/Cleezo.png";
 // AdmissionReportPopup.tsx or your component file
 import cleezoImg from "../assets/Cleezo Class C logo.png";

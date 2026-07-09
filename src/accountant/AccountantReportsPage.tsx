@@ -30,6 +30,8 @@ import campaignDigitalIcon from "../assets/Campaign_Digital.png";
 import campaignStaffIcon from "../assets/Campaign_Staff.png";
 import timelineIcon from "../assets/Timeline.png";
 import feesSearchIcon from "../assets/user (1).png";
+import HelpCenter from "../shared/HelpCenter.jsx";
+import { FiHelpCircle } from "react-icons/fi";
 
 type ReportView = "main" | "ledger" | "previous" | "complete" | "bus" | "studentTransactions" | "paid" | "unpaid" | "discounts" | "referrals" | "feeType";
 type ReportRow = Record<string, any>;
@@ -666,6 +668,10 @@ const AccountantReportsPage: React.FC = () => {
   const [summaryPreviousPaid, setSummaryPreviousPaid] = useState(0);
   const [isAddFeesPopupOpen, setIsAddFeesPopupOpen] = useState(false);
   const [isStudentManagementPopupOpen, setIsStudentManagementPopupOpen] = useState(false);
+        const [isHelpOpen, setIsHelpOpen] = useState(false);
+  const [openHelpSection, setOpenHelpSection] = useState(null);
+  
+  const userRole = localStorage.getItem("userRole");
   const [addFeePreview, setAddFeePreview] = useState({
     className: "",
     section: "",
@@ -2271,6 +2277,17 @@ if (activeView === "discounts" || activeView === "referrals") {
             </div>
 
             <div className="accountant-topbar-right">
+                                                 <button
+                className="accountant-help-icon-btn"
+                onClick={() => setIsHelpOpen(true)}
+              >
+                <FiHelpCircle
+                  style={{
+                    color: "#e9818c",
+                    fontSize: "34px",
+                  }}
+                />
+              </button>
               <EditableProfileMenu />
             </div>
           </div>
@@ -2537,6 +2554,14 @@ if (activeView === "discounts" || activeView === "referrals") {
             </div>
           </div>
         </div>
+      )}
+                         {isHelpOpen && (
+        <HelpCenter
+          userRole={userRole}
+          openHelpSection={openHelpSection}
+          setOpenHelpSection={setOpenHelpSection}
+          setIsHelpOpen={setIsHelpOpen}
+        />
       )}
     </div>
   );

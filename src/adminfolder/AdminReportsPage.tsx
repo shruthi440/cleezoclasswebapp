@@ -19,6 +19,8 @@ import communicationIcon from "../assets/Communication Assign.png";
 import { Download } from "lucide-react";
 import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
+import { FiHelpCircle } from "react-icons/fi";
+import HelpCenter from "../shared/HelpCenter.jsx";
 const API_BASE = "https://cleezoclass.com:4000/api";
 
 type ReportType = "attendance" | "marks" | "topper" | "low" | "high";
@@ -170,6 +172,9 @@ const AdminReportsPage: React.FC = () => {
   const [unarrivedTeachers, setUnarrivedTeachers] = useState<UnarrivedTeacherRow[]>([]);
   const [teacherAbsentCount, setTeacherAbsentCount] = useState(0);
   const [activeDetailView, setActiveDetailView] = useState<DetailView>(null);
+    const [openHelpSection, setOpenHelpSection] = useState(null);
+    const[isHelpOpen,setIsHelpOpen]=useState(false)
+    const userRole = localStorage.getItem("userRole")
 
   useEffect(() => {
     const schoolCode = localStorage.getItem("schoolCode");
@@ -1079,15 +1084,40 @@ const handleDownloadPDF = () => {
 
             <div className="dashboard-topbar-right accountant-topbar-right">
               <div className="header-profile-wrap" ref={userDropdownRef}>
-                <button
-                  className="header-profile-trigger"
-                  type="button"
-                  onClick={() => setUserDropdownOpen((prev) => !prev)}
-                >
-                  <FaUser className="header-profile-trigger-icon" />
-                </button>
+                
+         
+                      <div style={{ 
+           display: "flex", 
+           alignItems: "center", 
+           gap: "12px" 
+         }}>
+           <button
+             className="accountant-help-icon-btn"
+             // style={{marginTop:"40px"}}
+             onClick={() => setIsHelpOpen(true)}
+             title="Help"
+           >
+             <FiHelpCircle
+               style={{
+                 color: "#e9818c",
+                 fontSize: "34px"
+               }}
+             />
+           </button>
+         
+           <button
+             className="header-profile-trigger"
+             type="button"
+             onClick={() => setUserDropdownOpen((prev) => !prev)}
+             style={{marginTop:"20px"}}
+             title="Profile"
+           >
+             <FaUser className="header-profile-trigger-icon" />
+           </button>
+         </div>
                 {userDropdownOpen && (
                   <div className="header-profile-dropdown">
+                          
                     <EditableProfileMenu />
                   </div>
                 )}
@@ -1269,6 +1299,18 @@ const handleDownloadPDF = () => {
 </div>
 
               {error && <div className="admin-reports-error">{error}</div>}
+                   {
+        isHelpOpen && (
+          <>
+          <HelpCenter
+          userRole={userRole}
+          openHelpSection={openHelpSection}
+              setOpenHelpSection={setOpenHelpSection}
+          setIsHelpOpen={setIsHelpOpen}
+          />
+          </>
+        )
+      }
 
               <div className="accountant-reports-table-wrap">{renderTable()}</div>
             </div>

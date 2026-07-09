@@ -27,6 +27,8 @@ import timelineIcon from "../assets/Timeline.png";
 import followupIcon from "../assets/Profile.png";
 import assistantIcon from "../assets/Assistant.png";
 import communicationIcon from "../assets/Communication Assign.png";
+import { FiHelpCircle } from "react-icons/fi";
+import HelpCenter from "../shared/HelpCenter.jsx";
 
 const API_BASE = "https://cleezoclass.com:4000/api";
 
@@ -120,11 +122,6 @@ const birthdayPosterTemplates = [
   { id: "birthday4.html", label: "Birthday Template 4" },
   { id: "birthday5.html", label: "Birthday Template 5" },
 ];
-
-// const birthdayPosterTemplates = posters.map((poster, index) => ({
-//   id: index,
-//   component: poster, // HTML file path
-// }));
 
 const eventPosterTemplates = [
   { id: "event1.html", label: "Event Template 1" },
@@ -741,7 +738,36 @@ const AdminGenerations = () => {
   );
   const [schoolLogo, setSchoolLogo] = useState("/default-logo.png");
   const [userDropdownOpen, setUserDropdownOpen] = useState(false);
-
+   const [performance, setPerformance] = useState({});
+  
+      useEffect(() => {
+          getOverallPerformance();
+      }, []);
+  
+      const getOverallPerformance = async () => {
+  
+          try {
+  
+              const schoolCode = localStorage.getItem("schoolCode");
+  
+              const response = await axios.get(
+                  "https://cleezoclass.com:4000/api/overall-performance-percentage",
+                  {
+                      params: {
+                          schoolCode,
+                      },
+                  }
+              );
+  
+              if (response.data.success) {
+                  setPerformance(response.data.data);
+              }
+  
+          } catch (error) {
+              console.log(error);
+          }
+  
+      };
   const [calendarYear, setCalendarYear] = useState(new Date().getFullYear());
   const [calendarMonth, setCalendarMonth] = useState(new Date().getMonth());
   const [popupType, setPopupType] = useState("");
@@ -767,6 +793,9 @@ const AdminGenerations = () => {
   const [selectedIdCardTemplate, setSelectedIdCardTemplate] = useState(() =>
     normalizeIdCardTemplateName(localStorage.getItem(ID_CARD_TEMPLATE_STORAGE_KEY))
   );
+          const [openHelpSection, setOpenHelpSection] = useState(null);
+        const[isHelpOpen,setIsHelpOpen]=useState(false)
+        const userRole = localStorage.getItem("userRole")
   const [generationRange, setGenerationRange] = useState({
     fromClass: "",
     toClass: "",
@@ -2522,6 +2551,17 @@ const handleDownloadAcademicReportExcel = () => {
               <button className="accountant-branch-btn" type="button" onClick={() => navigate("/HrDashboard")}>
                 Switch to HR <span className="accountant-branch-caret">▼</span>
               </button>
+                     <button
+                   className="accountant-help-icon-btn"
+                   onClick={() => setIsHelpOpen(true)}
+                 >
+                 <FiHelpCircle
+                 style={{
+                   color: "#e9818c",
+                   fontSize: "34px"
+                 }}
+               />
+                 </button>
               <EditableProfileMenu showHrSwitch />
             </div>
           </div>
@@ -2847,7 +2887,7 @@ const handleDownloadAcademicReportExcel = () => {
               <div className="admin-events-side-stack">
                 <div className="admin-events-metrics">
                   <div className="admin-events-metric accountant-card">
-                    <div className="admin-events-ring">45%</div>
+                    <div className="admin-events-ring">{performance.overallPercentage || 0}%</div>
                     <h4>Performance</h4>
                     <span>Students Track</span>
                   </div>
@@ -3502,6 +3542,18 @@ const handleDownloadAcademicReportExcel = () => {
     </div>
   </div>
 )}
+  {
+              isHelpOpen && (
+                <>
+                <HelpCenter
+                userRole={userRole}
+                openHelpSection={openHelpSection}
+                    setOpenHelpSection={setOpenHelpSection}
+                setIsHelpOpen={setIsHelpOpen}
+                />
+                </>
+              )
+            }
       <div className="accountant-footer-brand">
         <span>Powered By:</span>
         <img src={abcLogo} alt="Cleezo Class" className="accountant-footer-logo" />

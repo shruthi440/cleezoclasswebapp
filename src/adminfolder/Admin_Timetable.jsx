@@ -432,15 +432,19 @@ useEffect(() => {
 
     try {
       const response = await fetch(
-        `https://cleezoclass.com:4000/api/admin/api/metadata/class-staff-options?schoolCode=${schoolCode}`
+        `https://cleezoclass.com:4000/api/metadata/class-staff-options?schoolCode=${encodeURIComponent(schoolCode)}`
       );
       const data = await response.json();
       if (response.ok) {
-        const sortedClasses = (data.classOptions || []).sort(
-          (a, b) => parseInt(a) - parseInt(b)
-        );
+        const sortedClasses = (data.classOptions || [])
+          .map((item) => item?.class_name || item?.className || item?.class || item?.name || item)
+          .filter(Boolean)
+          .sort((a, b) => parseInt(a, 10) - parseInt(b, 10));
+        const staffNames = (data.staffOptions || [])
+          .map((item) => item?.name || item?.staff_name || item?.teacher_name || item)
+          .filter(Boolean);
         setClassOptions(sortedClasses);
-        setStaffOptions(data.staffOptions || []);
+        setStaffOptions(staffNames);
       } else {
         setPopup({
           message: `Failed to load options: ${data.message}. Please try again later.`,

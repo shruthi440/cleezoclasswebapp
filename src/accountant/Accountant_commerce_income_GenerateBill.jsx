@@ -272,7 +272,7 @@ const [studentData, setStudentData] = useState(null);
       const schoolCode = localStorage.getItem('schoolCode');
       if (!schoolCode) return;
       try {
-        const response = await axios.get(`https://cleezoclass.com:5000/api/getLastReceiptNumber?schoolCode=${schoolCode}`);
+        const response = await axios.get(`https://cleezoclass.com:4000/api/getLastReceiptNumber?schoolCode=${schoolCode}`);
         const lastReceiptNumber = response.data.lastReceiptNumber || '001';
         setReceiptNumber(lastReceiptNumber);
         currentReceiptNumberRef.current = lastReceiptNumber;
@@ -292,7 +292,7 @@ const [studentData, setStudentData] = useState(null);
     const schoolCode = localStorage.getItem('schoolCode');
     if (!schoolCode) return;
     try {
-      await axios.post('https://cleezoclass.com:5000/api/saveLastReceiptNumber', {
+      await axios.post('https://cleezoclass.com:4000/api/saveLastReceiptNumber', {
         schoolCode,
         lastReceiptNumber: receiptNumber,
       });
@@ -319,7 +319,7 @@ const [studentData, setStudentData] = useState(null);
       setDynamicSchoolCode(code);
       try {
         const response = await axios.post(
-          'https://cleezoclass.com:5000/api/schoollogodynamic',
+          'https://cleezoclass.com:4000/api/schoollogodynamic',
           { secretecode: code },
           { headers: { 'Content-Type': 'application/json' } }
         );
@@ -349,7 +349,7 @@ const [studentData, setStudentData] = useState(null);
       const schoolCode = localStorage.getItem('schoolCode');
       if (!selectedClass) return;
       try {
-        const res = await axios.get(`https://cleezoclass.com:5000/api/studentsName/${selectedClass}?schoolCode=${schoolCode}`);
+        const res = await axios.get(`https://cleezoclass.com:4000/api/studentsName/${selectedClass}?schoolCode=${schoolCode}`);
         const fetchedStudents = Array.isArray(res.data.students) ? res.data.students : [];
         setStudents(fetchedStudents);
         console.log('[GenerateBill] students loaded', {
@@ -489,8 +489,8 @@ useEffect(() => {
   console.log("School code from localStorage:", schoolCode);
 
   Promise.all([
-    axios.get(`https://cleezoclass.com:5000/api/feeStructure/${selectedClass}?schoolCode=${schoolCode}`),
-    axios.get(`https://cleezoclass.com:5000/api/payment/${selectedStudentId}?schoolCode=${schoolCode}`),
+    axios.get(`https://cleezoclass.com:4000/api/feeStructure/${selectedClass}?schoolCode=${schoolCode}`),
+    axios.get(`https://cleezoclass.com:4000/api/payment/${selectedStudentId}?schoolCode=${schoolCode}`),
   ])
     .then(([feeRes, paymentRes]) => {
       console.log("Fee structure response:", feeRes.data);
@@ -1630,7 +1630,7 @@ const overallTotalPaid = Number(popupData?.paidAmount || 0);
             <div style={{ backgroundColor: 'white', padding: '20px', borderRadius: '8px', boxShadow: '0 2px 10px rgba(0,0,0,0.1)', textAlign: 'center', width: '300px' }}>
               <p style={{ marginBottom: '15px', fontWeight: '600' }}>Select number of copies to print:</p>
               <div style={{ display: 'flex', gap: '10px', marginBottom: '15px' }}>
-                <button onClick={() => confirmPrint(1)} style={{ flex: 1, padding: '0.75rem', backgroundColor: '#10b981', color: 'white', borderRadius: '0.375rem', border: 'none', cursor: 'pointer', fontWeight: '500' }}>1 Copy</button>
+                <button onClick={() => confirmPrint(1)} style={{ flex: 1, padding: '0.75rem', backgroundColor: '#0a3d62', color: 'white', borderRadius: '0.375rem', border: 'none', cursor: 'pointer', fontWeight: '500' }}>1 Copy</button>
               </div>
               <button onClick={() => setShowPrintDialog(false)} style={{ width: '100%', padding: '0.75rem', backgroundColor: '#f3f4f6', borderRadius: '0.375rem', border: 'none', cursor: 'pointer', fontWeight: '500' }}>Cancel</button>
             </div>

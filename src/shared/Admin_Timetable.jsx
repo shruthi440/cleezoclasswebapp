@@ -33,10 +33,28 @@ import html2canvas from 'html2canvas';
 
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
+import { FiHelpCircle } from "react-icons/fi";
+import HelpCenter from "./HelpCenter.jsx";
 
 const isLaptop = window.innerWidth > 600 && window.innerWidth <= 1440;
 const MOBILE_BREAKPOINT = 1024;
 const BASE_URL = "https://cleezoclass.com:4000";
+const EXTRA_CLASS_STORAGE_PREFIX = "extraSpecialClassRequests";
+
+const saveExtraClassRequestFallback = (schoolCode, request) => {
+  if (!schoolCode || typeof window === "undefined") return;
+
+  const storageKey = `${EXTRA_CLASS_STORAGE_PREFIX}:${schoolCode}`;
+  const existing = JSON.parse(localStorage.getItem(storageKey) || "[]");
+  const normalizedRequest = {
+    ...request,
+    request_date: request.date,
+    start_time: request.time,
+    saved_at: new Date().toISOString(),
+  };
+
+  localStorage.setItem(storageKey, JSON.stringify([normalizedRequest, ...existing].slice(0, 20)));
+};
 
 const initialTimetableData = {};
 const timetableSidebarItems = [
@@ -334,10 +352,10 @@ const TimetableAdmin = ({ academicsStyle = false }) => {
   const [morningInterval, setMorningInterval] = useState(false);
   const [afternoonInterval, setAfternoonInterval] = useState(false);
   const [lunchInterval, setLunchInterval] = useState(false);
-  const [morningIntervalAfter, setMorningIntervalAfter] = useState(2);
-  const [morningIntervalDuration, setMorningIntervalDuration] = useState(15);
-  const [afternoonIntervalAfter, setAfternoonIntervalAfter] = useState(6);
-  const [afternoonIntervalDuration, setAfternoonIntervalDuration] = useState(10);
+  const [morningIntervalAfter, setMorningIntervalAfter] = useState(null);
+  const [morningIntervalDuration, setMorningIntervalDuration] = useState(null);
+  const [afternoonIntervalAfter, setAfternoonIntervalAfter] = useState(null);
+  const [afternoonIntervalDuration, setAfternoonIntervalDuration] = useState(null);
   const [lunchIntervalAfter, setLunchIntervalAfter] = useState(4);
   const [lunchIntervalDuration, setLunchIntervalDuration] = useState(45);
   const [customActivities, setCustomActivities] = useState([]);
@@ -348,6 +366,9 @@ const TimetableAdmin = ({ academicsStyle = false }) => {
   const [classOptions, setClassOptions] = useState([]);
   const [staffOptions, setStaffOptions] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
+        const [openHelpSection, setOpenHelpSection] = useState(null);
+      const[isHelpOpen,setIsHelpOpen]=useState(false)
+      const userRole = localStorage.getItem("userRole")
   const [extraClassForm, setExtraClassForm] = useState({
     class: '', date: '', time: '', duration: '', staff: '',
   });
@@ -468,6 +489,40 @@ useEffect(() => {
       });
       setAvailableSections(groupedSections);
 
+      const normalizeStaffNames = (payload) => {
+        const source = Array.isArray(payload)
+          ? payload
+          : Array.isArray(payload?.staffOptions)
+            ? payload.staffOptions
+            : Array.isArray(payload?.data)
+              ? payload.data
+              : [];
+
+        return [...new Set(
+          source
+            .map((item) => item?.name || item?.staff_name || item?.teacher_name || item)
+            .filter(Boolean)
+        )];
+      };
+
+      const staffResponses = await Promise.allSettled([
+        axios.get(`${BASE_URL}/api/metadata/class-staff-options`, {
+          params: { schoolCode },
+        }),
+        axios.get(`${BASE_URL}/api/party1`, {
+          params: { schoolCode },
+        }),
+        axios.get(`${BASE_URL}/teachers`, {
+          params: { schoolCode },
+        }),
+      ]);
+
+      const staffNames = staffResponses
+        .map((result) => result.status === "fulfilled" ? normalizeStaffNames(result.value?.data) : [])
+        .find((names) => names.length > 0) || [];
+
+      setStaffOptions(staffNames);
+
     } catch (error) {
       console.error("Error fetching class data:", error);
     } finally {
@@ -535,8 +590,15 @@ useEffect(() => {
 
       return;
     }
-
-    const payload = {
+// Calculate interval time (HH:MM format)
+const calculateIntervalTime = (start, duration, afterPeriods) => {
+  const [h, m] = start.split(':').map(Number);
+  const totalMinutes = h * 60 + m + (afterPeriods * duration);
+  const newH = Math.floor(totalMinutes / 60) % 24;
+  const newM = totalMinutes % 60;
+  return `${String(newH).padStart(2, '0')}:${String(newM).padStart(2, '0')}`;
+};
+ const payload = {
       schoolCode,
       classes: selectedClasses.map((name) => ({
         class_name: String(name).replace(/^Class\s+/i, ""),
@@ -544,16 +606,26 @@ useEffect(() => {
         selectedSections,
         teacher: classTeachers[name] || "Not Assigned",
       })),
+      // Pass the calculated times dynamically
+    intervalTimes: {
+      morning: morningInterval ? calculateIntervalTime(startTime, periodDuration, morningIntervalAfter) : null,
+      lunch: lunchInterval ? calculateIntervalTime(startTime, periodDuration, lunchIntervalAfter) : null,
+      afternoon: afternoonInterval ? calculateIntervalTime(startTime, periodDuration, afternoonIntervalAfter) : null,
+    },
       startTime,
       periodDuration,
       numberOfPeriods,
       morningInterval,
-      morningIntervalAfter,
-      morningIntervalDuration,
+      morningIntervalAfter:
+        morningInterval ? morningIntervalAfter : null,
+      morningIntervalDuration:
+        morningInterval ? morningIntervalDuration : null,
       afternoonInterval:
         dayType === "full" ? afternoonInterval : false,
-      afternoonIntervalAfter,
-      afternoonIntervalDuration,
+      afternoonIntervalAfter:
+        afternoonInterval ? afternoonIntervalAfter : null,
+      afternoonIntervalDuration:
+        afternoonInterval ? afternoonIntervalDuration:null,
       lunchInterval:
         dayType === "full" ? lunchInterval : false,
       lunchIntervalAfter,
@@ -733,9 +805,10 @@ useEffect(() => {
       );
       const data = await response.json();
       if (response.ok) {
+        saveExtraClassRequestFallback(schoolCode, finalPayload);
         setPopup({
           message: data.message,
-          type: "error"
+          type: "success"
         });
       } else {
         setPopup({
@@ -1519,6 +1592,17 @@ const downloadTimetableExcel = () => {
                 <button className="accountant-branch-btn" type="button" onClick={() => navigate("/HrDashboard")}>
                   Switch to HR <span className="accountant-branch-caret">▼</span>
                 </button>
+                      <button
+                   className="accountant-help-icon-btn"
+                   onClick={() => setIsHelpOpen(true)}
+                 >
+                 <FiHelpCircle
+                 style={{
+                   color: "#e9818c",
+                   fontSize: "34px"
+                 }}
+               />
+                 </button>
                 <EditableProfileMenu showHrSwitch />
               </div>
             </div>
@@ -1804,6 +1888,18 @@ const downloadTimetableExcel = () => {
           ),
         }}
       </ScrollableSection>
+         {
+              isHelpOpen && (
+                <>
+                <HelpCenter
+                userRole={userRole}
+                openHelpSection={openHelpSection}
+                    setOpenHelpSection={setOpenHelpSection}
+                setIsHelpOpen={setIsHelpOpen}
+                />
+                </>
+              )
+            }
       <ErrorPopup
         message={popup.message}
         type={popup.type}

@@ -21,6 +21,8 @@ import timelineIcon from "../assets/Timeline.png";
 import followupIcon from "../assets/Profile.png";
 import assistantIcon from "../assets/Assistant.png";
 import communicationIcon from "../assets/Communication Assign.png";
+import { FiHelpCircle } from "react-icons/fi";
+import HelpCenter from "../shared/HelpCenter.jsx";
 
 const API_BASE = "https://cleezoclass.com:4000/api";
 
@@ -182,6 +184,10 @@ const AdminEventsAndMeetings = () => {
   const [studentOptions, setStudentOptions] = useState([]);
   const [selectedCardStudent, setSelectedCardStudent] = useState("");
   const [selectedCardStaff, setSelectedCardStaff] = useState("");
+        const [isHelpOpen, setIsHelpOpen] = useState(false);
+  const [openHelpSection, setOpenHelpSection] = useState(null);
+  
+  const userRole = localStorage.getItem("userRole");
   const [liveChatForm, setLiveChatForm] = useState({
     party1: "",
     className: "",
@@ -725,7 +731,36 @@ const AdminEventsAndMeetings = () => {
       setSubmitting(false);
     }
   };
-
+   const [performance, setPerformance] = useState({});
+  
+      useEffect(() => {
+          getOverallPerformance();
+      }, []);
+  
+      const getOverallPerformance = async () => {
+  
+          try {
+  
+              const schoolCode = localStorage.getItem("schoolCode");
+  
+              const response = await axios.get(
+                  "https://cleezoclass.com:4000/api/overall-performance-percentage",
+                  {
+                      params: {
+                          schoolCode,
+                      },
+                  }
+              );
+  
+              if (response.data.success) {
+                  setPerformance(response.data.data);
+              }
+  
+          } catch (error) {
+              console.log(error);
+          }
+  
+      };
   const renderHistoryItem = (label, secondary, tertiary) => (
     <div className="admin-events-history-item" key={`${label}-${secondary}-${tertiary}`}>
       <strong>{label}</strong>
@@ -786,7 +821,17 @@ const AdminEventsAndMeetings = () => {
             </div>
 
             <div className="dashboard-topbar-right accountant-topbar-right">
-        
+                  <button
+                   className="accountant-help-icon-btn"
+                   onClick={() => setIsHelpOpen(true)}
+                 >
+                 <FiHelpCircle
+                 style={{
+                   color: "#e9818c",
+                   fontSize: "34px"
+                 }}
+               />
+                 </button>
               <EditableProfileMenu showHrSwitch />
             </div>
           </div>
@@ -1092,7 +1137,7 @@ const AdminEventsAndMeetings = () => {
               <div className="admin-events-side-stack">
                 <div className="admin-events-metrics">
                   <div className="admin-events-metric accountant-card">
-                    <div className="admin-events-ring">45%</div>
+                    <div className="admin-events-ring">{performance.overallPercentage || 0}%</div>
                     <h4>Performance</h4>
                     <span>Students Track</span>
                   </div>
@@ -1362,7 +1407,18 @@ const AdminEventsAndMeetings = () => {
         message={loadingRecords ? "Loading announcements, events, and meetings..." : popupMessage}
         onClose={() => setPopupMessage("")}
       />
-
+ {
+              isHelpOpen && (
+                <>
+                <HelpCenter
+                userRole={userRole}
+                openHelpSection={openHelpSection}
+                    setOpenHelpSection={setOpenHelpSection}
+                setIsHelpOpen={setIsHelpOpen}
+                />
+                </>
+              )
+            }
       <div className="accountant-footer-brand">
         <span>Powered By:</span>
         <img src={abcLogo} alt="Cleezo Class" className="accountant-footer-logo" />

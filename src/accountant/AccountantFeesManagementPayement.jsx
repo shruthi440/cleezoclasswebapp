@@ -1495,14 +1495,18 @@ const mergePaymentDataWithDynamicTransactions = (paymentData = {}, rows = []) =>
   });
 
   Object.values(aggregateByPaidField).forEach((bucket) => {
+
     const existingPaid = Number(merged?.[bucket.paidField]) || 0;
-    const paid = Math.max(existingPaid, Number(bucket.paidFromRows) || 0);
-    const total = Math.max(Number(bucket.total) || 0, Number(merged?.[bucket.totalField]) || 0);
+const paid = Number(existingPaid) + Number(bucket.paidFromRows);    const total = Math.max(Number(bucket.total) || 0, Number(merged?.[bucket.totalField]) || 0);
     const discount = Math.max(Number(bucket.discountFromRows) || 0, readFeeDiscountValue(merged, bucket.totalField, bucket.totalField));
     const effectiveTotal = Math.max(total - discount, 0);
     const computedDue = Math.max(effectiveTotal - paid, 0);
     const due = Math.max(Number(bucket.dueFromRows) || 0, computedDue);
-
+    console.log("[DEBUG] Aggregation===========&&&&&&&&&&&&&&&&&&&&&&&&&77=========:", {
+        existingPaid,
+        fromRows: bucket.paidFromRows,
+        finalPaid: Number(existingPaid) + Number(bucket.paidFromRows)
+    });
     merged[bucket.totalField] = total;
     merged[bucket.paidField] = paid;
     merged[bucket.dueField] = due;
@@ -3802,9 +3806,10 @@ const dynamicFeeRows = React.useMemo(() => {
       if (feeScope === "individual" && studentSpecificDynamicAmount) {
         const paid = Math.max(0, studentSpecificDynamicPaid || 0);
         const netTotal = Math.max(studentSpecificDynamicAmount - individualDiscount, 0);
+        const discountedBalance = Math.max(netTotal - paid, 0);
         const remaining = studentSpecificDynamicDue > 0
-          ? Math.max(studentSpecificDynamicDue, 0)
-          : Math.max(netTotal - paid, 0);
+          ? Math.min(Math.max(studentSpecificDynamicDue, 0), discountedBalance)
+          : discountedBalance;
 
         return {
           key: sourceKey,
@@ -4546,78 +4551,56 @@ const [selectedFeeRow, setSelectedFeeRow] = useState(null);
 
 const enrichedDisplayFeeRows = React.useMemo(() => {
   if (!displayFeeRows || displayFeeRows.length === 0) return [];
-  
-  // 👇 Get selected student from students array
-  const selectedStudent = students.find(
+
+  const selectedStudentObj = students.find(
     (s) => String(s.id) === String(selectedStudentId)
   );
-  
-  if (!selectedStudent) {
-    // No student selected, return original rows
+
+  if (!selectedStudentObj) {
     return displayFeeRows;
   }
-  
-  // 👇 Build maps from student data
+
+  // Build maps from student data
   const totalMap = {};
   const paidMap = {};
   const discountMap = {};
-  
-  Object.keys(selectedStudent).forEach((key) => {
-    const value = Number(selectedStudent[key] || 0);
-    
-    // Extract totals (e.g., books_total, exam_total)
+
+  Object.keys(selectedStudentObj).forEach((key) => {
+    const value = Number(selectedStudentObj[key] || 0);
+
     if (key.endsWith("_total")) {
       const feeType = key.replace("_total", "").toLowerCase().replace(/[_\s]+/g, "");
-      if (value > 0) {
-        totalMap[feeType] = value;
-      }
+      if (value > 0) totalMap[feeType] = value;
     }
-    
-    // Extract paid amounts (e.g., books_paid, exam_paid)
     if (key.endsWith("_paid") && !key.includes("installment")) {
       const feeType = key.replace("_paid", "").toLowerCase().replace(/[_\s]+/g, "");
-      if (value > 0) {
-        paidMap[feeType] = value;
-      }
+      if (value > 0) paidMap[feeType] = value;
     }
-    
-    // Extract discounts (e.g., books_discount, exam_discount)
     if (key.endsWith("_discount")) {
       const feeType = key.replace("_discount", "").toLowerCase().replace(/[_\s]+/g, "");
-      if (value > 0) {
-        discountMap[feeType] = value;
-      }
+      if (value > 0) discountMap[feeType] = value;
     }
   });
-  
-  console.log("🔥 Student Data Maps:", {
-    student: selectedStudent.name,
-    totalMap,
-    paidMap,
-    discountMap,
-  });
-  
-  // 👇 Enrich each fee row with student-specific data
+
   return displayFeeRows.map((row) => {
     const feeKey = String(row.key || row.label || "")
       .trim()
       .toLowerCase()
       .replace(/[_\s]+/g, "");
-    
+
     // Try to match with student data
     let studentTotal = totalMap[feeKey] || 0;
     let studentPaid = paidMap[feeKey] || 0;
     let studentDiscount = discountMap[feeKey] || 0;
-    
-    // Fallback matching (e.g., "books" matches "books_fee")
+
+    // Fallback matching
     if (studentTotal === 0 && feeKey.endsWith("fee")) {
       const withoutFee = feeKey.replace(/fee$/, "");
       studentTotal = totalMap[withoutFee] || 0;
       studentPaid = paidMap[withoutFee] || 0;
       studentDiscount = discountMap[withoutFee] || 0;
     }
-    
-    // Partial matching (e.g., "tuition" matches "tuitionfee")
+
     if (studentTotal === 0) {
       for (const [key, value] of Object.entries(totalMap)) {
         if (feeKey.includes(key) || key.includes(feeKey)) {
@@ -4628,39 +4611,23 @@ const enrichedDisplayFeeRows = React.useMemo(() => {
         }
       }
     }
-    
-    // Use student data if available, otherwise use row data
-    const grossTotal = studentTotal > 0 
-      ? studentTotal 
-      : Number(row.total || 0) + Number(row.discount || 0);
-    
-    const discount = studentDiscount > 0 
-      ? studentDiscount 
-      : Number(row.discount || 0);
-    
-    const paid = studentPaid > 0 
-      ? studentPaid 
-      : Number(row.paid || 0);
-    
+
+    // ✅ CORRECT: Use row.total as gross amount, discount separately
+    const grossTotal = studentTotal > 0 ? studentTotal : Number(row.total || 0);
+    const discount = studentDiscount > 0 ? studentDiscount : Number(row.discount || 0);
+    const paid = studentPaid > 0 ? studentPaid : Number(row.paid || 0);
+
+    // ✅ CORRECT: netTotal = grossTotal - discount
     const netTotal = Math.max(grossTotal - discount, 0);
+    // ✅ CORRECT: remaining = netTotal - paid
     const remaining = Math.max(netTotal - paid, 0);
-    
-    if (studentTotal > 0 || studentPaid > 0 || studentDiscount > 0) {
-      console.log(`✅ ${row.label}:`, {
-        grossTotal,
-        discount,
-        paid,
-        netTotal,
-        remaining,
-      });
-    }
-    
+
     return {
       ...row,
-      discount,
-      total: netTotal,
+      total: netTotal,      // Show net amount in UI
       paid,
       remaining,
+      discount,
     };
   });
 }, [displayFeeRows, students, selectedStudentId]);
@@ -4752,7 +4719,9 @@ if (popupOnly) {
   const installmentChoices = getInstallmentChoicesForFee(fee);
   const hasInstallmentChoices = installmentChoices.length > 0;
   const canUseInstallmentPicker = hasInstallmentChoices;
-
+ console.log("Fee:", fee.label);
+  console.log("Remaining==================:", remaining);
+  console.log("Complete Fee Object:", fee);
   return (
     <tr key={idx}>
       <td style={{ border: "1px solid #ccc", padding: "5px" }}>
@@ -4764,9 +4733,13 @@ if (popupOnly) {
       <td style={{ border: "1px solid #ccc", padding: "5px", textAlign: "right" }}>
         {formatPopupAmount(fee.total) ? `Rs. ${formatPopupAmount(fee.total)}` : ""}
       </td>
-      <td style={{ border: "1px solid #ccc", padding: "5px", textAlign: "right" }}>
-        {formatPopupAmount(remaining) ? `Rs. ${formatPopupAmount(remaining)}` : ""}
-      </td>
+<td style={{ border: "1px solid #ccc", padding: "5px", textAlign: "right" }}>
+  {remaining <= 0 ? (
+    <span style={{ color: "green", fontWeight: "600" }}>No Due</span>
+  ) : (
+    `Rs. ${formatPopupAmount(remaining)}`
+  )}
+</td>
       <td style={{ border: "1px solid #ccc", padding: "5px", textAlign: "center" }}>
         {fee.source === "individual" && !canUseInstallmentPicker ? (
           <span style={{ fontSize: "12px", color: "#374151" }}>
