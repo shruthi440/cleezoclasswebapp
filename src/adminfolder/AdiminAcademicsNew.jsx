@@ -8,7 +8,8 @@ import EditableProfileMenu from "../shared/EditableProfileMenu.jsx";
 import ErrorPopup from "../shared/ErrorPopup";
 import InstituteBrand from "../shared/InstituteBrand.jsx";
 import { resolveInstituteDisplayName } from "../shared/instituteNameUtils";
-
+import { getUserDisplayName } from "../shared/userDisplayName";
+import Swal from "sweetalert2";
 import abcLogo from "../assets/logoab.png";
 import dashboardIcon from "../assets/Dashboard.png";
 import academicsIcon from "../assets/Staff Assign.png";
@@ -19,14 +20,19 @@ import reportsIcon from "../assets/Reports .png";
 import timelineIcon from "../assets/Timeline.png";
 import followupIcon from "../assets/Profile.png";
 import assistantIcon from "../assets/Assistant.png";
+import Radiusselectingg from "../shared/radiusselcting.jsx";
+import AttendanceForms from "../shared/TeacherAttendanceTimeSetting.jsx";
+import { Toaster } from "react-hot-toast";
+import { FiHelpCircle } from "react-icons/fi";
+import HelpCenter from "../shared/HelpCenter.jsx";
 
 const sidebarItems = [
   { key: "dashboard", label: "Dashboard", icon: dashboardIcon, route: "/AdminDashboard" },
   { key: "academics", label: "Academics", icon: academicsIcon, route: "/AdiminAcademicsNew" },
   { key: "events", label: "Events & Meetings", icon: leadProfileIcon, route: "/AdminEventsAndMeetings" },
-        { key: "communication", label: "Generations", icon: communicationIcon ,route: "/AdminGenerations"},
+  { key: "communication", label: "Generations", icon: communicationIcon, route: "/AdminGenerations" },
   { key: "store", label: "Store", icon: enrollmentIcon, route: "/AdminStoreNew" },
-  
+
   { key: "report", label: "Report", icon: reportsIcon, route: "/AdminReportsPage" },
 ];
 
@@ -36,14 +42,9 @@ const quickCards = [
   { key: "assistant", title: "Assistant", subtitle: "Daily Activity check", icon: assistantIcon },
 ];
 
-const footerCards = [
-  { title: "12/02/2026", subtitle: "Strike", meta: "Announcements" },
-  { title: "14/04/2026", subtitle: "Gurunanak Jayn", meta: "Calendar" },
-  { title: "524 / 534", subtitle: "2 Fail / 8 Exits", meta: "Promotions" },
-  { title: "Complaints", subtitle: "Live Chat", meta: "Unofficial" },
-];
-
 const API_BASE = "https://cleezoclass.com:4000/api/admin";
+const ROOT_API_BASE = "https://cleezoclass.com:4000/api";
+const EXTRA_CLASS_STORAGE_PREFIX = "extraSpecialClassRequests";
 
 const formatDateLabel = (value) => {
   if (!value) return "-";
@@ -70,16 +71,59 @@ const formatChatDateTime = (dateValue, timeValue) => {
   return `${dateLabel}, ${timeLabel}`;
 };
 
-const formatAttendanceClock = (value) => {
-  if (!value) return "--";
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return String(value);
-  return date.toLocaleTimeString("en-IN", {
-    hour: "2-digit",
-    minute: "2-digit",
-  });
+const getArrayPayload = (payload) => {
+  if (Array.isArray(payload)) return payload;
+  if (Array.isArray(payload?.data)) return payload.data;
+  if (Array.isArray(payload?.rows)) return payload.rows;
+  if (Array.isArray(payload?.results)) return payload.results;
+  return [];
 };
 
+const getSettledArray = (result) =>
+  result.status === "fulfilled" ? getArrayPayload(result.value?.data) : [];
+
+const getSettledObject = (result) =>
+  result.status === "fulfilled" && result.value?.data && typeof result.value.data === "object"
+    ? result.value.data
+    : {};
+
+const parseDateValue = (value) => {
+  if (!value) return null;
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? null : date;
+};
+
+const isTestCalendarItem = (item) =>
+  /test|exam|assessment|fa-|fa\d|sa-|sa\d/i.test(
+    `${item?.eventName || ""} ${item?.eventType || ""} ${item?.title || ""}`
+  );
+
+const sortByDateAsc = (key) => (a, b) =>
+  (parseDateValue(a?.[key])?.getTime() || 0) - (parseDateValue(b?.[key])?.getTime() || 0);
+
+const getStoredExtraClassRequests = (schoolCode) => {
+  if (!schoolCode || typeof window === "undefined") return [];
+
+  try {
+    const storageKey = `${EXTRA_CLASS_STORAGE_PREFIX}:${schoolCode}`;
+    const requests = JSON.parse(localStorage.getItem(storageKey) || "[]");
+    return Array.isArray(requests) ? requests : [];
+  } catch {
+    return [];
+  }
+};
+
+const formatAttendanceClock = (value) => {
+  if (!value) return "--";
+  try {
+    // Extract HH:MM from the ISO string (e.g., "2026-06-11T09:00:00.000Z" → "09:00")
+    const timePart = value.split("T")[1]?.split(".")[0] || "";
+    if (!timePart) return "--";
+    return timePart.substring(0, 5); // Returns "HH:MM"
+  } catch {
+    return "--";
+  }
+};
 const formatStoredTime = (value) => {
   if (!value) return "--";
   const raw = String(value).trim();
@@ -173,6 +217,41 @@ const getAnyNumber = (obj, keys) => {
   return NaN;
 };
 
+const toFiniteNumber = (value) => {
+  if (value === null || value === undefined || value === "") return NaN;
+  const num = Number(value);
+  return Number.isFinite(num) ? num : NaN;
+};
+
+const isLikelyMaximumField = (key) =>
+  /max|maximum|total/i.test(String(key || ""));
+
+const readNumericField = (entry, { maximum = false } = {}) => {
+  if (entry === null || entry === undefined) return NaN;
+
+  if (typeof entry !== "object") {
+    return toFiniteNumber(entry);
+  }
+
+  const numericFields = Object.entries(entry)
+    .map(([key, value]) => ({ key, value: toFiniteNumber(value) }))
+    .filter((field) => !Number.isNaN(field.value));
+
+  if (!numericFields.length) return NaN;
+
+  const matchedField = numericFields.find((field) =>
+    maximum ? isLikelyMaximumField(field.key) : !isLikelyMaximumField(field.key)
+  );
+
+  if (maximum) return matchedField?.value ?? NaN;
+
+  return matchedField?.value ?? numericFields[0].value;
+};
+
+const getTestScoreValue = (testEntry) => readNumericField(testEntry);
+
+const getTestMaxValue = (testEntry) => readNumericField(testEntry, { maximum: true });
+
 const buildPerformanceSummary = (apiData) => {
   const performance = Array.isArray(apiData)
     ? apiData
@@ -212,8 +291,8 @@ const buildPerformanceSummary = (apiData) => {
 
     const tests = subj?.tests && typeof subj.tests === "object" ? subj.tests : {};
     Object.values(tests).forEach((entry) => {
-      const mark = Number(entry?.obtained ?? entry?.marks ?? entry?.value);
-      const max = Number(entry?.max ?? entry?.total ?? entry?.maximumMarks);
+      const mark = getTestScoreValue(entry);
+      const max = getTestMaxValue(entry);
       if (!Number.isNaN(mark) && !Number.isNaN(max) && max > 0) {
         obtained += mark;
         total += max;
@@ -223,13 +302,24 @@ const buildPerformanceSummary = (apiData) => {
 
   const percentValue = total > 0 ? (obtained / total) * 100 : null;
   let grade = null;
-  if (percentValue != null) {
-    if (percentValue >= 90) grade = "A+";
-    else if (percentValue >= 80) grade = "A";
-    else if (percentValue >= 70) grade = "B+";
-    else if (percentValue >= 60) grade = "B";
-    else if (percentValue >= 50) grade = "C";
-    else grade = "D";
+  // if (percentValue != null) {
+  //   if (percentValue >= 90) grade = "A+";
+  //   else if (percentValue >= 80) grade = "A";
+  //   else if (percentValue >= 70) grade = "B+";
+  //   else if (percentValue >= 60) grade = "B";
+  //   else if (percentValue >= 50) grade = "C";
+  //   else grade = "D";
+  // }
+
+    if (percentValue != null) {
+    if (percentValue >= 91) grade = "A+";
+    else if (percentValue >= 81) grade = "A";
+    else if (percentValue >= 71) grade = "B+";
+    else if (percentValue >= 61) grade = "B";
+    else if (percentValue >= 51) grade = "C+";
+    else if (percentValue >= 41) grade = "C";
+    else if (percentValue>=35) grade ="D";
+    else grade = "Fail";
   }
 
   return {
@@ -301,6 +391,54 @@ const fallbackTermRows = [
   { key: "SA2", label: "SA2", type: "SA", index: 1 },
 ];
 
+const normalizeTermKey = (value) =>
+  String(value || "")
+    .trim()
+    .replace(/\s+/g, " ");
+
+const getTermSortValue = (term) => {
+  const label = normalizeTermKey(term?.key || term?.label).toUpperCase();
+
+  const shortMatch = label.match(/^(FA|SA)\s*-?\s*(\d+)$/);
+  if (shortMatch) {
+    const type = shortMatch[1];
+    const number = Number(shortMatch[2]);
+
+    if (type === "FA") {
+      return number <= 2 ? number : number + 1;
+    }
+
+    return number === 1 ? 3 : number + 4;
+  }
+
+  const formativeMatch = label.match(/^FORMATIVE\s+ASSESSMENT\s*-?\s*(\d+)$/);
+  if (formativeMatch) {
+    const number = Number(formativeMatch[1]);
+    if (number === 1) return 2.5;
+    if (number === 2) return 5.5;
+    return 100 + number;
+  }
+
+  const summativeMatch = label.match(/^SUMMATIVE\s+ASSESSMENT\s*-?\s*(\d+)$/);
+  if (summativeMatch) {
+    const number = Number(summativeMatch[1]);
+    return number === 1 ? 3 : number + 4;
+  }
+
+  const numericMatch = label.match(/(\d+)/);
+  return numericMatch ? 100 + Number(numericMatch[1]) : 1000;
+};
+
+const sortPopupTermRows = (termRows) =>
+  [...termRows].sort((a, b) => {
+    const sortDiff = getTermSortValue(a) - getTermSortValue(b);
+    if (sortDiff !== 0) return sortDiff;
+    return String(a.label).localeCompare(String(b.label), undefined, {
+      numeric: true,
+      sensitivity: "base",
+    });
+  });
+
 const getPopupTermRows = (rows) => {
   if (!Array.isArray(rows) || rows.length === 0) return fallbackTermRows;
 
@@ -308,24 +446,37 @@ const getPopupTermRows = (rows) => {
   rows.forEach((row) => {
     const tests = row?.tests && typeof row.tests === "object" ? row.tests : {};
     Object.keys(tests).forEach((key) => {
-      if (!keys.has(key)) keys.set(key, { key, label: key });
+      const cleanKey = normalizeTermKey(key);
+
+      if (!keys.has(cleanKey)) {
+        keys.set(cleanKey, {
+          key: cleanKey,
+          label: cleanKey.toUpperCase(),
+        });
+      }
     });
   });
 
-  return keys.size > 0 ? Array.from(keys.values()) : fallbackTermRows;
+  return keys.size > 0 ? sortPopupTermRows(Array.from(keys.values())) : fallbackTermRows;
+};
+
+const getPopupTestEntry = (subj, row) => {
+  const tests = subj?.tests && typeof subj.tests === "object" ? subj.tests : {};
+  const termKey = normalizeTermKey(row?.key);
+
+  return (
+    tests[row?.key] ||
+    tests[termKey] ||
+    Object.entries(tests).find(([key]) => normalizeTermKey(key) === termKey)?.[1]
+  );
 };
 
 const getPopupMarkForRow = (subj, row) => {
-  const tests = subj?.tests && typeof subj.tests === "object" ? subj.tests : {};
-  const testEntry = tests[row?.key];
-  if (testEntry?.obtained !== undefined && testEntry?.obtained !== null) {
-    return testEntry.obtained;
-  }
-  if (testEntry?.marks !== undefined && testEntry?.marks !== null) {
-    return testEntry.marks;
-  }
-  if (testEntry?.value !== undefined && testEntry?.value !== null) {
-    return testEntry.value;
+  const testEntry = getPopupTestEntry(subj, row);
+
+  const testScore = getTestScoreValue(testEntry);
+  if (!Number.isNaN(testScore)) {
+    return testScore;
   }
 
   const match = String(row?.key || "").toUpperCase().match(/^(FA|SA)(\d+)$/);
@@ -336,10 +487,35 @@ const getPopupMarkForRow = (subj, row) => {
   return legacyValue ?? "-";
 };
 
-const getPopupTermMaxMarks = (termKey) => {
-  const match = String(termKey || "").toUpperCase().match(/^(FA|SA)(\d+)$/);
-  if (!match) return 0;
-  return match[1] === "FA" ? 20 : 80;
+const getPopupMaxForRow = (subj, row) => {
+  const testEntry = getPopupTestEntry(subj, row);
+
+  const maxScore = getTestMaxValue(testEntry);
+  return Number.isNaN(maxScore) ? "-" : maxScore;
+};
+
+const getGradeFromMarks = (obtained, total) => {
+  const marks = Number(obtained);
+  const maxMarks = Number(total);
+  if (Number.isNaN(marks) || Number.isNaN(maxMarks) || maxMarks <= 0) return "-";
+
+  const percentage = (marks / maxMarks) * 100;
+
+  if (percentage >= 90) return "A+";
+  if (percentage >= 80) return "A";
+  if (percentage >= 70) return "B+";
+  if (percentage >= 60) return "B";
+  if (percentage >= 40) return "C";
+  if (percentage >= 35) return "D";
+  return "F";
+};
+
+const getPopupTestGrade = (subj, term) => {
+  const test = getPopupTestEntry(subj, term);
+
+  if (!test) return "-";
+
+  return getGradeFromMarks(getTestScoreValue(test), getTestMaxValue(test));
 };
 
 const getPopupSubjectLabel = (row) =>
@@ -350,12 +526,12 @@ const buildPopupTrendFromRows = (rows, termRows) => {
   const points = termRows.map((term) => {
     let obtained = 0;
     let total = 0;
-    const termMaxMarks = getPopupTermMaxMarks(term.key);
     sourceRows.forEach((item) => {
       const mark = Number(getPopupMarkForRow(item, term));
-      if (!Number.isNaN(mark)) {
+      const max = Number(getPopupMaxForRow(item, term));
+      if (!Number.isNaN(mark) && !Number.isNaN(max) && max > 0) {
         obtained += mark;
-        total += termMaxMarks > 0 ? termMaxMarks : mark;
+        total += max;
       }
     });
     return {
@@ -426,24 +602,18 @@ const getPopupRowTotal = (subj, termRows) => {
 const getPopupRowGrade = (subj, termRows) => {
   if (subj?.grade) return subj.grade;
 
-  const total = getPopupRowTotal(subj, termRows);
-  const numericTotal = Number(total);
-  if (Number.isNaN(numericTotal)) return "-";
+  let obtained = 0;
+  let total = 0;
+  termRows.forEach((term) => {
+    const mark = Number(getPopupMarkForRow(subj, term));
+    const max = Number(getPopupMaxForRow(subj, term));
+    if (!Number.isNaN(mark) && !Number.isNaN(max) && max > 0) {
+      obtained += mark;
+      total += max;
+    }
+  });
 
-  const maxTotal = termRows.reduce((sum, term) => {
-    const match = String(term?.key || "").toUpperCase().match(/^(FA|SA)(\d+)$/);
-    if (!match) return sum;
-    return sum + (match[1] === "FA" ? 20 : 80);
-  }, 0);
-
-  if (!maxTotal) return "-";
-  const percent = (numericTotal / maxTotal) * 100;
-  if (percent >= 90) return "A+";
-  if (percent >= 80) return "A";
-  if (percent >= 70) return "B+";
-  if (percent >= 60) return "B";
-  if (percent >= 50) return "C";
-  return "D";
+  return getGradeFromMarks(obtained, total);
 };
 
 const mockConduct = {
@@ -452,6 +622,7 @@ const mockConduct = {
   behavior: { description: "PTE: Argues with class marks", grade: "B+" },
   cooperation: { description: "Class Teacher: Homework Incomplete", grade: "C+" },
 };
+
 
 const AdiminAcademicsNew = () => {
   const navigate = useNavigate();
@@ -494,6 +665,13 @@ const AdiminAcademicsNew = () => {
   const [classOptions, setClassOptions] = useState([]);
   const [sectionOptions, setSectionOptions] = useState([]);
   const [studentOptions, setStudentOptions] = useState([]);
+  const [showRadiusPopup, setShowRadiusPopup] = useState(false);
+  const [showTeacherAttendancePopup, setShowTeacherAttendancePopup] = useState(false);
+  const [attendanceView, setAttendanceView] = useState("teacher");
+      const [openHelpSection, setOpenHelpSection] = useState(null);
+    const[isHelpOpen,setIsHelpOpen]=useState(false)
+    const userRole = localStorage.getItem("userRole")
+
   const [liveChatForm, setLiveChatForm] = useState({
     party1: "",
     className: "",
@@ -506,8 +684,63 @@ const AdiminAcademicsNew = () => {
   const [schoolLogo, setSchoolLogo] = useState("/default-logo.png");
   const [studentAlertTime, setStudentAlertTime] = useState(null);
   const [teacherAttendanceTimes, setTeacherAttendanceTimes] = useState(null);
-  const [attendanceRadius, setAttendanceRadius] = useState(localStorage.getItem("attendanceRadius") || "");
+const [attendanceRadius, setAttendanceRadius] = useState("");
+const [attendanceRadius1, setAttendanceRadius1] = useState( "");
   const [attendanceRadiusDate, setAttendanceRadiusDate] = useState(localStorage.getItem("attendanceRadiusDate") || "");
+  const [academicSnapshot, setAcademicSnapshot] = useState({
+    extraClasses: [],
+    tests: [],
+    announcements: [],
+    events: [],
+    complaints: [],
+    totals: {},
+  });
+  useEffect(() => {
+  getAttendanceRadius();
+}, []);
+
+const getAttendanceRadius = async () => {
+  try {
+    const schoolCode = localStorage.getItem("schoolCode");
+
+    const response = await axios.get(
+      `https://cleezoclass.com:4000/api/attendance-radius`,
+      {
+        params: { schoolCode },
+      }
+    );
+
+    if (response.data.success) {
+      setAttendanceRadius1(response.data.radius);
+    }
+  } catch (error) {
+    console.error(error);
+  }
+};
+    const [behaviour, setBehaviour] = useState({});
+
+  useEffect(() => {
+    getBehaviourPercentage();
+  }, []);
+
+  const getBehaviourPercentage = async () => {
+    try {
+      const schoolCode = localStorage.getItem("schoolCode");
+
+      const res = await axios.get(
+        "https://cleezoclass.com:4000/api/overall-behaviour-percentage",
+        {
+          params: { schoolCode },
+        }
+      );
+
+      if (res.data.success) {
+        setBehaviour(res.data.data);
+      }
+    } catch (err) {
+      console.error(err);
+    }
+  };
   const [userDropdownOpen, setUserDropdownOpen] = useState(false);
   const schoolCode = localStorage.getItem("schoolCode") || "";
   const assistantPanelItems = [
@@ -546,6 +779,51 @@ const AdiminAcademicsNew = () => {
     [chatRequests]
   );
 
+  const latestExtraClass = academicSnapshot.extraClasses[0] || null;
+  const latestTest = academicSnapshot.tests[0] || null;
+  const latestAnnouncement = academicSnapshot.announcements[0] || null;
+  const latestCalendarEvent = academicSnapshot.events[0] || null;
+  const upcomingTestEvent = useMemo(() => {
+    const startOfToday = new Date();
+    startOfToday.setHours(0, 0, 0, 0);
+    return [...academicSnapshot.events]
+      .filter((item) => {
+        const eventDate = parseDateValue(item?.eventDate);
+        return eventDate && eventDate >= startOfToday && isTestCalendarItem(item);
+      })
+      .sort(sortByDateAsc("eventDate"))[0] || null;
+  }, [academicSnapshot.events]);
+
+  const promotionTitle = academicSnapshot.totals?.totalTests
+    ? `${academicSnapshot.totals.totalTests} Tests`
+    : `${students.length || classList.length || 0} Records`;
+  const promotionSubtitle = academicSnapshot.totals?.poorPerformers != null
+    ? `${academicSnapshot.totals.poorPerformers} Low / ${academicSnapshot.totals.highPerformers || 0} High`
+    : "Live academics";
+
+  const dynamicFooterCards = [
+    {
+      title: latestAnnouncement ? formatDateLabel(latestAnnouncement.announcementDate) : "--",
+      subtitle: latestAnnouncement?.title || "No announcements",
+      meta: "Announcements",
+    },
+    {
+      title: latestCalendarEvent ? formatDateLabel(latestCalendarEvent.eventDate) : "--",
+      subtitle: latestCalendarEvent?.eventName || "No calendar events",
+      meta: "Calendar",
+    },
+    {
+      title: promotionTitle,
+      subtitle: promotionSubtitle,
+      meta: "Promotions",
+    },
+    {
+      title: `${academicSnapshot.complaints.length} Complaints`,
+      subtitle: `${requestItems.length} Live Chat`,
+      meta: "Unofficial",
+    },
+  ];
+
   const fetchPoItems = async () => {
     if (!schoolCode) return;
     setLoadingPoItems(true);
@@ -574,6 +852,63 @@ const AdiminAcademicsNew = () => {
 
   useEffect(() => {
     fetchPoItems();
+  }, [schoolCode]);
+
+  useEffect(() => {
+    if (!schoolCode) return;
+
+    const loadAcademicSnapshot = async () => {
+      const now = new Date();
+      const year = String(now.getFullYear());
+      const month = String(now.getMonth() + 1);
+      const monthValue = `${year}-${month.padStart(2, "0")}`;
+      const params = { schoolCode };
+
+      const [
+        extraClassRes,
+        testsRes,
+        announcementRes,
+        eventRes,
+        complaintsRes,
+        totalsRes,
+      ] = await Promise.allSettled([
+        axios.get(`${ROOT_API_BASE}/extra-special-class-requests`, {
+          params: { ...params, limit: 5 },
+        }),
+        axios.get(`${ROOT_API_BASE}/all-tests-ledger`, { params }),
+        axios.get(`${ROOT_API_BASE}/admin-announcements`, {
+          params: { ...params, year, month },
+        }),
+        axios.get(`${ROOT_API_BASE}/admin-events`, {
+          params: { ...params, year, month },
+        }),
+        axios.get(`${ROOT_API_BASE}/complaints`, { params }),
+        axios.get(`${ROOT_API_BASE}/dashboard-totals`, {
+          params: { ...params, month: monthValue },
+        }),
+      ]);
+
+      setAcademicSnapshot({
+        extraClasses: getSettledArray(extraClassRes),
+        tests: getSettledArray(testsRes),
+        announcements: getSettledArray(announcementRes),
+        events: getSettledArray(eventRes),
+        complaints: getSettledArray(complaintsRes),
+        totals: getSettledObject(totalsRes),
+      });
+    };
+
+    loadAcademicSnapshot().catch((error) => {
+      console.error("Failed to load academic dashboard snapshot", error);
+      setAcademicSnapshot({
+        extraClasses: [],
+        tests: [],
+        announcements: [],
+        events: [],
+        complaints: [],
+        totals: {},
+      });
+    });
   }, [schoolCode]);
 
   useEffect(() => {
@@ -655,8 +990,24 @@ const AdiminAcademicsNew = () => {
 
   const handleResetStudentAlertTime = async () => {
     if (!schoolCode) return;
-    const confirmed = window.confirm("Reset student alert time?");
-    if (!confirmed) return;
+
+    const result = await Swal.fire({
+      title: "Reset Student Alert Time?",
+      text: "This action cannot be undone.",
+      // icon: "warning",
+
+      showCancelButton: true,
+
+      confirmButtonText: "Yes, Reset",
+      cancelButtonText: "Cancel",
+
+      confirmButtonColor: "#ef6574",
+      cancelButtonColor: "#6b7280",
+
+      reverseButtons: true
+    });
+
+    if (!result.isConfirmed) return;
 
     try {
       await axios.post("https://cleezoclass.com:4000/api/attendance/reset-alert-time", {
@@ -670,8 +1021,20 @@ const AdiminAcademicsNew = () => {
 
   const handleResetTeacherAttendanceTime = async () => {
     if (!schoolCode) return;
-    const confirmed = window.confirm("Reset teacher attendance time?");
-    if (!confirmed) return;
+    const result = await Swal.fire({
+      title: "Reset Teacher timings?",
+      text: "This action cannot be undone.",
+      showCancelButton: true,
+
+      confirmButtonText: "Yes, Reset",
+      cancelButtonText: "Cancel",
+
+      confirmButtonColor: "#ef6574",
+      cancelButtonColor: "#6b7280",
+
+      reverseButtons: true
+    })
+    if (!result.isConfirmed) return
 
     try {
       await axios.post("https://cleezoclass.com:4000/attendance/reset-login-logout-time", {
@@ -682,7 +1045,6 @@ const AdiminAcademicsNew = () => {
       console.error("Failed to reset teacher attendance time", error);
     }
   };
-
   const handleTeacherCardClick = async (teacher) => {
     const teacherId = teacher?.teacher_id || teacher?.id || teacher?._id;
     if (!teacherId) return;
@@ -1011,74 +1373,233 @@ const AdiminAcademicsNew = () => {
       });
   }, [className, section, schoolCode]);
 
+  // useEffect(() => {
+  //   if (!schoolCode || !className || !section || students.length === 0) {
+  //     setStudentMarksMap({});
+  //     setStudentAttendanceMap({});
+  //     return;
+  //   }
+
+  //   let ignore = false;
+  //   setLoadingStudentMarks(true);
+
+  //   Promise.all(
+  //     students.map(async (student) => {
+  //       try {
+  //         const payload = {
+  //           name: student.name,
+  //           class_name: className,
+  //           section,
+  //           schoolCode,
+  //         };
+  //         const [performanceRes, attendanceRes] = await Promise.all([
+  //           axios.post(
+  //             "https://cleezoclass.com:4000/api/overall/academic-performance",
+  //             payload
+  //           ),
+  //           axios.post(
+  //             "https://cleezoclass.com:4000/api/report/attendance/monthly",
+  //             payload
+  //           ),
+  //         ]);
+  //         return [
+  //           student.id,
+  //           {
+  //             performance: buildPerformanceSummary(performanceRes.data),
+  //             attendance: buildAttendanceSummary(attendanceRes.data),
+  //           },
+  //         ];
+  //       } catch {
+  //         return [
+  //           student.id,
+  //           {
+  //             performance: { obtained: 0, total: 0, percent: null, grade: null },
+  //             attendance: null,
+  //           },
+  //         ];
+  //       }
+  //     })
+  //   )
+  //     .then((entries) => {
+  //       if (ignore) return;
+  //       const combined = Object.fromEntries(entries);
+  //       const marks = {};
+  //       const attendance = {};
+  //       Object.entries(combined).forEach(([studentId, value]) => {
+  //         marks[studentId] = value.performance;
+  //         attendance[studentId] = value.attendance;
+  //       });
+  //       setStudentMarksMap(marks);
+  //       setStudentAttendanceMap(attendance);
+  //     })
+  //     .finally(() => {
+  //       if (!ignore) setLoadingStudentMarks(false);
+  //     });
+
+  //   return () => {
+  //     ignore = true;
+  //   };
+  // }, [students, schoolCode, className, section]);
+  const [studentPopupBehavior, setStudentPopupBehavior] = useState([]);
+  // useEffect(() => {
+  //   if (!schoolCode || !className || !section || students.length === 0) {
+  //     setStudentMarksMap({});
+  //     setStudentAttendanceMap({});
+  //     return;
+  //   }
+
+  //   let ignore = false;
+  //   setLoadingStudentMarks(true);
+
+  //   Promise.all(
+  //     students.map(async (student) => {
+  //       try {
+  //         const payload = {
+  //           name: student.name,
+  //           class_name: className,
+  //           section,
+  //           schoolCode,
+  //         };
+  //         const [performanceRes, attendanceRes] = await Promise.all([
+  //           axios.post(
+  //             "https://cleezoclass.com:4000/api/overall/academic-performance",
+  //             payload
+  //           ),
+  //           axios.post(
+  //             "https://cleezoclass.com:4000/api/report/attendance/monthly",
+  //             payload
+  //           ),
+  //         ]);
+  //         return [
+  //           student.id,
+  //           {
+  //             performance: buildPerformanceSummary(performanceRes.data),
+  //             attendance: buildAttendanceSummary(attendanceRes.data),
+  //           },
+  //         ];
+  //       } catch {
+  //         return [
+  //           student.id,
+  //           {
+  //             performance: { obtained: 0, total: 0, percent: null, grade: null },
+  //             attendance: null,
+  //           },
+  //         ];
+  //       }
+  //     })
+  //   )
+  //     .then((entries) => {
+  //       if (ignore) return;
+  //       const combined = Object.fromEntries(entries);
+  //       const marks = {};
+  //       const attendance = {};
+  //       Object.entries(combined).forEach(([studentId, value]) => {
+  //         marks[studentId] = value.performance;
+  //         attendance[studentId] = value.attendance;
+  //       });
+  //       setStudentMarksMap(marks);
+  //       setStudentAttendanceMap(attendance);
+  //     })
+  //     .finally(() => {
+  //       if (!ignore) setLoadingStudentMarks(false);
+  //     });
+
+  //   return () => {
+  //     ignore = true;
+  //   };
+  // }, [students, schoolCode, className, section]);
+
+
+    const [performance, setPerformance] = useState({});
+
+    useEffect(() => {
+        getOverallPerformance();
+    }, []);
+
+    const getOverallPerformance = async () => {
+
+        try {
+
+            const schoolCode = localStorage.getItem("schoolCode");
+
+            const response = await axios.get(
+                "https://cleezoclass.com:4000/api/overall-performance-percentage",
+                {
+                    params: {
+                        schoolCode,
+                    },
+                }
+            );
+
+            if (response.data.success) {
+                setPerformance(response.data.data);
+            }
+
+        } catch (error) {
+            console.log(error);
+        }
+
+    };
   useEffect(() => {
-    if (!schoolCode || !className || !section || students.length === 0) {
-      setStudentMarksMap({});
-      setStudentAttendanceMap({});
-      return;
-    }
+    if (!selectedStudent || !schoolCode || !className || !section) return;
 
     let ignore = false;
-    setLoadingStudentMarks(true);
+    setStudentPopupLoading(true);
 
-    Promise.all(
-      students.map(async (student) => {
-        try {
-          const payload = {
-            name: student.name,
-            class_name: className,
-            section,
-            schoolCode,
-          };
-          const [performanceRes, attendanceRes] = await Promise.all([
-            axios.post(
-              "https://cleezoclass.com:4000/api/overall/academic-performance",
-              payload
-            ),
-            axios.post(
-              "https://cleezoclass.com:4000/api/report/attendance/monthly",
-              payload
-            ),
-          ]);
-          return [
-            student.id,
-            {
-              performance: buildPerformanceSummary(performanceRes.data),
-              attendance: buildAttendanceSummary(attendanceRes.data),
-            },
-          ];
-        } catch {
-          return [
-            student.id,
-            {
-              performance: { obtained: 0, total: 0, percent: null, grade: null },
-              attendance: null,
-            },
-          ];
-        }
-      })
-    )
-      .then((entries) => {
+    const payload = {
+      name: selectedStudent.name,
+      class_name: className,
+      section,
+      schoolCode,
+    };
+
+    Promise.all([
+      axios.post("https://cleezoclass.com:4000/api/overall/academic-performance", payload),
+      axios.post("https://cleezoclass.com:4000/api/report/attendance/monthly", payload),
+      axios.get("https://cleezoclass.com:4000/api/student/behavior", { params: payload }),
+    ])
+      .then(([performanceRes, attendanceRes, behaviorRes]) => {
+
         if (ignore) return;
-        const combined = Object.fromEntries(entries);
-        const marks = {};
-        const attendance = {};
-        Object.entries(combined).forEach(([studentId, value]) => {
-          marks[studentId] = value.performance;
-          attendance[studentId] = value.attendance;
-        });
-        setStudentMarksMap(marks);
-        setStudentAttendanceMap(attendance);
+
+        const performanceData = Array.isArray(performanceRes.data)
+          ? performanceRes.data
+          : performanceRes.data?.performance || [];
+
+        const attendanceData = Array.isArray(attendanceRes.data?.monthly)
+          ? attendanceRes.data.monthly
+          : [];
+
+        const behaviorData = Array.isArray(behaviorRes.data)
+          ? behaviorRes.data
+          : [];
+
+        // ✅ DEBUG LOGS
+        console.log("📊 Academic Performance:", performanceData);
+        console.log("📅 Attendance Data:", attendanceData);
+        console.log("🧠 Behavior API Raw Response:", behaviorRes.data);
+        console.log("🧠 Behavior Parsed Data:", behaviorData);
+
+        setStudentPopupAcademics(performanceData);
+        setStudentPopupAttendance(attendanceData);
+        setStudentPopupBehavior(behaviorData);
+      })
+      .catch((err) => {
+        console.error("❌ API Error:", err);
+
+        if (ignore) return;
+        setStudentPopupAcademics([]);
+        setStudentPopupAttendance([]);
+        setStudentPopupBehavior([]);
       })
       .finally(() => {
-        if (!ignore) setLoadingStudentMarks(false);
+        if (!ignore) setStudentPopupLoading(false);
       });
 
     return () => {
       ignore = true;
     };
-  }, [students, schoolCode, className, section]);
-
+  }, [selectedStudent, schoolCode, className, section]);
   const getClassLabel = (cls) => {
     if (cls == null) return "";
     if (typeof cls === "string" || typeof cls === "number") return String(cls);
@@ -1250,7 +1771,36 @@ const AdiminAcademicsNew = () => {
   useEffect(() => {
     setTrendSubjectKey("__all__");
   }, [selectedStudent]);
+useEffect(() => {
+    const handlePopState = () => {
+      if (showRadiusPopup) {
+        setShowRadiusPopup(false);
+      }
+    };
 
+    window.addEventListener("popstate", handlePopState);
+
+    return () => {
+      window.removeEventListener("popstate", handlePopState);
+    };
+  }, [showRadiusPopup]);
+  const academicPercentage = Number(performance.overallPercentage || 0);
+
+
+
+const behaviourPercentage =
+  100 -
+  (Number(behaviour.needsImprovementPercentage || 0) +
+   Number(behaviour.negativePercentage || 0));
+
+const overallPerformance = (
+  (
+    academicPercentage 
+   
+  
+  ) / 1
+).toFixed(1);
+const progressDegree = `${Number(overallPerformance || 0) * 3.6}deg`;
   return (
     <div className="dashboard-page dashboard-home-page frontdesk-dashboard-page accountant-dashboard-page accountant-dashboard-home-page admin-academics-page">
       <div className="dashboard-shell accountant-dashboard-shell">
@@ -1303,48 +1853,65 @@ const AdiminAcademicsNew = () => {
             </div>
 
             <div className="dashboard-topbar-right accountant-topbar-right">
-            
+ <button
+           className="accountant-help-icon-btn"
+           onClick={() => setIsHelpOpen(true)}
+         >
+         <FiHelpCircle
+         style={{
+           color: "#e9818c",
+           fontSize: "34px"
+         }}
+       />
+         </button>
               <EditableProfileMenu showHrSwitch />
             </div>
           </div>
 
           <div className="admin-academics-content">
             <div className="admin-academics-top">
-               <div className="accountant-welcome-block">
-                <h2>Hi, Vinay!</h2>
+              <div className="accountant-welcome-block">
+                <h2>Hi, {getUserDisplayName()}!</h2>
                 <p>Check Store Inventory,</p>
                 <p>Report Track to Class Teacher</p>
                 <p>Submit Building maintenance</p>
               </div>
 
               <div className="admin-academics-summary accountant-card">
-                <div className="admin-academics-summary-ring">
-                  <div className="admin-academics-summary-ring-inner">
-                    {staffAttendanceStats.average ? `${staffAttendanceStats.average}%` : "70%"}
-                  </div>
-                </div>
+<div
+  className="accountant-progress-panel"
+  style={{
+    "--admission-progress": progressDegree,
+  }}
+>
+  <div className="accountant-progress-ring">
+    <div className="accountant-progress-ring-inner">
+{performance.overallPercentage || 0}%    </div>
+  </div>
+</div>
                 <div className="admin-academics-summary-stats">
-                  <p>
-                    <span>Performance - staff:</span>
-                    <strong>
-                      {loadingTeacherAttendance
-                        ? "..."
-                        : staffAttendanceStats.average
-                          ? `${staffAttendanceStats.average}%`
-                          : "70%"}
-                    </strong>
-                  </p>
-                  <p><span>Performance - student:</span> <strong>89%</strong></p>
-                  <p><span>Behavior:</span> <strong>0 Misbehavior</strong></p>
-                  <p><span>Staff overtime:</span> <strong>6 Teachers</strong></p>
+         
+
+                  <p><span>Performance - student:</span> <strong>{performance.overallPercentage || 0}%</strong></p>
+                  
+      <p> Positive: <strong>{behaviour.positivePercentage || 0}%</strong></p>
+
+          <p>Needs Improvement: <strong>{behaviour.needsImprovementPercentage || 0}%</strong></p>
+
+      <p> Negative: <strong>{behaviour.negativePercentage || 0}%</strong></p>
+                  {/* <p><span>Staff overtime:</span> <strong>6 Teachers</strong></p> */}
                 </div>
-                  <div className="admin-academics-summary-right">
-                    <button type="button" className="collect-filter">
-                      <span>As on today</span>
-                    </button>
+                <div className="admin-academics-summary-right">
+                  <button type="button" className="collect-filter">
+                    <span>As on today</span>
+                  </button>
                   <div className="admin-academics-exam">
                     <h3>Exam Schedule</h3>
-                    <p>SA-2 | 15/04/2026</p>
+                    <p>
+                      {upcomingTestEvent
+                        ? `${upcomingTestEvent.eventName || "Test"} | ${formatDateLabel(upcomingTestEvent.eventDate)}`
+                        : "No upcoming test"}
+                    </p>
                   </div>
                 </div>
               </div>
@@ -1366,475 +1933,471 @@ const AdiminAcademicsNew = () => {
               </div>
             </div>
 
-        <div className="admin-academics-main">
-  <div className="admin-academics-performance accountant-card">
-    
-    {/* HEADER */}
-    <div className="admin-academics-performance-header">
-      
-      <div>
-        <h3>Performance</h3>
-      </div>
+            <div className="admin-academics-main">
+              <div className="admin-academics-performance accountant-card">
 
-      {/* TABS */}
-      <div className="admin-academics-performance-tabs">
-        <button
-          type="button"
-          className={performanceTab === "staff" ? "active" : ""}
-          onClick={() => setPerformanceTab("staff")}
-        >
-          Staff
-        </button>
+                {/* HEADER */}
+                <div className="admin-academics-performance-header">
 
-        <button
-          type="button"
-          className={performanceTab === "students" ? "active" : ""}
-          onClick={() => setPerformanceTab("students")}
-        >
-          Student
-        </button>
+                  <div>
+                    <h3>Performance</h3>
+                  </div>
 
-  <strong>
-  {performanceTab === "students"
-    ? filteredStudents.length
-    : teachers.length}
-</strong>
+                  {/* TABS */}
+                  <div className="admin-academics-performance-tabs">
+                    <button
+                      type="button"
+                      className={performanceTab === "staff" ? "active" : ""}
+                      onClick={() => setPerformanceTab("staff")}
+                    >
+                      Staff
+                    </button>
 
-<span>
-  {performanceTab === "students"
-    ? "Class Strength"
-    : "Staff Strength"}
-</span>
-      </div>
+                    <button
+                      type="button"
+                      className={performanceTab === "students" ? "active" : ""}
+                      onClick={() => setPerformanceTab("students")}
+                    >
+                      Student
+                    </button>
 
-      {/* FILTERS */}
-      <div className="admin-academics-filters">
-        
-        {/* SEARCH */}
-        <input
-          type="text"
-          placeholder={
-            performanceTab === "students"
-              ? "Search students..."
-              : "Search teachers..."
-          }
-          value={searchTerm}
-          onChange={(e) => setSearchTerm(e.target.value)}
-        />
+                    <strong>
+                      {performanceTab === "students"
+                        ? filteredStudents.length
+                        : teachers.length}
+                    </strong>
 
-        {/* ✅ SHOW ONLY FOR STUDENTS */}
-        {performanceTab === "students" && (
-          <>
-            <select
-              value={className}
-              onChange={(e) => {
-                setClassName(e.target.value);
-                setSection("");
-              }}
-              disabled={dropdownLoading}
-            >
-              <option value="">Class</option>
-              {derivedClasses.map((cls) => {
-                const classLabel = getClassLabel(cls);
-                if (!classLabel) return null;
-                return (
-                  <option key={classLabel} value={classLabel}>
-                    {classLabel}
-                  </option>
-                );
-              })}
-            </select>
+                    <span>
+                      {performanceTab === "students"
+                        ? "Class Strength"
+                        : "Staff Strength"}
+                    </span>
+                  </div>
 
-            <select
-              value={section}
-              onChange={(e) => setSection(e.target.value)}
-              disabled={dropdownLoading || !className}
-            >
-              <option value="">Section</option>
-              {derivedSections.map((sec) => (
-                <option key={sec} value={sec}>
-                  {sec}
-                </option>
-              ))}
-            </select>
-          </>
-        )}
-      </div>
-    </div>
+                  {/* FILTERS */}
+                  <div className="admin-academics-filters">
 
-    {/* GRID */}
-    <div className="admin-academics-students-grid">
-      
-      {/* ================= STAFF ================= */}
-      {performanceTab === "staff" ? (
-        loadingTeachers ? (
-          <div className="admin-academics-empty">Loading teachers...</div>
-        ) : teachers.length === 0 ? (
-          <div className="admin-academics-empty">No teachers found.</div>
-        ) : (
-          teachers
-            .filter((teacher) => {
-              const term = searchTerm.trim().toLowerCase();
-              if (!term) return true;
-              const name = teacher.teacher_name || teacher.name || "";
-              return name.toLowerCase().includes(term);
-            })
-            .map((teacher, index) => {
-              
-              // ✅ EXTRACT CLASSES
-              const classes = Object.keys(teacher)
-                .filter(
-                  (key) =>
-                    key.startsWith("teaches_to_") && teacher[key]
-                )
-                .map((key) => teacher[key]);
+                    {/* SEARCH */}
+                    <input
+                      type="text"
+                      placeholder={
+                        performanceTab === "students"
+                          ? "Search students..."
+                          : "Search teachers..."
+                      }
+                      value={searchTerm}
+                      onChange={(e) => setSearchTerm(e.target.value)}
+                    />
 
-              return (
-                <div
-                  key={teacher.teacher_id || index}
-                  className="admin-academics-student-card admin-academics-student-card-clickable"
-                  onClick={() => handleTeacherCardClick(teacher)}
-                >
-                  <div className="admin-academics-student-avatar-wrap">
-                    <div className="admin-academics-student-avatar">
-                      <FaUser />
+                    {/* ✅ SHOW ONLY FOR STUDENTS */}
+                    {performanceTab === "students" && (
+                      <>
+                        <select
+                          value={className}
+                          onChange={(e) => {
+                            setClassName(e.target.value);
+                            setSection("");
+                          }}
+                          disabled={dropdownLoading}
+                        >
+                          <option value="">Class</option>
+                          {derivedClasses.map((cls) => {
+                            const classLabel = getClassLabel(cls);
+                            if (!classLabel) return null;
+                            return (
+                              <option key={classLabel} value={classLabel}>
+                                {classLabel}
+                              </option>
+                            );
+                          })}
+                        </select>
+
+                        <select
+                          value={section}
+                          onChange={(e) => setSection(e.target.value)}
+                          disabled={dropdownLoading || !className}
+                        >
+                          <option value="">Section</option>
+                          {derivedSections.map((sec) => (
+                            <option key={sec} value={sec}>
+                              {sec}
+                            </option>
+                          ))}
+                        </select>
+                      </>
+                    )}
+                  </div>
+                </div>
+
+                {/* GRID */}
+                <div className="admin-academics-students-grid">
+
+                  {/* ================= STAFF ================= */}
+                  {performanceTab === "staff" ? (
+                    loadingTeachers ? (
+                      <div className="admin-academics-empty">Loading teachers...</div>
+                    ) : teachers.length === 0 ? (
+                      <div className="admin-academics-empty">No teachers found.</div>
+                    ) : (
+                      teachers
+                        .filter((teacher) => {
+                          const term = searchTerm.trim().toLowerCase();
+                          if (!term) return true;
+                          const name = teacher.teacher_name || teacher.name || "";
+                          return name.toLowerCase().includes(term);
+                        })
+                        .map((teacher, index) => {
+
+                          // ✅ EXTRACT CLASSES
+                          const classes = Object.keys(teacher)
+                            .filter(
+                              (key) =>
+                                key.startsWith("teaches_to_") && teacher[key]
+                            )
+                            .map((key) => teacher[key]);
+
+                          return (
+                            <div
+                              key={teacher.teacher_id || index}
+                              className="admin-academics-student-card admin-academics-student-card-clickable"
+                              onClick={() => handleTeacherCardClick(teacher)}
+                            >
+                              <div className="admin-academics-student-avatar-wrap">
+                                <div className="admin-academics-student-avatar">
+                                  <FaUser />
+                                </div>
+                              </div>
+
+                              <div className="admin-academics-student-name">
+                                {teacher.teacher_name || teacher.name || "Teacher"}
+                              </div>
+
+                              <div className="admin-academics-student-meta">
+                                Subject:{" "}
+                                {teacher.designation ||
+                                  teacher.subject ||
+                                  teacher.phone_no ||
+                                  "-"}
+                              </div>
+
+                              <div className="admin-academics-student-score">
+                                Teacher ID: {teacher.teacher_id || "-"}
+                              </div>
+
+                              <div className="admin-academics-student-score">
+                                Classes: {classes.length > 0 ? classes.join(", ") : "-"}
+                              </div>
+
+                              <div className="admin-academics-student-score">
+                                {loadingTeacherAttendance
+                                  ? "Loading attendance..."
+                                  : teacherAttendanceMap[teacher.teacher_id || teacher.id || teacher._id]
+                                    ? `Attendance: ${teacherAttendanceMap[teacher.teacher_id || teacher.id || teacher._id].percent ?? "-"}%`
+                                    : "Attendance: -"}
+                              </div>
+
+                              <div className="admin-academics-student-score">
+                                {teacherAttendanceMap[teacher.teacher_id || teacher.id || teacher._id]?.latestDate
+                                  ? `Updated: ${teacherAttendanceMap[teacher.teacher_id || teacher.id || teacher._id].latestDate}`
+                                  : ""}
+                              </div>
+                            </div>
+                          );
+                        })
+                    )
+                  ) : filteredStudents.length === 0 ? (
+
+                    /* ================= STUDENTS EMPTY ================= */
+                    <div className="admin-academics-empty">
+                      {className && section
+                        ? "No students found."
+                        : "Please select class and section."}
+                    </div>
+
+                  ) : (
+
+                    /* ================= STUDENTS ================= */
+                    filteredStudents.map((student, index) => (
+                      <div
+                        key={student.id || index}
+                        className={`admin-academics-student-card admin-academics-student-card-clickable ${selectedStudent?.id === student.id
+                          ? "is-selected"
+                          : ""
+                          }`}
+                        onClick={() => {
+                          setSelectedStudent(student);
+                          setStudentPopupTab("attendance");
+                        }}
+                      >
+                        <div className="admin-academics-student-avatar-wrap">
+                          {student.photo?.data ? (
+                            <img
+                              src={`https://cleezoclass.com:4000${bufferToPathString(
+                                student.photo.data
+                              )}`}
+                              alt={student.name || "Student"}
+                              className="admin-academics-student-photo"
+                            />
+                          ) : (
+                            <div className="admin-academics-student-avatar">
+                              <FaUser />
+                            </div>
+                          )}
+                        </div>
+
+                        <div className="admin-academics-student-name">
+                          {student.name || "Student"}
+                        </div>
+
+                        <div className="admin-academics-student-meta">
+                          {className && section
+                            ? `${className} - ${section}`
+                            : "Student"}
+                        </div>
+
+                        <div className="admin-academics-student-score">
+                          {loadingStudentMarks
+                            ? "Loading marks..."
+                            : studentMarksMap[student.id]?.total
+                              ? `Marks: ${studentMarksMap[student.id].obtained
+                              }/${studentMarksMap[student.id].total
+                              } (${studentMarksMap[student.id].percent}%) | Grade: ${studentMarksMap[student.id].grade
+                              }`
+                              : `ID: ${student.id || "-"}`}
+                        </div>
+
+                        <div className="admin-academics-student-score">
+                          {loadingStudentMarks
+                            ? "Loading attendance..."
+                            : studentAttendanceMap[student.id]
+                              ? `Attendance: ${studentAttendanceMap[student.id]}%`
+                              : "Attendance: -"}
+                        </div>
+                      </div>
+                    ))
+                  )}
+                </div>
+              </div>
+
+              <div className="admin-academics-right-column">
+                <div className="admin-academics-storepo accountant-card">
+                  <div className="admin-academics-side-header">
+                    <h3>
+                      {activeQuickPanel === "assistant"
+                        ? "Assistant Actions"
+                        : activeQuickPanel === "storepo"
+                          ? "Store PO"
+                          : "Live Chat"}
+                    </h3>
+                    <div className="accountant-card-filters admin-academics-request-count">
+                      {activeQuickPanel === "livechat" ? (
+                        <button type="button" className="admin-events-create-btn" onClick={openLiveChatPopup}>
+                          + Create New
+                        </button>
+                      ) : null}
+                      <div className="accountant-feetype-count">
+                        <strong>
+                          {activeQuickPanel === "assistant"
+                            ? assistantPanelItems.length
+                            : activeQuickPanel === "storepo"
+                              ? poItems.length
+                              : chatRequests.length}
+                        </strong>
+                        <span>
+                          {activeQuickPanel === "assistant"
+                            ? "Actions"
+                            : activeQuickPanel === "storepo"
+                              ? "Requests"
+                              : "Chats"}
+                        </span>
+                      </div>
                     </div>
                   </div>
 
-                  <div className="admin-academics-student-name">
-                    {teacher.teacher_name || teacher.name || "Teacher"}
+                  {popupType === "liveChat" && (
+                    <div className="admin-events-modal-overlay" onClick={closePopup}>
+                      <div className="admin-events-modal" onClick={(e) => e.stopPropagation()}>
+                        <div className="admin-events-card-header">
+                          <h3>Individual Chat Request</h3>
+                          <button type="button" className="admin-events-modal-close" onClick={closePopup}>×</button>
+                        </div>
+                        <div className="admin-events-form-grid">
+                          <select
+                            className="admin-events-input"
+                            value={liveChatForm.party1}
+                            onChange={(e) => setLiveChatForm((prev) => ({ ...prev, party1: e.target.value }))}
+                          >
+                            <option value="">Party 1 Staff</option>
+                            {party1List.map((item) => (
+                              <option key={item.id} value={item.name}>
+                                {item.name} ({item.user_type})
+                              </option>
+                            ))}
+                          </select>
+                          <select
+                            className="admin-events-input"
+                            value={liveChatForm.className}
+                            onChange={(e) => setLiveChatForm((prev) => ({ ...prev, className: e.target.value }))}
+                          >
+                            <option value="">Class</option>
+                            {classOptions.map((item, index) => (
+                              <option key={`${item}-${index}`} value={String(item)}>
+                                {String(item)}
+                              </option>
+                            ))}
+                          </select>
+                          <select
+                            className="admin-events-input"
+                            value={liveChatForm.section}
+                            onChange={(e) => setLiveChatForm((prev) => ({ ...prev, section: e.target.value }))}
+                            disabled={!liveChatForm.className}
+                          >
+                            <option value="">Section</option>
+                            {sectionOptions.map((item, index) => (
+                              <option key={`${item}-${index}`} value={String(item)}>
+                                {String(item)}
+                              </option>
+                            ))}
+                          </select>
+                          <select
+                            className="admin-events-input"
+                            value={liveChatForm.student}
+                            onChange={(e) => setLiveChatForm((prev) => ({ ...prev, student: e.target.value }))}
+                            disabled={!liveChatForm.className || !liveChatForm.section}
+                          >
+                            <option value="">Student</option>
+                            {studentOptions.map((item, index) => (
+                              <option key={`${item?.id || index}`} value={item?.name || item?.student_name || ""}>
+                                {item?.name || item?.student_name || "Student"}
+                              </option>
+                            ))}
+                          </select>
+                          <input
+                            className="admin-events-input"
+                            type="date"
+                            value={liveChatForm.date}
+                            onChange={(e) => setLiveChatForm((prev) => ({ ...prev, date: e.target.value }))}
+                          />
+                          <input
+                            className="admin-events-input"
+                            type="time"
+                            value={liveChatForm.time}
+                            onChange={(e) => setLiveChatForm((prev) => ({ ...prev, time: e.target.value }))}
+                          />
+                        </div>
+                        <div className="admin-events-action-row">
+                          <button type="button" className="admin-events-submit-btn" onClick={handleCreateLiveChatRequest}>
+                            Create Chat Request
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  <ErrorPopup message={popupMessage} onClose={() => setPopupMessage("")} />
+
+                  <div className="admin-academics-side-subtitle">
+                    {activeQuickPanel === "livechat"
+                      ? "Requests"
+                      : activeQuickPanel === "assistant"
+                        ? "Assistant Guidance"
+                        : "Requests PO"}
                   </div>
 
-                  <div className="admin-academics-student-meta">
-                    Subject:{" "}
-                    {teacher.designation ||
-                      teacher.subject ||
-                      teacher.phone_no ||
-                      "-"}
-                  </div>
+                  <div className="admin-academics-po-list">
+                    {activeQuickPanel === "livechat" ? (
+                      <>
+                        {chatLoading ? (
+                          <div className="admin-academics-po-item">
+                            <span>Loading...</span>
+                          </div>
+                        ) : chatError ? (
+                          <div className="admin-academics-po-item">
+                            <span>{chatError}</span>
+                          </div>
+                        ) : requestItems.length === 0 ? (
+                          <div className="admin-academics-po-item">
+                            <span>No requests found.</span>
+                          </div>
+                        ) : (
+                          requestItems.map((item, index) => (
+                            <div key={`req-${item?.id || item?.request_id || index}`} className="admin-academics-po-item">
+                              <span>
+                                Live Chat (P - T) - {formatChatDateTime(
+                                  item?.preferred_date || item?.date || item?.requested_date,
+                                  item?.preferred_time || item?.time || item?.requested_time
+                                )} - {item?.party1_name || item?.teacher_name || "Staff"} to {item?.party2_student || item?.student_name || "Student"}, {item?.party2_class || item?.class_name || "-"}{item?.party2_section || item?.section || ""}
+                              </span>
+                            </div>
+                          ))
+                        )}
 
-                  <div className="admin-academics-student-score">
-                    Teacher ID: {teacher.teacher_id || "-"}
-                  </div>
-
-                  <div className="admin-academics-student-score">
-                    Classes: {classes.length > 0 ? classes.join(", ") : "-"}
-                  </div>
-
-                  <div className="admin-academics-student-score">
-                    {loadingTeacherAttendance
-                      ? "Loading attendance..."
-                      : teacherAttendanceMap[teacher.teacher_id || teacher.id || teacher._id]
-                        ? `Attendance: ${teacherAttendanceMap[teacher.teacher_id || teacher.id || teacher._id].percent ?? "-"}%`
-                        : "Attendance: -"}
-                  </div>
-
-                  <div className="admin-academics-student-score">
-                    {teacherAttendanceMap[teacher.teacher_id || teacher.id || teacher._id]?.latestDate
-                      ? `Updated: ${teacherAttendanceMap[teacher.teacher_id || teacher.id || teacher._id].latestDate}`
-                      : ""}
+                        <div className="admin-academics-side-subtitle">Scheduled</div>
+                        {scheduledItems.length === 0 ? (
+                          <div className="admin-academics-po-item">
+                            <span>No scheduled chats found.</span>
+                          </div>
+                        ) : (
+                          scheduledItems.map((item, index) => (
+                            <div key={`sch-${item?.id || item?.request_id || index}`} className="admin-academics-po-item">
+                              <span>
+                                Live Chat (T - P) - {formatChatDateTime(
+                                  item?.approved_date || item?.date || item?.requested_date,
+                                  item?.approved_time || item?.time || item?.requested_time
+                                )} - {item?.party1_name || item?.teacher_name || "Staff"} to {item?.party2_student || item?.student_name || "Student"}, {item?.party2_class || item?.class_name || "-"}{item?.party2_section || item?.section || ""}
+                              </span>
+                            </div>
+                          ))
+                        )}
+                      </>
+                    ) : activeQuickPanel === "assistant" ? (
+                      assistantPanelItems.map((item) => (
+                        <div key={item.title} className="admin-academics-assistant-item">
+                          <strong>{item.title}</strong>
+                          <span>{item.desc}</span>
+                        </div>
+                      ))
+                    ) : loadingPoItems ? (
+                      <div className="admin-academics-po-item">
+                        <span>Loading PO requests...</span>
+                      </div>
+                    ) : poItems.length === 0 ? (
+                      <div className="admin-academics-po-item">
+                        <span>No PO requests found.</span>
+                      </div>
+                    ) : (
+                      poItems.map((item, index) => (
+                        <div key={item.id || item.po_id || index} className="admin-academics-po-item">
+                          <span>
+                            {item.text ||
+                              `${item.id ? `PO${item.id} - ` : ""}${item.date || item.created_at || ""}, ${item.stockName || item.stock_name || "Stock"}${item.quantity ? ` ${item.quantity}` : ""}`}
+                          </span>
+                          <div className="admin-academics-po-actions">
+                            <button
+                              type="button"
+                              onClick={() => handleProcessPO(item, "OK")}
+                              disabled={processingPoId === String(item.id || item.po_id || item.request_id)}
+                              title="Accept"
+                            >
+                              ▷
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleProcessPO(item, "Rejected")}
+                              disabled={processingPoId === String(item.id || item.po_id || item.request_id)}
+                              title="Reject"
+                            >
+                              ✕
+                            </button>
+                          </div>
+                        </div>
+                      ))
+                    )}
                   </div>
                 </div>
-              );
-            })
-        )
-      ) : filteredStudents.length === 0 ? (
-        
-        /* ================= STUDENTS EMPTY ================= */
-        <div className="admin-academics-empty">
-          {className && section
-            ? "No students found."
-            : "Please select class and section."}
-        </div>
-      
-      ) : (
-        
-        /* ================= STUDENTS ================= */
-        filteredStudents.map((student, index) => (
-          <div
-            key={student.id || index}
-            className={`admin-academics-student-card admin-academics-student-card-clickable ${
-              selectedStudent?.id === student.id
-                ? "is-selected"
-                : ""
-            }`}
-            onClick={() => {
-              setSelectedStudent(student);
-              setStudentPopupTab("attendance");
-            }}
-          >
-            <div className="admin-academics-student-avatar-wrap">
-              {student.photo?.data ? (
-                <img
-                  src={`https://cleezoclass.com:4000${bufferToPathString(
-                    student.photo.data
-                  )}`}
-                  alt={student.name || "Student"}
-                  className="admin-academics-student-photo"
-                />
-              ) : (
-                <div className="admin-academics-student-avatar">
-                  <FaUser />
-                </div>
-              )}
-            </div>
 
-            <div className="admin-academics-student-name">
-              {student.name || "Student"}
-            </div>
-
-            <div className="admin-academics-student-meta">
-              {className && section
-                ? `${className} - ${section}`
-                : "Student"}
-            </div>
-
-            <div className="admin-academics-student-score">
-              {loadingStudentMarks
-                ? "Loading marks..."
-                : studentMarksMap[student.id]?.total
-                ? `Marks: ${
-                    studentMarksMap[student.id].obtained
-                  }/${
-                    studentMarksMap[student.id].total
-                  } (${studentMarksMap[student.id].percent}%) | Grade: ${
-                    studentMarksMap[student.id].grade
-                  }`
-                : `ID: ${student.id || "-"}`}
-            </div>
-
-            <div className="admin-academics-student-score">
-              {loadingStudentMarks
-                ? "Loading attendance..."
-                : studentAttendanceMap[student.id]
-                ? `Attendance: ${studentAttendanceMap[student.id]}%`
-                : "Attendance: -"}
-            </div>
-          </div>
-        ))
-      )}
-    </div>
-  </div>
-
-  <div className="admin-academics-right-column">
-    <div className="admin-academics-storepo accountant-card">
-      <div className="admin-academics-side-header">
-        <h3>
-          {activeQuickPanel === "assistant"
-            ? "Assistant Actions"
-            : activeQuickPanel === "storepo"
-            ? "Store PO"
-            : "Live Chat"}
-        </h3>
-        <div className="accountant-card-filters admin-academics-request-count">
-          {activeQuickPanel === "livechat" ? (
-            <button type="button" className="admin-events-create-btn" onClick={openLiveChatPopup}>
-              + Create New
-            </button>
-          ) : null}
-          <div className="accountant-feetype-count">
-            <strong>
-              {activeQuickPanel === "assistant"
-                ? assistantPanelItems.length
-                : activeQuickPanel === "storepo"
-                ? poItems.length
-                : chatRequests.length}
-            </strong>
-            <span>
-              {activeQuickPanel === "assistant"
-                ? "Actions"
-                : activeQuickPanel === "storepo"
-                ? "Requests"
-                : "Chats"}
-            </span>
-          </div>
-        </div>
-  </div>
-
-  {popupType === "liveChat" && (
-    <div className="admin-events-modal-overlay" onClick={closePopup}>
-      <div className="admin-events-modal" onClick={(e) => e.stopPropagation()}>
-        <div className="admin-events-card-header">
-          <h3>Individual Chat Request</h3>
-          <button type="button" className="admin-events-modal-close" onClick={closePopup}>×</button>
-        </div>
-        <div className="admin-events-form-grid">
-          <select
-            className="admin-events-input"
-            value={liveChatForm.party1}
-            onChange={(e) => setLiveChatForm((prev) => ({ ...prev, party1: e.target.value }))}
-          >
-            <option value="">Party 1 Staff</option>
-            {party1List.map((item) => (
-              <option key={item.id} value={item.name}>
-                {item.name} ({item.user_type})
-              </option>
-            ))}
-          </select>
-          <select
-            className="admin-events-input"
-            value={liveChatForm.className}
-            onChange={(e) => setLiveChatForm((prev) => ({ ...prev, className: e.target.value }))}
-          >
-            <option value="">Class</option>
-            {classOptions.map((item, index) => (
-              <option key={`${item}-${index}`} value={String(item)}>
-                {String(item)}
-              </option>
-            ))}
-          </select>
-          <select
-            className="admin-events-input"
-            value={liveChatForm.section}
-            onChange={(e) => setLiveChatForm((prev) => ({ ...prev, section: e.target.value }))}
-            disabled={!liveChatForm.className}
-          >
-            <option value="">Section</option>
-            {sectionOptions.map((item, index) => (
-              <option key={`${item}-${index}`} value={String(item)}>
-                {String(item)}
-              </option>
-            ))}
-          </select>
-          <select
-            className="admin-events-input"
-            value={liveChatForm.student}
-            onChange={(e) => setLiveChatForm((prev) => ({ ...prev, student: e.target.value }))}
-            disabled={!liveChatForm.className || !liveChatForm.section}
-          >
-            <option value="">Student</option>
-            {studentOptions.map((item, index) => (
-              <option key={`${item?.id || index}`} value={item?.name || item?.student_name || ""}>
-                {item?.name || item?.student_name || "Student"}
-              </option>
-            ))}
-          </select>
-          <input
-            className="admin-events-input"
-            type="date"
-            value={liveChatForm.date}
-            onChange={(e) => setLiveChatForm((prev) => ({ ...prev, date: e.target.value }))}
-          />
-          <input
-            className="admin-events-input"
-            type="time"
-            value={liveChatForm.time}
-            onChange={(e) => setLiveChatForm((prev) => ({ ...prev, time: e.target.value }))}
-          />
-        </div>
-        <div className="admin-events-action-row">
-          <button type="button" className="admin-events-submit-btn" onClick={handleCreateLiveChatRequest}>
-            Create Chat Request
-          </button>
-        </div>
-      </div>
-    </div>
-  )}
-
-  <ErrorPopup message={popupMessage} onClose={() => setPopupMessage("")} />
-
-      <div className="admin-academics-side-subtitle">
-        {activeQuickPanel === "livechat"
-          ? "Requests"
-          : activeQuickPanel === "assistant"
-          ? "Assistant Guidance"
-          : "Requests PO"}
-      </div>
-
-      <div className="admin-academics-po-list">
-        {activeQuickPanel === "livechat" ? (
-          <>
-            {chatLoading ? (
-              <div className="admin-academics-po-item">
-                <span>Loading...</span>
-              </div>
-            ) : chatError ? (
-              <div className="admin-academics-po-item">
-                <span>{chatError}</span>
-              </div>
-            ) : requestItems.length === 0 ? (
-              <div className="admin-academics-po-item">
-                <span>No requests found.</span>
-              </div>
-            ) : (
-              requestItems.map((item, index) => (
-                <div key={`req-${item?.id || item?.request_id || index}`} className="admin-academics-po-item">
-                  <span>
-                    Live Chat (P - T) - {formatChatDateTime(
-                      item?.preferred_date || item?.date || item?.requested_date,
-                      item?.preferred_time || item?.time || item?.requested_time
-                    )} - {item?.party1_name || item?.teacher_name || "Staff"} to {item?.party2_student || item?.student_name || "Student"}, {item?.party2_class || item?.class_name || "-"}{item?.party2_section || item?.section || ""}
-                  </span>
-                </div>
-              ))
-            )}
-
-            <div className="admin-academics-side-subtitle">Scheduled</div>
-            {scheduledItems.length === 0 ? (
-              <div className="admin-academics-po-item">
-                <span>No scheduled chats found.</span>
-              </div>
-            ) : (
-              scheduledItems.map((item, index) => (
-                <div key={`sch-${item?.id || item?.request_id || index}`} className="admin-academics-po-item">
-                  <span>
-                    Live Chat (T - P) - {formatChatDateTime(
-                      item?.approved_date || item?.date || item?.requested_date,
-                      item?.approved_time || item?.time || item?.requested_time
-                    )} - {item?.party1_name || item?.teacher_name || "Staff"} to {item?.party2_student || item?.student_name || "Student"}, {item?.party2_class || item?.class_name || "-"}{item?.party2_section || item?.section || ""}
-                  </span>
-                </div>
-              ))
-            )}
-          </>
-        ) : activeQuickPanel === "assistant" ? (
-          assistantPanelItems.map((item) => (
-            <div key={item.title} className="admin-academics-assistant-item">
-              <strong>{item.title}</strong>
-              <span>{item.desc}</span>
-            </div>
-          ))
-        ) : loadingPoItems ? (
-          <div className="admin-academics-po-item">
-            <span>Loading PO requests...</span>
-          </div>
-        ) : poItems.length === 0 ? (
-          <div className="admin-academics-po-item">
-            <span>No PO requests found.</span>
-          </div>
-        ) : (
-          poItems.map((item, index) => (
-            <div key={item.id || item.po_id || index} className="admin-academics-po-item">
-              <span>
-                {item.text ||
-                  `${item.id ? `PO${item.id} - ` : ""}${item.date || item.created_at || ""}, ${item.stockName || item.stock_name || "Stock"}${item.quantity ? ` ${item.quantity}` : ""}`}
-              </span>
-              <div className="admin-academics-po-actions">
-                <button
-                  type="button"
-                  onClick={() => handleProcessPO(item, "OK")}
-                  disabled={processingPoId === String(item.id || item.po_id || item.request_id)}
-                  title="Accept"
-                >
-                  ▷
-                </button>
-                <button
-                  type="button"
-                  onClick={() => handleProcessPO(item, "Rejected")}
-                  disabled={processingPoId === String(item.id || item.po_id || item.request_id)}
-                  title="Reject"
-                >
-                  ✕
-                </button>
               </div>
             </div>
-          ))
-        )}
-      </div>
-    </div>
-
-  </div>
-</div>
             <div className="admin-academics-bottom">
               <div className="admin-academics-tests accountant-card admin-academics-alerts">
                 <div className="admin-academics-test-item admin-academics-alert-item">
@@ -1850,7 +2413,10 @@ const AdiminAcademicsNew = () => {
                       className="btn-solid admin-academics-alert-action"
                       onClick={
                         !hasStudentAlertTime
-                          ? () => navigate("/TeacherAttendanceForms?view=student")
+                          ? () => {
+                            setAttendanceView("student");
+                            setShowTeacherAttendancePopup(true);
+                          }
                           : handleResetStudentAlertTime
                       }
                     >
@@ -1872,7 +2438,10 @@ const AdiminAcademicsNew = () => {
                       className="btn-solid admin-academics-alert-action"
                       onClick={
                         !hasTeacherAttendanceTimes
-                          ? () => navigate("/TeacherAttendanceForms?view=teacher")
+                          ? () => {
+                            setAttendanceView("teacher");
+                            setShowTeacherAttendancePopup(true);
+                          }
                           : handleResetTeacherAttendanceTime
                       }
                     >
@@ -1881,43 +2450,69 @@ const AdiminAcademicsNew = () => {
                   </div>
                 </div>
 
-                <div className="admin-academics-test-item admin-academics-alert-item">
-                  <strong>Attendance Radius</strong>
-                  <span>{attendanceRadiusSummary}</span>
-                  {attendanceRadiusAddedDate ? <span>{attendanceRadiusAddedDate}</span> : null}
-                  <div className="admin-academics-alert-action-wrap">
-                    <button
-                      type="button"
-                      className="btn-solid admin-academics-alert-action"
-                      onClick={() => navigate("/Radiusselecting")}
-                    >
-                      {hasAttendanceRadius ? "Update Radius" : "Set Radius"}
-                    </button>
-                  </div>
-                </div>
+        <div className="admin-academics-test-item admin-academics-alert-item">
+  <strong>Attendance Radius</strong>
+
+  <span>{attendanceRadius1} meters</span>
+
+  {attendanceRadiusAddedDate && (
+    <small className="attendance-radius-date">
+      Updated:{" "}
+      {new Date(attendanceRadiusAddedDate).toLocaleString("en-IN", {
+        day: "2-digit",
+        month: "short",
+        year: "numeric",
+        hour: "2-digit",
+        minute: "2-digit",
+        hour12: true,
+      })}
+    </small>
+  )}
+
+  <div className="admin-academics-alert-action-wrap">
+    <button
+      type="button"
+      className="btn-solid admin-academics-alert-action"
+      onClick={() => {
+        setShowRadiusPopup(true);
+        window.history.pushState({ popup: true }, "");
+      }}
+    >
+      {hasAttendanceRadius ? "Update Radius" : "Set Radius"}
+    </button>
+  </div>
+</div>
               </div>
 
               <div className="admin-academics-tests accountant-card">
                 <div className="admin-academics-test-item">
                   <strong>Extra Classes</strong>
-                  <span>9A - 5:00PM</span>
-                  <small>01/04/2026</small>
+                  <span>
+                    {latestExtraClass
+                      ? `${latestExtraClass.class_name || "-"} - ${formatStoredTime(latestExtraClass.start_time)}`
+                      : "No extra class requests"}
+                  </span>
+                  <small>{latestExtraClass ? formatDateLabel(latestExtraClass.request_date) : "--"}</small>
                 </div>
                 <div className="admin-academics-test-item">
                   <strong>Upcoming Test</strong>
-                  <span>SA-2</span>
-                  <small>14/04/2026</small>
+                  <span>{upcomingTestEvent?.eventName || "No upcoming test"}</span>
+                  <small>{upcomingTestEvent ? formatDateLabel(upcomingTestEvent.eventDate) : "--"}</small>
                 </div>
                 <div className="admin-academics-test-item emphasis">
                   <strong>Previous Test</strong>
-                  <span>FA-3, 100% Attk.</span>
-                  <small>13/03/2026</small>
+                  <span>
+                    {latestTest
+                      ? `${latestTest.test_type || "Test"}${latestTest.subject ? `, ${latestTest.subject}` : ""}`
+                      : "No test records"}
+                  </span>
+                  <small>{latestTest ? formatDateLabel(latestTest.createdAt) : "--"}</small>
                 </div>
               </div>
 
               <div className="admin-academics-footer-cards accountant-card">
-                {footerCards.map((item) => (
-                  <div key={item.title} className="admin-academics-footer-item">
+                {dynamicFooterCards.map((item) => (
+                  <div key={item.meta} className="admin-academics-footer-item">
                     <strong>{item.title}</strong>
                     <span>{item.subtitle}</span>
                     <small>{item.meta}</small>
@@ -1929,6 +2524,69 @@ const AdiminAcademicsNew = () => {
           </div>
         </div>
       </div>
+
+
+      {showRadiusPopup && (
+        <div
+          onClick={() => setShowRadiusPopup(false)}
+          style={{
+            position: "fixed",
+            inset: 0,
+            background: "rgba(0,0,0,0.6)",
+            zIndex: 999999,
+            display: "flex",
+            justifyContent: "center",
+          }}
+        >
+          <Toaster
+            position="top-center"
+            containerStyle={{
+              zIndex: 99999999999,
+            }}
+          />
+
+          <div
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              position: "relative",
+              width: "60%",
+              maxWidth: "700px",
+              // height: "20vh",
+              borderRadius: "12px",
+              overflow: "visible",
+              zIndex: 1000000,
+            }}
+          >
+            <Radiusselectingg />
+          </div>
+        </div>
+      )}
+      {showTeacherAttendancePopup && (
+        <div
+          className="globalpopup-overlay"
+          onClick={() => setShowTeacherAttendancePopup(false)}
+        >
+          <div
+            className="globalpopup-content"
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              width: "25%",
+              maxWidth: "1400px",
+              height: "60vh",
+              overflow: "auto",
+            }}
+          >
+            <button
+              className="globalpopup-close-btn"
+              onClick={() => setShowTeacherAttendancePopup(false)}
+            >
+              ×
+            </button>
+            <AttendanceForms view={attendanceView} />
+          </div>
+        </div>
+      )}
+
 
       {selectedStudent ? (
         <div className="admin-academics-modal-overlay" onClick={() => setSelectedStudent(null)}>
@@ -1993,11 +2651,34 @@ const AdiminAcademicsNew = () => {
                                 return (
                                   <tr key={`${item?.subject || "subject"}-${index}`}>
                                     <td>{item?.subject || item?.subject_name || item?.name || "-"}</td>
-                                    {popupTermRows.map((term) => (
-                                      <td key={`${item?.subject || index}-${term.key}`}>
-                                        {getPopupMarkForRow(item, term)}
-                                      </td>
-                                    ))}
+                                    {popupTermRows.map((term) => {
+                                      const score = getPopupMarkForRow(item, term);
+                                      const hasScore = score !== "-";
+
+                                      return (
+                                        <td key={term.key}>
+                                          <div style={{ fontWeight: 600 }}>
+
+                                            {hasScore ? `${score}` : 0}
+
+
+
+                                            {hasScore ? (<small
+                                              style={{
+                                                marginLeft: "3px",
+                                                marginTop: "3px",
+                                                color: "#0b7a28",
+                                                fontWeight: 700,
+                                                fontSize: "11px",
+                                              }}
+                                            >
+                                              {getPopupTestGrade(item, term)}
+
+                                            </small>) :" "}
+                                          </div>
+                                        </td>
+                                      );
+                                    })}
                                     <td>{total}</td>
                                     <td>{grade}</td>
                                   </tr>
@@ -2135,24 +2816,38 @@ const AdiminAcademicsNew = () => {
                   </tbody>
                 </table>
               ) : (
-                <table className="admin-academics-modal-table">
-                  <thead>
-                    <tr>
-                      <th>Category</th>
-                      <th>Description</th>
-                      <th>Grade</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {Object.entries(mockConduct).map(([key, value]) => (
-                      <tr key={key}>
-                        <td>{key}</td>
-                        <td>{value.description}</td>
-                        <td>{value.grade}</td>
+                // Behavior Tab
+
+                // Behavior Tab (Table Format)
+                <div className="admin-academics-table-wrap">
+                  <table className="admin-academics-modal-table">
+                    <thead>
+                      <tr>
+                        <th>S.No</th>
+                        <th>Date</th>
+                        <th>Report</th>
+                        <th>Comment</th>
                       </tr>
-                    ))}
-                  </tbody>
-                </table>
+                    </thead>
+                    <tbody>
+                      {studentPopupBehavior.length === 0 ? (
+                        <tr>
+                          <td colSpan="4">No behavior reports found.</td>
+                        </tr>
+                      ) : (
+                        studentPopupBehavior.map((report, index) => (
+                          <tr key={index}>
+                            <td>{index + 1}</td>
+                            <td>{new Date(report.created_at).toLocaleDateString("en-IN")}</td>
+                            <td>{report.report || "N/A"}</td>
+                            <td>{report.comment || "N/A"}</td>
+                          </tr>
+                        ))
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+
               )}
             </div>
           </div>
@@ -2272,6 +2967,18 @@ const AdiminAcademicsNew = () => {
           </div>
         </div>
       ) : null}
+            {
+        isHelpOpen && (
+          <>
+          <HelpCenter
+          userRole={userRole}
+          openHelpSection={openHelpSection}
+              setOpenHelpSection={setOpenHelpSection}
+          setIsHelpOpen={setIsHelpOpen}
+          />
+          </>
+        )
+      }
 
       <div className="accountant-footer-brand">
         <span>Powered By:</span>
@@ -2304,6 +3011,7 @@ const AdiminAcademicsNew = () => {
         .admin-academics-tests,
         .admin-academics-footer-cards,
         .admin-academics-metric {
+    
           border-radius: 1.55rem;
           box-shadow: 0 10px 28px rgba(15, 23, 42, 0.12);
           background: #fff;
@@ -2477,7 +3185,7 @@ const AdiminAcademicsNew = () => {
 
         .admin-academics-students-grid {
           display: grid;
-          grid-template-columns: repeat(6, minmax(0, 1fr));
+          grid-template-columns: repeat(5, minmax(0, 1fr));
           gap: 1rem 0.7rem;
           flex: 1;
           min-height: 0;
@@ -2549,7 +3257,7 @@ const AdiminAcademicsNew = () => {
         }
 
         .admin-academics-student-name {
-          font-size: 0.58rem;
+          font-size: 0.67rem;
           font-weight: 700;
           color: #444;
           line-height: 1.15;
@@ -2557,7 +3265,7 @@ const AdiminAcademicsNew = () => {
 
         .admin-academics-student-meta,
         .admin-academics-student-score {
-          font-size: 0.5rem;
+          font-size: 0.6em;
           color: #7a7a7a;
           line-height: 1.15;
         }
@@ -3191,7 +3899,7 @@ const AdiminAcademicsNew = () => {
           .admin-academics-top,
           .admin-academics-main,
           .admin-academics-bottom {
-            grid-template-columns: 1fr;
+            // grid-template-columns: 1fr;
           }
 
           .admin-academics-mini-cards,
@@ -3218,7 +3926,7 @@ const AdiminAcademicsNew = () => {
           .admin-academics-performance,
           .admin-academics-right-column,
           .admin-academics-storepo {
-            height: auto;
+            // height: auto;
             min-height: auto;
             max-height: none;
           }
@@ -3230,21 +3938,87 @@ const AdiminAcademicsNew = () => {
           }
         }
 
-        @media (min-width: 900px) and (max-width: 1200px) {
-          .admin-academics-page .admin-academics-content {
-            min-width: 0 !important;
-            min-height: 0 !important;
-            height: 100% !important;
-            max-height: 100% !important;
-            overflow-y: auto !important;
-            overflow-x: hidden !important;
-            overscroll-behavior: contain !important;
-            padding-right: 0.6rem !important;
-            padding-bottom: 0.5rem !important;
-          }
-        }
+    
+          @media (min-width:1024px) and (max-width: 1200px) {
+
+  .admin-academics-page {
+    height: 120vh !important;
+    overflow: hidden !important;
+  }
+
+  .admin-academics-page .accountant-dashboard-shell,
+  .admin-academics-page .dashboard-shell {
+    height: 100vh !important;
+    overflow: hidden !important;
+  }
+
+  .admin-academics-page .accountant-main-area,
+  .admin-academics-page .dashboard-main {
+    height: calc(100vh - 20px) !important;
+    overflow: hidden !important;
+  }
+
+  .admin-academics-page .admin-academics-content {
+    width: 1050px !important;
+    // height: 660px !important;
+
+    max-width: 100% !important;
+    max-height: 100% !important;
+
+    overflow-y: auto !important;
+    overflow-x: hidden !important;
+
+    padding-right: 10px !important;
+    padding-bottom: 10px !important;
+
+    scrollbar-width: thin;
+  }
+.admin-academics-performance {
+    height: 500px !important;
+    min-height: 360px !important;
+    max-height: 360px !important;
+
+    display: flex !important;
+    flex-direction: column !important;
+
+    overflow: scroll !important;
+}
+    .admin-academics-storepo{
+     height: 500px !important;
+    min-height: 360px !important;
+    max-height: 360px !important;
+
+    display: flex !important;
+    flex-direction: column !important;
+
+    overflow: scroll !important;
+    }
+  .admin-academics-top,
+  .admin-academics-main,
+  .admin-academics-bottom {
+    width: 100% !important;
+  }
+
+  .admin-academics-main {
+    display: grid !important;
+    grid-template-columns: 2fr 1fr !important;
+    gap: 1rem !important;
+  }
+
+  .admin-academics-students-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr)) !important;
+  }
+
+  .admin-academics-po-list,
+  .admin-academics-students-grid {
+    max-height: none !important;
+    overflow: visible !important;
+  }
+}
       `}</style>
     </div>
+
+
   );
 };
 

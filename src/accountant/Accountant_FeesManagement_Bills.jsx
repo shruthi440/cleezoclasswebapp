@@ -23,6 +23,7 @@ const GenerateBills = () => {
   });
   const location = useLocation();
   const [paymentHistory, setPaymentHistory] = useState(null);
+  const[isPreviewPopupOpen,setIsPreviewPopupOpen] = useState(false)
   const [paidAmount, setPaidAmount] = useState(0);
   const [finalAmount, setFinalAmount] = useState(0);
   const [remainingAmount, setRemainingAmount] = useState(0);
@@ -2089,14 +2090,22 @@ className='btn-solid1'   >               Set Receipt Number
                   <select
                     value={selectedClass}
                     onChange={(e) => {
-                      const value = e.target.value;
-                      const classValue = ["Nursery", "LKG", "UKG"].includes(value) ? value : `class${value}`;
-                      setIsReceiptLookup(false);
-                      setSelectedClass(value);
-                      setSelectedSection("");
-                      setSelectedStudentId(null);
-                      fetchStudents(classValue, selectedSection);
-                    }}
+  const value = e.target.value;
+
+  setIsPreviewPopupOpen(false);
+
+  const classValue =
+    ["Nursery", "LKG", "UKG"].includes(value)
+      ? value
+      : `class${value}`;
+
+  setIsReceiptLookup(false);
+  setSelectedClass(value);
+  setSelectedSection("");
+  setSelectedStudentId(null);
+
+  fetchStudents(classValue, selectedSection);
+}}
                     style={{ width: '100%', padding: '0.5rem', borderRadius: '0.375rem', border: '1px solid #d1d5db', fontSize: '0.875rem' }}
                     disabled={dropdownLoading || isEditing}
                   >
@@ -2115,10 +2124,13 @@ className='btn-solid1'   >               Set Receipt Number
                   </label>
                   <select
                     value={selectedSection}
-                    onChange={(e) => {
-                      setIsReceiptLookup(false);
-                      setSelectedSection(e.target.value);
-                    }}
+                  onChange={(e) => {
+  setIsPreviewPopupOpen(false);
+
+  setIsReceiptLookup(false);
+  setSelectedSection(e.target.value);
+  setSelectedStudentId(null);
+}}
                     style={{ width: '100%', padding: '0.5rem', borderRadius: '0.375rem', border: '1px solid #d1d5db', fontSize: '0.875rem' }}
                     disabled={!selectedClass || dropdownLoading || isEditing}
                   >
@@ -2147,10 +2159,16 @@ className='btn-solid1'   >               Set Receipt Number
                   </label>
                   <select
                     value={selectedStudentId || ''}
-                    onChange={(e) => {
-                      setIsReceiptLookup(false);
-                      setSelectedStudentId(parseInt(e.target.value));
-                    }}
+                 onChange={(e) => {
+  const studentId = parseInt(e.target.value);
+
+  setIsReceiptLookup(false);
+  setSelectedStudentId(studentId);
+
+  if (studentId) {
+    setIsPreviewPopupOpen(true);
+  }
+}}
                     style={{ width: '100%', padding: '0.5rem', borderRadius: '0.375rem', border: '1px solid #d1d5db', fontSize: '0.875rem' }}
                     disabled={!selectedClass || !selectedSection || dropdownLoading || isEditing}
                   >
@@ -2285,8 +2303,37 @@ className='btn-solid1'   >               Set Receipt Number
           </div>
         )}
 
-        {initialReceiptSet && (
-          <div style={{ backgroundColor: 'white', borderRadius: '0.5rem', boxShadow: '0 4px 6px rgba(0, 0, 0, 0.1)', padding: '1.5rem' }}>
+         
+       
+
+        <PopupModal isOpen={   selectedClass &&
+    selectedSection &&
+    selectedStudentId &&
+    initialReceiptSet &&
+    isPreviewPopupOpen
+  }
+onClose={() => setIsPreviewPopupOpen(false)}
+    
+   >
+          <div style={{ textAlign: 'center', padding: '1rem' }}>
+            <svg
+              xmlns="http://www.w3.org/2000/svg"
+              width="48"
+              height="48"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="green"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              style={{ margin: '0 auto 1rem' }}
+            >
+              <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path>
+              <polyline points="22 4 12 14.01 9 11.01"></polyline>
+            </svg>
+            <h2 style={{ fontSize: '1.5rem', fontWeight: '600', marginBottom: '0.5rem' }}>Success!</h2>
+            <p style={{ color: '#374151' }}>{successMessage}</p>
+             <div style={{ backgroundColor: 'white', borderRadius: '0.5rem', boxShadow: '0 4px 6px rgba(0, 0, 0, 0.1)', padding: '1.5rem' }}>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '1.5rem' }}>
               <h2 style={{ fontSize: '1.25rem', fontWeight: '600', color: '#111827' }}>Preview</h2>
               {studentData?.name && (
@@ -2599,26 +2646,6 @@ className='btn-solid1'   >               Set Receipt Number
               </div>
             )}
           </div>
-        )}
-        <PopupModal isOpen={showSuccessModal} onClose={() => setShowSuccessModal(false)}>
-          <div style={{ textAlign: 'center', padding: '1rem' }}>
-            <svg
-              xmlns="http://www.w3.org/2000/svg"
-              width="48"
-              height="48"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="green"
-              strokeWidth="2"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              style={{ margin: '0 auto 1rem' }}
-            >
-              <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path>
-              <polyline points="22 4 12 14.01 9 11.01"></polyline>
-            </svg>
-            <h2 style={{ fontSize: '1.5rem', fontWeight: '600', marginBottom: '0.5rem' }}>Success!</h2>
-            <p style={{ color: '#374151' }}>{successMessage}</p>
           </div>
         </PopupModal>
       </div>

@@ -23,7 +23,56 @@ export const getScaleClass = (mode) => {
   }
 };
 
+
+const normalizeReceiptPaidFees = (fees = [], paidAmount = 0) => {
+  const targetTotal = Number(paidAmount) || 0;
+  let runningTotal = 0;
+
+  return (Array.isArray(fees) ? fees : []).reduce((rows, fee) => {
+    const amount = Number(fee?.paidThisTransaction) || 0;
+    if (amount <= 0) return rows;
+
+    if (targetTotal > 0) {
+      const remaining = targetTotal - runningTotal;
+      if (remaining <= 0) return rows;
+
+      const amountForReceipt = Math.min(amount, remaining);
+      rows.push({
+        ...fee,
+        paidThisTransaction: amountForReceipt,
+      });
+      runningTotal += amountForReceipt;
+      return rows;
+    }
+
+    const duplicateKey = [
+      String(fee?.key || fee?.label || "").trim().toLowerCase(),
+      String(fee?.installmentId || "").trim().toLowerCase(),
+      amount,
+    ].join("|");
+
+    if (!rows.some((row) => row.__receiptKey === duplicateKey)) {
+      rows.push({
+        ...fee,
+        paidThisTransaction: amount,
+        __receiptKey: duplicateKey,
+      });
+    }
+    return rows;
+  }, []);
+};
+
+
 const PaidAmountdemo = ({ popupData, transactionId }) => {
+  const paidFees = normalizeReceiptPaidFees(popupData?.paidFees, popupData?.paidAmount);
+const dynamicFeeTypes = popupData?.dynamicFeeTypes || [];
+const dynamicFeeRows = popupData?.dynamicFeeRows || [];
+  console.log(dynamicFeeRows,"=======================================")
+console.log(
+  "POPUP RECEIVED",
+  JSON.stringify(popupData, null, 2)
+);
+console.log("paidFees", paidFees);
 const [studentData, setStudentData] = useState(null);
   const [previewMode, setPreviewMode] = useState(1);
   const [printMode, setPrintMode] = useState(1);
@@ -97,6 +146,12 @@ const [studentData, setStudentData] = useState(null);
   });
   const [editedTotalDue, setEditedTotalDue] = useState(null);
   const currentReceiptNumberRef = useRef(paymentReceiptNumber || '001');
+  const receiptTransactionId =
+    transactionId ||
+    state?.transactionId ||
+    state?.transactionID ||
+    state?.transaction_id ||
+    "";
   const normalizeClassLabel = (value) =>
     String(value || "").replace(/^Class\s+/i, "").trim();
   const normalizeText = (value) => String(value || "").trim().toLowerCase();
@@ -192,6 +247,20 @@ const [studentData, setStudentData] = useState(null);
 
     return !reservedKeys.has(key) && !key.endsWith("_paid") && !key.endsWith("_due");
   };
+  const receiptFeeTable = dynamicFeeTypes.map((type) => {
+  const row = dynamicFeeRows.find(
+    (r) =>
+      String(r.key || "").toLowerCase() ===
+      String(type.columnBase || "").toLowerCase()
+  );
+
+  return {
+    label: type.feeName,
+    total: row?.total || 0,
+    paid: row?.paid || 0,
+    due: row?.due || Math.max((row?.total || 0) - (row?.paid || 0), 0),
+  };
+});
   const getDynamicFeeKeysFromSource = (source = {}) =>
     Object.keys(source || {}).filter(isDynamicFeeKey);
 
@@ -246,6 +315,7 @@ const [studentData, setStudentData] = useState(null);
     currentReceiptNumberRef.current = newNumber;
     await saveReceiptNumberToDB(newNumber);
   };
+  
 
   // Fetch School Logo
   useEffect(() => {
@@ -335,28 +405,41 @@ const [studentData, setStudentData] = useState(null);
     return Object.keys(source).filter(isDynamicFeeKey);
   }, [feeStructure, payments]);
 
-  const dynamicFeeRows = useMemo(() => {
-    const columns = dynamicFeeKeys;
-    return columns
-      .map((column) => {
-        const total = getFirstPositiveNumber(payments?.[column], feeStructure?.[column], 0);
-        const paid = parseFloat(payments?.[`${column}_paid`] ?? 0) || 0;
-        const storedDue = parseFloat(payments?.[`${column}_due`]);
-        const due =
-          Number.isFinite(storedDue) && storedDue > 0
-            ? storedDue
-            : Math.max(total - paid, 0);
-        return {
-          key: column,
-          label: column.replace(/_/g, ' ').replace(/\b\w/g, (ch) => ch.toUpperCase()),
-          total,
-          paid,
-          due,
-        };
-      })
-      .filter((row) => row.total > 0 || row.paid > 0 || row.due > 0);
-  }, [dynamicFeeKeys, feeStructure, payments]);
-
+  // const dynamicFeeRows = useMemo(() => {
+  //   const columns = dynamicFeeKeys;
+  //   return columns
+  //     .map((column) => {
+  //       const total = getFirstPositiveNumber(payments?.[column], feeStructure?.[column], 0);
+  //       const paid = parseFloat(payments?.[`${column}_paid`] ?? 0) || 0;
+  //       const storedDue = parseFloat(payments?.[`${column}_due`]);
+  //       const due =
+  //         Number.isFinite(storedDue) && storedDue > 0
+  //           ? storedDue
+  //           : Math.max(total - paid, 0);
+  //       return {
+  //         key: column,
+  //         label: column.replace(/_/g, ' ').replace(/\b\w/g, (ch) => ch.toUpperCase()),
+  //         total,
+  //         paid,
+  //         due,
+  //       };
+  //     })
+  //     .filter((row) => row.total > 0 || row.paid > 0 || row.due > 0);
+  // }, [dynamicFeeKeys, feeStructure, payments]);
+useEffect(() => {
+  console.log(
+    "POPUP DATA RECEIVED:==============================================",
+    JSON.stringify(popupData, null, 2)
+  );
+}, [popupData]);
+const totalPaidNow = paidFees.reduce(
+  (sum, fee) => sum + Number(fee.paidThisTransaction || 0),
+  0
+);
+const receiptCashAmount = Number(popupData?.cashAmount || popupData?.paymentSplit?.cash || 0);
+const receiptOnlineAmount = Number(popupData?.onlineAmount || popupData?.paymentSplit?.online || 0);
+const hasCashOnlineBreakdown =
+  paymentMode === "Cash+Online" && (receiptCashAmount > 0 || receiptOnlineAmount > 0);
   // Fetch Fee Structure and Payment History
 useEffect(() => {
   console.log("useEffect triggered for selectedStudentId:", selectedStudentId);
@@ -605,6 +688,24 @@ useEffect(() => {
       (popupData?.fees?.uniform?.paidThisTransaction || 0) +
       (popupData?.fees?.others?.paidThisTransaction || 0) +
       (popupData?.fees?.residential?.paidThisTransaction || 0) +
+      console.log("=== CURRENT PAID AMOUNT DEBUG ===");
+console.log("popupData?.paidAmount:", popupData?.paidAmount);
+
+console.log("tuition paidThisTransaction:", popupData?.fees?.tuition?.paidThisTransaction || 0);
+console.log("admission paidThisTransaction:", popupData?.fees?.admission?.paidThisTransaction || 0);
+console.log("exam paidThisTransaction:", popupData?.fees?.exam?.paidThisTransaction || 0);
+console.log("bus paidThisTransaction:", popupData?.fees?.bus?.paidThisTransaction || 0);
+console.log("book paidThisTransaction:", popupData?.fees?.book?.paidThisTransaction || 0);
+console.log("uniform paidThisTransaction:", popupData?.fees?.uniform?.paidThisTransaction || 0);
+console.log("others paidThisTransaction:", popupData?.fees?.others?.paidThisTransaction || 0);
+console.log("residential paidThisTransaction:", popupData?.fees?.residential?.paidThisTransaction || 0);
+
+console.log("popupCustomFeePaidTotal:", popupCustomFeePaidTotal);
+
+console.log("currentPaidAmount:", currentPaidAmount);
+
+console.log("Full popupData:", popupData);
+console.log("================================");
       popupCustomFeePaidTotal;
 
   // Toggle Edit Mode
@@ -738,7 +839,11 @@ const generatePDF = async (currentReceiptNumber) => {
   const tuitionFeeDue = Math.max(0, tuitionFee);
   const busFeeDue = Math.max(0, busFee - busDiscount);
   const bookFeeDue = Math.max(0, bookFee - bookDiscount);
-  const dynamicFeeDueTotal = dynamicFeeRows.reduce((sum, row) => sum + row.due, 0);
+const dynamicFeeDueTotal =
+  dynamicFeeRows.reduce(
+    (sum, row) => sum + Math.max((row.total || 0) - (row.paid || 0), 0),
+    0
+  );
   const dynamicFeePaidTotal = dynamicFeeRows.reduce((sum, row) => sum + row.paid, 0);
 
   const overallTotalDue = editedTotalDue ?? (
@@ -753,42 +858,38 @@ const generatePDF = async (currentReceiptNumber) => {
     dynamicFeeDueTotal
   );
 
-  console.log("[GenerateBill][due-breakdown]", {
-    studentName: studentData?.name || "",
-    completeFee,
-    staticDueBreakdown: {
-      tuitionFeeDue,
-      admissionFee,
-      examFee,
-      busFeeDue,
-      bookFeeDue,
-      uniformFee,
-      othersFee,
-      residentialFee,
-    },
-    dynamicRows: dynamicFeeRows.map((row) => ({
-      label: row.label,
-      total: row.total,
-      paid: row.paid,
-      due: row.due,
-    })),
-    dynamicFeeDueTotal,
-    dynamicFeePaidTotal,
-    overallTotalDue,
-    note: "If completeFee already includes dynamic fees, adding dynamicFeeDueTotal here will double count.",
-  });
+console.log("[GenerateBill][due-breakdown]", {
+  studentName: studentData?.name || "",
+  staticDueBreakdown: {
+    tuitionFeeDue,
+    admissionFee,
+    examFee,
+    busFeeDue,
+    bookFeeDue,
+    uniformFee,
+    othersFee,
+    residentialFee,
+  },
+  dynamicRows: dynamicFeeRows,
+  dynamicFeeDueTotal,
+  dynamicFeePaidTotal,
+  overallTotalDue,
+});
 
   let overallTotalPaid =
-    Number(popupData?.paidAmount) ||
-    (popupData?.fees?.tuition?.paidThisTransaction > 0 ? tuitionPaid : 0) +
-      (popupData?.fees?.admission?.paidThisTransaction > 0 ? admissionPaid : 0) +
-      (popupData?.fees?.exam?.paidThisTransaction > 0 ? examPaid : 0) +
-      (popupData?.fees?.bus?.paidThisTransaction > 0 ? busPaid : 0) +
-      (popupData?.fees?.book?.paidThisTransaction > 0 ? bookPaid : 0) +
-      (popupData?.fees?.uniform?.paidThisTransaction > 0 ? uniformPaid : 0) +
-      (popupData?.fees?.others?.paidThisTransaction > 0 ? othersPaid : 0) +
-      (popupData?.fees?.residential?.paidThisTransaction > 0 ? residentialPaid : 0) +
-      dynamicFeePaidTotal;
+  Number(popupData?.paidAmount) ||
+  (popupData?.fees?.tuition?.paidThisTransaction > 0 ? tuitionPaid : 0) +
+  (popupData?.fees?.admission?.paidThisTransaction > 0 ? admissionPaid : 0) +
+  (popupData?.fees?.exam?.paidThisTransaction > 0 ? examPaid : 0) +
+  (popupData?.fees?.bus?.paidThisTransaction > 0 ? busPaid : 0) +
+  (popupData?.fees?.book?.paidThisTransaction > 0 ? bookPaid : 0) +
+  (popupData?.fees?.uniform?.paidThisTransaction > 0 ? uniformPaid : 0) +
+  (popupData?.fees?.others?.paidThisTransaction > 0 ? othersPaid : 0) +
+  (popupData?.fees?.residential?.paidThisTransaction > 0 ? residentialPaid : 0) +
+  dynamicFeePaidTotal;
+
+console.log("overallTotalPaid =", overallTotalPaid);
+console.log("================================");
 
   console.log("[GenerateBill][paid-breakdown]", {
     popupPaidAmount: Number(popupData?.paidAmount) || 0,
@@ -819,146 +920,17 @@ const generatePDF = async (currentReceiptNumber) => {
     .join('');
 
   try {
-    receiptDiv.innerHTML = `
-      <div style="text-align: center; margin-bottom: 0.25rem;">
-        <h1 style="font-size: 12px; font-weight: 700; color: #1e40af; margin-bottom: 0.1rem;">${schoolName || 'School Name'}</h1>
-        <div style="border: 1px solid black; margin: 3px 0; padding: 2px 0; font-weight: bold; font-size: 10px;">FEES RECEIPT</div>
-      </div>
-      <table style="width: 100%; border-collapse: collapse; margin-bottom: 0.25rem;">
-        <tbody>
-          <tr>
-            <td style="text-align: left; width: 50%; font-size: 8px;"><strong>Receipt No.</strong> ${currentReceiptNumber}</td>
-            <td style="text-align: right; width: 50%; font-size: 8px;"><strong>Paid Date:</strong> ${paymentDate ? formatDate1(paymentDate) : formatDate1(new Date())}</td>
-          </tr>
-          <tr>
-            <td style="text-align: left; font-size: 8px;"><strong>Regn. No.</strong> ${studentData?.rollNumber || 'N/A'}</td>
-            <td style="text-align: right; font-size: 8px;"><strong>Academic Year:</strong> ${getAcademicYear()}</td>
-          </tr>
-          <tr>
-            <td style="text-align: left; font-size: 8px;"><strong>Student Name:</strong> ${studentData?.name || 'N/A'}</td>
-            <td style="text-align: right; font-size: 8px;"><strong>Father's Name:</strong> ${studentData?.fatherName || 'N/A'}</td>
-          </tr>
-          <tr>
-            <td style="text-align: left; font-size: 8px;"><strong>Class:</strong> ${studentData?.class?.toUpperCase() || 'N/A'}</td>
-            <td style="text-align: right; font-size: 8px;"><strong>Section:</strong> ${studentData?.section || 'A'}</td>
-          </tr>
-        </tbody>
-      </table>
-      <table style="width: 100%; border: 1px solid black; border-collapse: collapse; margin-bottom: 0.25rem;">
-        <thead>
-          <tr style="background-color: #f0f0f0; font-size: 8px;">
-            <th style="border: 1px solid black; padding: 2px;">Fee Details</th>
-            <th style="border: 1px solid black; padding: 2px; text-align: right;">Amount (₹)</th>
-            <th style="border: 1px solid black; padding: 2px; text-align: right;">Paid Now (₹)</th>
-            <th style="border: 1px solid black; padding: 2px; text-align: right;">Total Paid (₹)</th>
-            <th style="border: 1px solid black; padding: 2px; text-align: right;">Balance (₹)</th>
-          </tr>
-        </thead>
-        <tbody>
-          ${popupData?.fees?.tuition?.paidThisTransaction > 0 ? `
-            <tr style="background-color: ${popupData?.fees?.tuition?.highlight ? 'transparent' : 'transparent'};">
-              <td style="border: 1px solid black; padding: 2px; font-size: 8px;">Tuition Fee ${tuitionDiscount > 0 ? `<span style="color: green; font-size: 7px;">(Discount: ₹${tuitionDiscount.toLocaleString('en-IN')})</span>` : ''}</td>
-              <td style="border: 1px solid black; padding: 2px; text-align: right; font-size: 8px;">₹${tuitionFeeDue.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td>
-              <td style="border: 1px solid black; padding: 2px; text-align: right; font-size: 8px; color: green;">₹${popupData?.fees?.tuition?.paidThisTransaction?.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td>
-              <td style="border: 1px solid black; padding: 2px; text-align: right; font-size: 8px;">₹${tuitionPaid.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td>
-              <td style="border: 1px solid black; padding: 2px; text-align: right; font-size: 8px;">₹${Math.max(tuitionFeeDue - tuitionPaid, 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td>
-            </tr>
-          ` : ''}
-          ${popupData?.fees?.admission?.paidThisTransaction > 0 ? `
-            <tr style="background-color: ${popupData?.fees?.admission?.highlight ? 'transparent' : 'transparent'};">
-              <td style="border: 1px solid black; padding: 2px; font-size: 8px;">Admission Fee</td>
-              <td style="border: 1px solid black; padding: 2px; text-align: right; font-size: 8px;">₹${admissionFee.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td>
-              <td style="border: 1px solid black; padding: 2px; text-align: right; font-size: 8px; color: green;">₹${popupData?.fees?.admission?.paidThisTransaction?.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td>
-              <td style="border: 1px solid black; padding: 2px; text-align: right; font-size: 8px;">₹${admissionPaid.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td>
-              <td style="border: 1px solid black; padding: 2px; text-align: right; font-size: 8px;">₹${Math.max(admissionFee - admissionPaid, 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td>
-            </tr>
-          ` : ''}
-          ${popupData?.fees?.exam?.paidThisTransaction > 0 ? `
-            <tr style="background-color: ${popupData?.fees?.exam?.highlight ? 'transparent' : 'transparent'};">
-              <td style="border: 1px solid black; padding: 2px; font-size: 8px;">Exam Fee</td>
-              <td style="border: 1px solid black; padding: 2px; text-align: right; font-size: 8px;">₹${examFee.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td>
-              <td style="border: 1px solid black; padding: 2px; text-align: right; font-size: 8px; color: green;">₹${popupData?.fees?.exam?.paidThisTransaction?.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td>
-              <td style="border: 1px solid black; padding: 2px; text-align: right; font-size: 8px;">₹${examPaid.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td>
-              <td style="border: 1px solid black; padding: 2px; text-align: right; font-size: 8px;">₹${Math.max(examFee - examPaid, 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td>
-            </tr>
-          ` : ''}
-          ${popupData?.fees?.bus?.paidThisTransaction > 0 ? `
-            <tr style="background-color: ${popupData?.fees?.bus?.highlight ? 'transparent' : 'transparent'};">
-              <td style="border: 1px solid black; padding: 2px; font-size: 8px;">Bus Fee ${busDiscount > 0 ? `<span style="color: green; font-size: 7px;">(Discount: ₹${busDiscount.toLocaleString('en-IN')})</span>` : ''}</td>
-              <td style="border: 1px solid black; padding: 2px; text-align: right; font-size: 8px;">₹${busFeeDue.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td>
-              <td style="border: 1px solid black; padding: 2px; text-align: right; font-size: 8px; color: green;">₹${popupData?.fees?.bus?.paidThisTransaction?.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td>
-              <td style="border: 1px solid black; padding: 2px; text-align: right; font-size: 8px;">₹${busPaid.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td>
-              <td style="border: 1px solid black; padding: 2px; text-align: right; font-size: 8px;">₹${Math.max(busFeeDue - busPaid, 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td>
-            </tr>
-          ` : ''}
-          ${popupData?.fees?.book?.paidThisTransaction > 0 ? `
-            <tr style="background-color: ${popupData?.fees?.book?.highlight ? 'transparent' : 'transparent'};">
-              <td style="border: 1px solid black; padding: 2px; font-size: 8px;">Book Fee ${bookDiscount > 0 ? `<span style="color: green; font-size: 7px;">(Discount: ₹${bookDiscount.toLocaleString('en-IN')})</span>` : ''}</td>
-              <td style="border: 1px solid black; padding: 2px; text-align: right; font-size: 8px;">₹${bookFeeDue.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td>
-              <td style="border: 1px solid black; padding: 2px; text-align: right; font-size: 8px; color: green;">₹${popupData?.fees?.book?.paidThisTransaction?.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td>
-              <td style="border: 1px solid black; padding: 2px; text-align: right; font-size: 8px;">₹${bookPaid.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td>
-              <td style="border: 1px solid black; padding: 2px; text-align: right; font-size: 8px;">₹${Math.max(bookFeeDue - bookPaid, 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td>
-            </tr>
-          ` : ''}
-          ${popupData?.fees?.uniform?.paidThisTransaction > 0 ? `
-            <tr style="background-color: ${popupData?.fees?.uniform?.highlight ? 'transparent' : 'transparent'};">
-              <td style="border: 1px solid black; padding: 2px; font-size: 8px;">Uniform Fee</td>
-              <td style="border: 1px solid black; padding: 2px; text-align: right; font-size: 8px;">₹${uniformFee.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td>
-              <td style="border: 1px solid black; padding: 2px; text-align: right; font-size: 8px; color: green;">₹${popupData?.fees?.uniform?.paidThisTransaction?.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td>
-              <td style="border: 1px solid black; padding: 2px; text-align: right; font-size: 8px;">₹${uniformPaid.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td>
-              <td style="border: 1px solid black; padding: 2px; text-align: right; font-size: 8px;">₹${Math.max(uniformFee - uniformPaid, 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td>
-            </tr>
-          ` : ''}
-          ${popupData?.fees?.others?.paidThisTransaction > 0 ? `
-            <tr style="background-color: ${popupData?.fees?.others?.highlight ? 'transparent' : 'transparent'};">
-              <td style="border: 1px solid black; padding: 2px; font-size: 8px;">
-                Other Fees${popupData?.fees?.others?.description ? `<br/><span style="font-size: 7px;">${popupData.fees.others.description}</span>` : ""}
-              </td>
-              <td style="border: 1px solid black; padding: 2px; text-align: right; font-size: 8px;">₹${othersFee.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td>
-              <td style="border: 1px solid black; padding: 2px; text-align: right; font-size: 8px; color: green;">₹${popupData?.fees?.others?.paidThisTransaction?.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td>
-              <td style="border: 1px solid black; padding: 2px; text-align: right; font-size: 8px;">₹${othersPaid.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td>
-              <td style="border: 1px solid black; padding: 2px; text-align: right; font-size: 8px;">₹${Math.max(othersFee - othersPaid, 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td>
-            </tr>
-          ` : ''}
-          ${popupData?.fees?.residential?.paidThisTransaction > 0 ? `
-            <tr style="background-color: ${popupData?.fees?.residential?.highlight ? 'transparent' : 'transparent'};">
-              <td style="border: 1px solid black; padding: 2px; font-size: 8px;">Residential Fee</td>
-              <td style="border: 1px solid black; padding: 2px; text-align: right; font-size: 8px;">₹${residentialFee.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td>
-              <td style="border: 1px solid black; padding: 2px; text-align: right; font-size: 8px; color: green;">₹${popupData?.fees?.residential?.paidThisTransaction?.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td>
-              <td style="border: 1px solid black; padding: 2px; text-align: right; font-size: 8px;">₹${residentialPaid.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td>
-              <td style="border: 1px solid black; padding: 2px; text-align: right; font-size: 8px;">₹${Math.max(residentialFee - residentialPaid, 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td>
-            </tr>
-          ` : ''}
-          ${dynamicFeeReceiptHtml}
-          <tr style="font-weight: bold; background-color: #f0f0f0;">
-            <td style="border: 1px solid black; padding: 2px; text-align: left; font-size: 8px;">GRAND TOTAL</td>
-            <td style="border: 1px solid black; padding: 2px; text-align: right; font-size: 8px;">₹${overallTotalDue.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td>
-            <td style="border: 1px solid black; padding: 2px; text-align: right; font-size: 8px; color: green;">₹${popupData?.paidAmount?.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td>
-            <td style="border: 1px solid black; padding: 2px; text-align: right; font-size: 8px;">₹${overallTotalPaid.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td>
-            <td style="border: 1px solid black; padding: 2px; text-align: right; font-size: 8px;">₹${Math.max(overallTotalDue - overallTotalPaid, 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td>
-          </tr>
-        </tbody>
-      </table>
-      <p style="font-style: italic; margin-top: 3px; font-size: 7px;">Paid Amount (in words): ${convertAmountToWords(overallTotalPaid)}</p>
-      <div style="margin-top: 5px; font-size: 7px;">
-        <p><strong>Payment Mode:</strong> ${paymentMode || 'Cash/Cheque/Online'}</p>
-        ${paymentMode === 'Cheque' || paymentMode === 'Online' ? `
-          <p><strong>Cheque/Transaction No.:</strong> ${transactionId || 'N/A'}</p>
-          <p><strong>Bank Name:</strong> ${'-------' || 'N/A'}</p>
-        ` : ''}
-      </div>
-      <div style="display: flex; justify-content: space-between; margin-top: 10px;">
-        <div style="border-top: 1px dashed black; width: 80px; text-align: center; padding-top: 3px; font-size: 7px;">Parent's Signature</div>
-        <div style="text-align: center; width: 120px;">
-          <div style="font-size: 10px; margin-bottom: 2px;">${localStorage.getItem("name")}</div>
-          <div style="border-top: 1px dashed black; padding-top: 3px; font-size: 7px;">Authorised Signature</div>
-        </div>
-      </div>
-      <div style="border-top: 1px dashed black; width: 80px; text-align: center; padding-top: 3px; margin: 5px auto 0; font-size: 7px;">Principal</div>
-      <div style="margin-top: 5px; font-size: 7px; text-align: center;">
-        <p>This is a computer generated receipt. No signature required.</p>
-      </div>
-    `;
+const previewElement = document.getElementById("bill-preview-content");
+
+if (!previewElement) {
+  alert("Preview not found");
+  return;
+}
+
+const clone = previewElement.cloneNode(true);
+
+receiptDiv.innerHTML = "";
+receiptDiv.appendChild(clone);
     const watermark = document.createElement('img');
     watermark.src = dynamicLogoSrc || "/default-logo.png";
     watermark.style.position = 'absolute';
@@ -972,7 +944,7 @@ const generatePDF = async (currentReceiptNumber) => {
     watermark.style.pointerEvents = 'none';
     receiptDiv.appendChild(watermark);
     const pdf = new jsPDF({ unit: 'mm', format: [80, 200] });
-    const canvas = await html2canvas(receiptDiv, {
+const canvas = await html2canvas(clone, {
       scale: 3,
       useCORS: true,
       backgroundColor: '#ffffff',
@@ -1045,17 +1017,7 @@ const confirmPrint = async (copies) => {
     dynamicFeeRows.reduce((sum, row) => sum + row.due, 0)
   );
 
-  const overallTotalPaid =
-    Number(popupData?.paidAmount) ||
-    tuitionPaid +
-      admissionPaid +
-      residentialPaid +
-      examPaid +
-      busPaid +
-      bookPaid +
-      uniformPaid +
-      othersPaid +
-      dynamicFeeRows.reduce((sum, row) => sum + row.paid, 0);
+const overallTotalPaid = Number(popupData?.paidAmount || 0);
 
   const remainingAmount = Math.max(overallTotalDue - overallTotalPaid, 0);
 
@@ -1084,7 +1046,7 @@ const confirmPrint = async (copies) => {
     currentPaidInWords: convertAmountToWords(overallTotalPaid),
     remainingAmount,
     paymentMode,
-    transactionId,
+    transactionId: receiptTransactionId,
     currentDate: paymentDate || (payments?.created_at || new Date()),
     academicYear: getAcademicYear(),
       schoolName,
@@ -1117,253 +1079,52 @@ const printPendingBills = (billsToPrint) => {
     const printWindow = window.open('', '_blank');
     if (!printWindow) return;
 
-    printWindow.document.write(`
-      <!DOCTYPE html>
-      <html>
-        <head>
-          <title>Fee Receipts</title>
-          <style>
-            @page { size: A4 portrait; margin: 0; }
-            * { margin: 0; padding: 0; box-sizing: border-box; font-family: Arial, sans-serif; }
-            html, body { width: 210mm; height: 297mm; }
-            body {
-              -webkit-print-color-adjust: exact;
-              print-color-adjust: exact;
-              width: 210mm;
-              height: 297mm;
-              padding: 12mm;
-            }
-            .page-container {
-              width: 186mm;
-              height: 273mm;
-              display: flex;
-              flex-direction: column;
-              justify-content: space-between;
-              page-break-after: always;
-            }
-            .bill-copy {
-              width: 186mm;
-              height: 134mm;
-              border: 2px solid #000;
-              padding: 12px;
-              font-size: 11px;
-              position: relative;
-              overflow: hidden;
-            }
-            .page-container:last-child { page-break-after: auto; }
-            .header-logo { height: 140px; width: 140px; position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); opacity: 0.08; z-index: -1; }
-            .text-center { text-align: center; }
-            .text-right { text-align: right; }
-            .bold { font-weight: bold; }
-            table { width: 100%; border-collapse: collapse; margin: 6px 0; }
-            table, th, td { border: 1px solid #000; }
-            th, td { padding: 3px; font-size: 10px; }
-            .signature-line { margin-top: 18px; border-top: 1px dashed #000; width: 120px; text-align: center; padding-top: 4px; font-size: 9px; }
-            .copy-label { position: absolute; top: 8px; right: 8px; font-weight: bold; font-size: 11px; border: 1px solid #000; padding: 2px 6px; }
-          </style>
-        </head>
-        <body>
-          ${billsToPrint.map(printData => {
-            // Function to create one receipt
-            const createReceipt = (printData, copyType) => {
-              const otherDescription = (printData.popupData?.fees?.others?.description || "").trim();
-              const dynamicFeeRows = Array.isArray(printData.dynamicFeeRows) ? printData.dynamicFeeRows : [];
-              // All fees greater than 0
-              const allFees = [
-                { label: "Tuition Fee", amount: printData.tuitionFee, paid: printData.tuitionPaid, discount: printData.discounts.tuitionDiscount },
-                { label: "Admission Fee", amount: printData.admissionFee, paid: printData.admissionPaid },
-                { label: "Residential Fee", amount: printData.residentialFee, paid: printData.residentialPaid },
-                { label: "Exam Fee", amount: printData.examFee, paid: printData.examPaid },
-                { label: "Bus Fee", amount: printData.busFee, paid: printData.busPaid, discount: printData.discounts.busDiscount },
-                { label: "Book Fee", amount: printData.bookFee, paid: printData.bookPaid, discount: printData.discounts.bookDiscount },
-                { label: "Uniform Fee", amount: printData.uniformFee, paid: printData.uniformPaid },
-                { label: "Other Fees", amount: printData.othersFee, paid: printData.othersPaid, description: otherDescription },
-                ...dynamicFeeRows.map((row) => ({
-                  label: row.label,
-                  amount: Number(row.total) || 0,
-                  paid: Number(row.paid) || 0,
-                  due: Number(row.due) || 0,
-                })),
-              ].filter(fee => fee.amount > 0);
+  const previewElement =
+  document.getElementById("bill-preview-content");
 
-              // Fees paid in this transaction
-              const paidFees = [
-                { label: "Tuition Fee", paid: printData.popupData?.fees?.tuition?.paidThisTransaction || 0 },
-                { label: "Admission Fee", paid: printData.popupData?.fees?.admission?.paidThisTransaction || 0 },
-                { label: "Residential Fee", paid: printData.popupData?.fees?.residential?.paidThisTransaction || 0 },
-                { label: "Exam Fee", paid: printData.popupData?.fees?.exam?.paidThisTransaction || 0 },
-                { label: "Bus Fee", paid: printData.popupData?.fees?.bus?.paidThisTransaction || 0 },
-                { label: "Book Fee", paid: printData.popupData?.fees?.book?.paidThisTransaction || 0 },
-                { label: "Uniform Fee", paid: printData.popupData?.fees?.uniform?.paidThisTransaction || 0 },
-                { label: "Other Fees", paid: printData.popupData?.fees?.others?.paidThisTransaction || 0, description: otherDescription },
-                ...dynamicFeeRows.map((fee) => ({
-                  label: fee.label,
-                  paid: Number(fee.paid) || 0,
-                  description: "",
-                })),
-              ].filter(fee => fee.paid > 0);
+if (!previewElement) return;
 
-              // Generate rows for all fees
-              let allFeesRows = '';
-              let totalAmount = 0;
-              allFees.forEach((fee, index) => {
-                totalAmount += fee.amount;
-                allFeesRows += `
-                  <tr>
-                    <td style="text-align:center;">${index + 1}</td>
-                    <td>
-                      ${fee.label}${fee.description ? `<div style="font-size: 8px;">${fee.description}</div>` : ""}
-                      ${fee.discount > 0 ? `<span style="color: green; font-size: 8px;"> (Discount: ₹${fee.discount.toLocaleString('en-IN')})</span>` : ''}
-                    </td>
-                    <td style="text-align:right;">₹${fee.amount.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td>
-                  </tr>
-                `;
-              });
 
-              // Generate rows for paid fees
-              let paidFeesRows = '';
-              let totalPaidThisTxn = 0;
-              paidFees.forEach((fee, index) => {
-                totalPaidThisTxn += fee.paid;
-                paidFeesRows += `
-                  <tr>
-                    <td style="text-align:center;">${index + 1}</td>
-                    <td>${fee.label}${fee.description ? `<div style="font-size: 8px;">${fee.description}</div>` : ""}</td>
-                    <td style="text-align:right;color:green;">₹${fee.paid.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td>
-                  </tr>
-                `;
-              });
 
-              // Calculate total paid and total due
-              const totalPaid = allFees.reduce((sum, fee) => sum + fee.paid, 0);
-              const totalDue = totalAmount - totalPaid;
+printWindow.document.write(`
+<html>
+<head>
+<title>Print Receipt</title>
+<style>
+body{
+  margin:0;
+  padding:20px;
+}
+</style>
+</head>
+<body><body>
 
-              return `
-                <div class="bill-copy">
-                  <div class="copy-label">${copyType === 'student' ? 'Student Copy' : 'School Copy'}</div>
-                  <img src="${printData.logoUrl}" class="header-logo" />
+<body>
 
-                  <div class="text-center">
-                    <h2 class="bold" style="font-size: 13px;">${printData.schoolName}</h2>
-                    <div style="border:1px solid #000;margin:4px 0;padding:2px;font-weight:bold;">FEES RECEIPT</div>
-                  </div>
+<div class="receipt-copy">
+  <div class="receipt-title">School Copy</div>
+  ${previewElement.innerHTML}
+</div>
 
-                  <!-- Student Details -->
-                  <table>
-                    <tbody>
-                      <tr>
-                        <td><strong>Receipt No:</strong> ${printData.receiptNumber}</td>
-                        <td class="text-right"><strong>Date:</strong> ${formatDate1(printData.currentDate)}</td>
-                      </tr>
-                      <tr>
-                        <td><strong>Regn No:</strong> ${printData.studentData?.rollNumber || 'N/A'}</td>
-                        <td class="text-right"><strong>Academic Year:</strong> ${printData.academicYear}</td>
-                      </tr>
-                      <tr>
-                        <td><strong>Student Name:</strong></td>
-                        <td class="text-right">${printData.studentData?.name || 'N/A'}</td>
-                      </tr>
-                      <tr>
-                        <td><strong>Father's Name:</strong></td>
-                        <td class="text-right">${printData.studentData?.fatherName || 'N/A'}</td>
-                      </tr>
-                      <tr>
-                        <td><strong>Class:</strong> ${printData.studentData?.class?.toUpperCase() || 'N/A'}</td>
-                        <td class="text-right"><strong>Section:</strong> ${printData.studentData?.section || 'A'}</td>
-                      </tr>
-                    </tbody>
-                  </table>
+<div class="receipt-divider"></div>
 
-                  <!-- All Fees -->
-                  <table>
-                    <thead>
-                      <tr>
-                        <th>S.No</th>
-                        <th>Fee Details</th>
-                        <th>Amount (₹)</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      ${allFeesRows}
-                      <tr>
-                        <td colspan="2" style="text-align:right;"><strong>Total Amount</strong></td>
-                        <td style="text-align:right;"><strong>₹${totalAmount.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</strong></td>
-                      </tr>
-                    </tbody>
-                  </table>
+<div class="receipt-copy">
+  <div class="receipt-title">Student / Parent Copy</div>
+  ${previewElement.innerHTML}
+</div>
 
-                  <!-- Paid This Transaction -->
-                  <table>
-                    <thead>
-                      <tr>
-                        <th>S.No</th>
-                        <th>Fee Paid This Transaction</th>
-                        <th>Amount (₹)</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      ${paidFeesRows}
-                      <tr>
-                        <td colspan="2" style="text-align:right;"><strong>Total Paid This Transaction</strong></td>
-                        <td style="text-align:right;color:green;"><strong>₹${totalPaidThisTxn.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</strong></td>
-                      </tr>
-                    </tbody>
-                  </table>
+</body>
 
-                  <!-- Total Paid and Total Due -->
-                  <table>
-                    <tbody>
-                      <tr>
-                        <td style="text-align:right;"><strong>Total Paid:</strong></td>
-                        <td style="text-align:right;">₹${printData.paidAmount.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td>
-                      </tr>
-                      <tr>
-                        <td style="text-align:right;"><strong>Total Due:</strong></td>
-                        <td style="text-align:right;">₹${Math.max(printData.totalAmount - printData.paidAmount, 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td>
-                      </tr>
-                    </tbody>
-                  </table>
+</body>
+</html>
+`);
 
-                  <p style="font-style:italic;font-size:9px;margin-top:3px;">
-                    Paid Amount (in words): ${printData.currentPaidInWords}
-                  </p>
+printWindow.document.close();
 
-                  <div style="margin-top:6px;font-size:10px;">
-                    <p><strong>Payment Mode:</strong> ${printData.paymentMode}</p>
-                    ${printData.paymentMode === 'Cheque' || printData.paymentMode === 'Online'
-                      ? `<p><strong>Transaction No:</strong> ${printData.transactionId || 'N/A'}</p>` : ''}
-                  </div>
-
-                  <div style="display:flex;justify-content:space-between;margin-top:15px;">
-                    <div class="signature-line">Parent's Signature</div>
-                    <div style="text-align:center;width:120px;">
-                      <div style="font-size:9px;margin-bottom:2px;">${localStorage.getItem("name") || ''}</div>
-                      <div class="signature-line">Authorised Signature</div>
-                    </div>
-                  </div>
-                </div>
-              `;
-            };
-
-            return `
-              <div class="page-container">
-                ${createReceipt(printData, 'student')}
-                ${createReceipt(printData, 'school')}
-              </div>
-            `;
-          }).join('')}
-
-          <script>
-            window.onload = function() {
-              setTimeout(function() {
-                window.print();
-                window.close();
-              }, 300);
-            };
-          </script>
-        </body>
-      </html>
-    `);
+setTimeout(() => {
+  printWindow.print();
+  printWindow.close();
+}, 500);
 
     printWindow.document.close();
   }, 100);
@@ -1544,17 +1305,7 @@ const printPendingBills = (billsToPrint) => {
     uniformFee +
     othersFee +
     renderDynamicFeeDueTotal;
-  const overallTotalPaid =
-    Number(popupData?.paidAmount) ||
-    tuitionPaid +
-      admissionPaid +
-      residentialPaid +
-      examPaid +
-      busPaid +
-      bookPaid +
-      uniformPaid +
-      othersPaid +
-      renderDynamicFeePaidTotal;
+const overallTotalPaid = Number(popupData?.paidAmount || 0);
 
   const remainingAmount1 = () => {
     const overallTotalDue =
@@ -1584,19 +1335,15 @@ const printPendingBills = (billsToPrint) => {
   };
 
   const otherDescription = (popupData?.fees?.others?.description || "").trim();
-  const feeRows = [
-    { label: "Tuition Fee", data: popupData?.fees?.tuition },
-    { label: "Admission Fee", data: popupData?.fees?.admission },
-    { label: "Residential Fee", data: popupData?.fees?.residential },
-    { label: "Exam Fee", data: popupData?.fees?.exam },
-    { label: "Bus Fee", data: popupData?.fees?.bus },
-    { label: "Book Fee", data: popupData?.fees?.book },
-    { label: "Uniform Fee", data: popupData?.fees?.uniform },
-    { label: "Other Fees", data: popupData?.fees?.others, description: otherDescription },
-    ...popupCustomFeeRows,
-  ].filter(item => item?.data?.paidThisTransaction > 0);
-  const dynamicReceiptRows = dynamicFeeRows;
-
+  
+  const feeRows = (popupData?.paidFees || []).map((fee) => ({
+    label: fee.label || fee.key || "Fee",
+    data: {
+      paidThisTransaction: Number(fee.paidThisTransaction) || 0,
+    },
+    description: fee.description || "",
+    installmentId: fee.installmentId || null,
+  })).filter(item => item.data.paidThisTransaction > 0);
   return (
     <div style={{ minHeight: '100vh', padding: '1rem', backgroundColor: 'white' }}>
       <div style={{ maxWidth: '1200px', margin: '0 auto', padding: '1rem' }}>
@@ -1758,82 +1505,130 @@ const printPendingBills = (billsToPrint) => {
                         </tr>
                       </tbody>
                     </table>
-<table style={{ width: '100%', borderCollapse: 'collapse', marginTop: '0.5rem', marginBottom: '1rem' }}>
+                    <h4 style={{ marginTop: "10px" }}>
+  Fee Summary
+</h4>
+
+<table
+  style={{
+    width: "100%",
+    borderCollapse: "collapse",
+    marginTop: "5px",
+    fontSize: "10px",
+  }}
+>
   <thead>
     <tr>
-      <th style={{ textAlign: 'left', fontSize: '10px', borderBottom: '1px solid #ccc', paddingBottom: '2px' }}>Fee Type</th>
-      <th style={{ textAlign: 'right', fontSize: '10px', borderBottom: '1px solid #ccc', paddingBottom: '2px' }}>Amount</th>
+      <th style={{ border: "1px solid #000" }}>Fee Type</th>
+      <th style={{ border: "1px solid #000" }}>Total</th>
+      <th style={{ border: "1px solid #000" }}>Paid</th>
+      {/* <th style={{ border: "1px solid #000" }}>Due</th> */}
     </tr>
   </thead>
-  <tbody>
-    {payments &&
-      [
-        { label: 'Tuition Fee', value: getFirstPositiveNumber(payments?.Calculated_Tuition_Fee, payments?.Tuition_Fee, feeStructure?.Calculated_Tuition_Fee, feeStructure?.Tuition_Fee, tuitionFee) },
-        { label: 'Admission Fee', value: getFirstPositiveNumber(payments?.admissionFee, payments?.Admission_fees, feeStructure?.admissionFee, feeStructure?.Admission_fees, admissionFee) },
-        { label: 'Residential Fee', value: getFirstPositiveNumber(payments?.residentialFee, payments?.ResidentialCompleteFee, feeStructure?.residentialFee, feeStructure?.ResidentialCompleteFee, residentialFee) },
-        { label: 'Exam Fee', value: getFirstPositiveNumber(payments?.examFee, payments?.Exam_fees, feeStructure?.examFee, feeStructure?.Exam_fees, examFee) },
-        { label: 'Book Fee', value: getFirstPositiveNumber(payments?.bookFee, payments?.Book_Fees, feeStructure?.bookFee, feeStructure?.Book_Fees, bookFee) },
-        { label: 'Bus Fee', value: getFirstPositiveNumber(payments?.busFee, payments?.Bus_fees, feeStructure?.busFee, feeStructure?.Bus_fees, busFee) },
-        { label: 'Uniform Fee', value: getFirstPositiveNumber(payments?.uniformFee, payments?.Uniform_fees, feeStructure?.uniformFee, feeStructure?.Uniform_fees, uniformFee) },
-        { label: `Other Fees${otherDescription ? ` - ${otherDescription}` : ""}`, value: getFirstPositiveNumber(payments?.othersFee, payments?.Others, feeStructure?.othersFee, feeStructure?.Others, othersFee) },
-        ...dynamicReceiptRows.map((row) => ({ label: row.label, value: row.total }))
-      ]
-      .filter(fee => fee.value > 0) // Only show non-zero fees
-      .map((fee, idx) => (
-        <tr key={idx}>
-          <td style={{ textAlign: 'left', fontSize: '10px', padding: '2px 0' }}>{fee.label}</td>
-          <td style={{ textAlign: 'right', fontSize: '10px', padding: '2px 0' }}>{fee.value}</td>
-        </tr>
-      ))}
-  </tbody>
+
+<tbody>
+  {dynamicFeeRows.map((row, index) => (
+    <tr key={index}>
+      <td style={{ border: "1px solid #000", padding: "4px" }}>
+        {row.label}
+      </td>
+      <td style={{ border: "1px solid #000", padding: "4px", textAlign: "right" }}>
+        ₹{Number(row.total || 0).toLocaleString("en-IN")}
+      </td>
+      <td style={{ border: "1px solid #000", padding: "4px", textAlign: "right" }}>
+        ₹{Number(row.paid || 0).toLocaleString("en-IN")}
+      </td>
+    </tr>
+  ))}
+</tbody>
 </table>
-                    <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '10px' }}>
-                      <thead>
-                        <tr style={{ backgroundColor: '#f0f0f0', fontWeight: 'bold' }}>
-                          <th style={{ border: '1px solid black', padding: '3px', textAlign: 'left' }}>S.NO</th>
-                          <th style={{ border: '1px solid black', padding: '3px', textAlign: 'left' }}>Fee Details</th>
-                          <th style={{ border: '1px solid black', padding: '3px', textAlign: 'right' }}>Amount (₹)</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {feeRows.map((item, index) => (
-                          <tr key={index}>
-                            <td style={{ border: '1px solid black', padding: '3px', textAlign: 'left' }}>
-                              {index + 1}
-                            </td>
-                          <td style={{ border: '1px solid black', padding: '3px', textAlign: 'left' }}>
-                              {item.label}
-                              {item.description ? (
-                                <div style={{ fontSize: '9px', marginTop: '2px' }}>{item.description}</div>
-                              ) : null}
-                            </td>
-                            <td style={{ border: '1px solid black', padding: '3px', textAlign: 'right', color: 'green' }}>
-                              ₹{(item.data?.paidThisTransaction || 0).toLocaleString('en-IN', {
-                                minimumFractionDigits: 2,
-                                maximumFractionDigits: 2
-                              })}
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                    <p style={{ fontStyle: 'italic', marginTop: '3px', fontSize: '10px' }}>
-                      <strong>Paid Amount (in words):</strong> {convertAmountToWords(currentPaidAmount)}
-                    </p>
+<table
+  style={{
+    width: "100%",
+    borderCollapse: "collapse",
+    marginBottom: "10px",
+  }}
+>
+  <thead>
+    <tr>
+      <th style={{ border: "1px solid #000" }}>Fee Type</th>
+      <th style={{ border: "1px solid #000" }}>Paid Now</th>
+    </tr>
+  </thead>
+
+<tbody>
+  {paidFees.map((fee, index) => (
+    <tr key={index}>
+      <td style={{ border: "1px solid #000", padding: "4px" }}>
+        {fee.label}
+
+        {fee.installmentId && (
+          <div style={{ fontSize: "11px", color: "#666" }}>
+            Installment : {fee.installmentId}
+          </div>
+        )}
+
+        {fee.description && (
+          <div style={{ fontSize: "11px", color: "#666" }}>
+            {fee.description}
+          </div>
+        )}
+      </td>
+
+      <td
+        style={{
+          border: "1px solid #000",
+          padding: "4px",
+          textAlign: "right",
+        }}
+      >
+        ₹{Number(fee.paidThisTransaction || 0).toLocaleString("en-IN")}
+      </td>
+    </tr>
+  ))}
+</tbody>
+</table>
+<p style={{ fontStyle: 'italic', marginTop: '3px', fontSize: '10px' }}>
+  <strong>Paid Amount (in words):</strong>
+  {convertAmountToWords(totalPaidNow)}
+</p>
 <div style={{ display: 'flex', justifyContent: 'flex-end', fontWeight: 'bold',  padding: '5px 10px' }}>
   <div style={{ display: 'flex', gap: '20px' }}>
-    <div>Total Paid: ₹{overallTotalPaid.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</div>
-    <div>Total Due: ₹{remainingAmount1().toLocaleString('en-IN', { minimumFractionDigits: 2 })}</div>
+<div>
+  Total Paid by Student : ₹
+  {totalPaidNow.toLocaleString("en-IN", {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2
+  })}
+</div>
   </div>
 </div>
                     <div style={{ marginTop: '10px', fontSize: '11px' }}>
                       <p>
                         <strong>Payment Mode:</strong> {paymentMode || 'Cash/Cheque/Online'}
                       </p>
-                      {(paymentMode === 'Cheque' || paymentMode === 'Online') && (
+                      {hasCashOnlineBreakdown && (
+                        <div style={{ margin: "4px 0 6px 0" }}>
+                          <p style={{ margin: "2px 0" }}>
+                            <strong>Cash Paid:</strong> ₹
+                            {receiptCashAmount.toLocaleString("en-IN", {
+                              minimumFractionDigits: 2,
+                              maximumFractionDigits: 2,
+                            })}
+                          </p>
+                          <p style={{ margin: "2px 0" }}>
+                            <strong>Online Paid:</strong> ₹
+                            {receiptOnlineAmount.toLocaleString("en-IN", {
+                              minimumFractionDigits: 2,
+                              maximumFractionDigits: 2,
+                            })}
+                          </p>
+                        </div>
+                      )}
+                      {(paymentMode === 'Cheque' || paymentMode === 'Online' || paymentMode === 'Cash+Online') && (
                         <>
                           <p>
-                            <strong>Cheque/Transaction No.:</strong> {transactionId || 'N/A'}
+                            <strong>Cheque/Transaction No.:</strong> {receiptTransactionId || 'N/A'}
                           </p>
                           <p>
                             <strong>Bank Name:</strong> {'----' || 'N/A'}
@@ -1863,7 +1658,7 @@ const printPendingBills = (billsToPrint) => {
             <div style={{ backgroundColor: 'white', padding: '20px', borderRadius: '8px', boxShadow: '0 2px 10px rgba(0,0,0,0.1)', textAlign: 'center', width: '300px' }}>
               <p style={{ marginBottom: '15px', fontWeight: '600' }}>Select number of copies to print:</p>
               <div style={{ display: 'flex', gap: '10px', marginBottom: '15px' }}>
-                <button onClick={() => confirmPrint(1)} style={{ flex: 1, padding: '0.75rem', backgroundColor: '#10b981', color: 'white', borderRadius: '0.375rem', border: 'none', cursor: 'pointer', fontWeight: '500' }}>1 Copy</button>
+                <button onClick={() => confirmPrint(1)} style={{ flex: 1, padding: '0.75rem', backgroundColor: '#0a3d62', color: 'white', borderRadius: '0.375rem', border: 'none', cursor: 'pointer', fontWeight: '500' }}>1 Copy</button>
               </div>
               <button onClick={() => setShowPrintDialog(false)} style={{ width: '100%', padding: '0.75rem', backgroundColor: '#f3f4f6', borderRadius: '0.375rem', border: 'none', cursor: 'pointer', fontWeight: '500' }}>Cancel</button>
             </div>

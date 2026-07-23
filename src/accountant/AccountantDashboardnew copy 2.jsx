@@ -3478,9 +3478,9 @@ return (
             }}
             style={{ cursor: "pointer" }}
           >
-            <div className="accountant-student-avatar-wrap">
-              <img src={userAvatar} alt="" />
-            </div>
+           <div className="accountant-student-avatar-wrap">
+  <FaUser className="dashboard-user-icon accountant-user-icon" />
+</div>
             <h4>{student.name}</h4>
             <p>
             Due: {formatINR(student.dueAmount)}
@@ -3514,8 +3514,8 @@ return (
             className={`accountant-student-mini ${index === 0 ? "is-active" : ""}`}
           >
             <div className="accountant-student-avatar-wrap">
-              <img src={userAvatar} alt="" />
-            </div>
+  <FaUser className="dashboard-user-icon accountant-user-icon" />
+</div>
             <h4>{student.name}</h4>
             <p>{student.className} {student.section}</p>
           </div>
@@ -3523,10 +3523,10 @@ return (
       ) : (
         <div className="accountant-student-mini">
           <div className="accountant-student-avatar-wrap">
-            <img src={userAvatar} alt="" />
-          </div>
-          <h4>{dashboardLoading ? "Loading students..." : "No students found"}</h4>
-          <p>{dashboardLoading ? "Please wait..." : "Try changing Class/Section filters"}</p>
+  <FaUser className="dashboard-user-icon accountant-user-icon" />
+</div>
+          <h3>{dashboardLoading ? "Loading students..." : "No students found"}</h3>
+          <h4>{dashboardLoading ? "Please wait..." : "Try changing Class/Section filters"}</>
         </div>
       )}
 

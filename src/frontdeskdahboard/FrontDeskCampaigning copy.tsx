@@ -3266,9 +3266,6 @@ const StableCommunicationAssignSection = React.memo(({
       return data;
     };
     const totalTargetLeads = targetLeads.length;
-    if (totalTargetLeads > CAMPAIGN_DAILY_LEAD_LIMIT) {
-      throw new Error(`You can send posters to a maximum of ${CAMPAIGN_DAILY_LEAD_LIMIT} leads per day.`);
-    }
     const selectedLeadStartIndex = Math.max((leadFromNumber || 1) - 1, 0);
     const selectedLeadEndIndex =
       leadToNumber && leadToNumber > 0
@@ -3340,8 +3337,6 @@ const StableCommunicationAssignSection = React.memo(({
           (String(resolveGalleryId(ensuredSelectedGallery)) === String(photoId) ? ensuredSelectedGallery : null);
         const forcedPosterText = buildPosterTextFromItem(itemForText);
         const data = await sendById(photoId, {
-          scheduleFromDate: sendFromDate || selectedDate,
-          scheduleToDate: sendToDate || sendFromDate || selectedDate,
           leadFrom: selectedLeadStartIndex + 1,
           leadTo: selectedLeadEndIndex,
           leadIdsForWriteup: targetLeads.map((lead) => lead.id),
@@ -5488,43 +5483,6 @@ const FrontDeskCampaigning: React.FC = () => {
     [campaignStatusScheduledLeads]
   );
 
-  const digitalLeadScheduleRanges = useMemo(() => {
-    const ranges: Record<string, { fromDate?: string; toDate?: string; fromTime?: string; toTime?: string; time?: string }> = {};
-
-    communicationDigitalScheduledRows.forEach((row: any) => {
-      const leadName = String(row?.lead_name || row?.refer_by || row?.full_name || "").trim();
-      if (!leadName) return;
-
-      const key = leadName.toLowerCase();
-      const fromDate = getLocalDateKey(row?.schedule_from_date || row?.date);
-      const toDate = getLocalDateKey(row?.schedule_to_date || row?.date || row?.schedule_from_date);
-      const fromTime = String(row?.schedule_from_time || row?.lead_time || "").trim();
-      const toTime = String(row?.schedule_to_time || row?.lead_time || "").trim();
-      const existing = ranges[key];
-
-      if (!existing) {
-        ranges[key] = {
-          fromDate: fromDate || "",
-          toDate: toDate || "",
-          fromTime: fromTime || "",
-          toTime: toTime || "",
-          time: fromTime && toTime ? `${fromTime} - ${toTime}` : fromTime || toTime || "",
-        };
-        return;
-      }
-
-      if (fromDate && (!existing.fromDate || fromDate < existing.fromDate)) existing.fromDate = fromDate;
-      if (toDate && (!existing.toDate || toDate > existing.toDate)) existing.toDate = toDate;
-      if (fromTime && !existing.fromTime) existing.fromTime = fromTime;
-      if (toTime && !existing.toTime) existing.toTime = toTime;
-      if (!existing.time && (fromTime || toTime)) {
-        existing.time = fromTime && toTime ? `${fromTime} - ${toTime}` : fromTime || toTime || "";
-      }
-    });
-
-    return ranges;
-  }, [communicationDigitalScheduledRows]);
-
   const persistedDigitalLeadSchedules = useMemo(() => {
     const leadKeyById = new Map<string, string>();
     leads.forEach((lead) => {
@@ -5592,8 +5550,6 @@ const FrontDeskCampaigning: React.FC = () => {
       effectiveDigitalLeadSchedules.__ALL__ || effectiveDigitalLeadSchedules.__all__ || {};
     const directKey = String(leadName || "").trim();
     if (!directKey) return allLeadsFallback;
-    const scheduleRange = digitalLeadScheduleRanges[directKey.toLowerCase()];
-    if (scheduleRange) return scheduleRange;
     if (effectiveDigitalLeadSchedules[directKey]) {
       return effectiveDigitalLeadSchedules[directKey];
     }
@@ -5602,9 +5558,7 @@ const FrontDeskCampaigning: React.FC = () => {
     const matchedKey = Object.keys(effectiveDigitalLeadSchedules).find(
       (key) => String(key || "").trim().toLowerCase() === normalizedKey
     );
-    return matchedKey
-      ? effectiveDigitalLeadSchedules[matchedKey] || {}
-      : digitalLeadScheduleRanges[normalizedKey] || allLeadsFallback;
+    return matchedKey ? effectiveDigitalLeadSchedules[matchedKey] || {} : allLeadsFallback;
   }
 
   const renderBulkLeadDropdownPortal = () => {
@@ -5677,15 +5631,9 @@ const FrontDeskCampaigning: React.FC = () => {
                       </span>
                     </span>
                     <span className="campaign-bulk-dropdown-item-meta">
-                      {time ? (
-                        <>
-                          Scheduled: From Date: {fromDate ? formatLeadDateLabel(fromDate) : "-"} | To Date:{" "}
-                          {toDate ? formatLeadDateLabel(toDate) : "-"} | Time:{" "}
-                          {formatLeadTimeLabel(time)}
-                        </>
-                      ) : (
-                        "Scheduled: not assigned yet"
-                      )}
+                      Scheduled: From Date: {fromDate ? formatLeadDateLabel(fromDate) : "-"} | To Date:{" "}
+                      {toDate ? formatLeadDateLabel(toDate) : "-"} | Time:{" "}
+                      {time ? formatLeadTimeLabel(time) : "-"}
                     </span>
                   </span>
                   <button
@@ -6935,9 +6883,9 @@ function formatLeadDateLabel(dateValue?: string) {
 }
 
 function formatLeadTimeLabel(timeValue?: string) {
-  if (!timeValue) return "not assigned yet";
+  if (!timeValue) return "--";
   const raw = String(timeValue).trim();
-  if (!raw) return "not assigned yet";
+  if (!raw) return "--";
   if (raw.includes("AM") || raw.includes("PM")) return raw;
   const parts = raw.split(":");
   if (parts.length >= 2) {
@@ -7658,19 +7606,17 @@ const CommunicationAssignSection: React.FC<{
       if (sendMode === "all") {
         const ids = visibleGalleryItems.map(resolveGalleryId).filter(Boolean) as Array<string | number>;
         if (ids.length === 0) throw new Error("No gallery images available");
+        const chunkSize = 5;
         let totalLeads = 0;
-        let failedImages = 0;
-        for (let i = 0; i < ids.length; i += 1) {
-          try {
-            const data = await sendById(ids[i]);
-            totalLeads += Number(data?.totalLeads || 0);
-          } catch (err) {
-            failedImages += 1;
-          }
-          setSendStatus(`Sent ${Math.min(i + 1, ids.length)} of ${ids.length} images...`);
-        }
-        if (failedImages > 0) {
-          setSendError(`Failed for ${failedImages} image(s)`);
+        for (let i = 0; i < ids.length; i += chunkSize) {
+          const chunk = ids.slice(i, i + chunkSize);
+          const results = await Promise.allSettled(chunk.map((id) => sendById(id)));
+          results.forEach((res) => {
+            if (res.status === "fulfilled") {
+              totalLeads += Number(res.value?.totalLeads || 0);
+            }
+          });
+          setSendStatus(`Sent ${Math.min(i + chunk.length, ids.length)} of ${ids.length} images...`);
         }
         setSendStatus(`Sent all images to ${totalLeads} leads`);
       } else if (sendMode === "auto") {
@@ -9011,49 +8957,29 @@ useEffect(() => {
               <div className="campaign-bulk-list-wrap has-leads">
                 {selectedBulkLead ? (
                   <div className="campaign-bulk-selector">
-                    <div className="campaign-bulk-summary-row">
-                      <button
-                        type="button"
-                        ref={bulkLeadSummaryRef}
-                        className="campaign-bulk-summary"
-                        onClick={() => setBulkLeadDropdownOpen((prev) => !prev)}
-                        aria-expanded={bulkLeadDropdownOpen}
-                        aria-haspopup="listbox"
+                    <button
+                      type="button"
+                      ref={bulkLeadSummaryRef}
+                      className="campaign-bulk-summary"
+                      onClick={() => setBulkLeadDropdownOpen((prev) => !prev)}
+                      aria-expanded={bulkLeadDropdownOpen}
+                      aria-haspopup="listbox"
+                    >
+                      <span className="campaign-bulk-dot" />
+                      <span className="campaign-bulk-summary-text">
+                        {selectedBulkLead.leadName || "-"}
+                      </span>
+                      <span className="campaign-bulk-summary-count">
+                        {selectedBulkLead.count} {selectedBulkLead.count === 1 ? "Lead" : "Leads"}
+                      </span>
+                      <span
+                        className={`campaign-bulk-summary-chevron ${
+                          bulkLeadDropdownOpen ? "is-open" : ""
+                        }`}
                       >
-                        <span className="campaign-bulk-dot" />
-                        <span className="campaign-bulk-summary-text">
-                          {selectedBulkLead.leadName || "-"}
-                        </span>
-                        <span className="campaign-bulk-summary-count">
-                          {selectedBulkLead.count} {selectedBulkLead.count === 1 ? "Lead" : "Leads"}
-                        </span>
-                        <span
-                          className={`campaign-bulk-summary-chevron ${
-                            bulkLeadDropdownOpen ? "is-open" : ""
-                          }`}
-                        >
-                          ⌄
-                        </span>
-                      </button>
-                      <button
-                        type="button"
-                        className="campaign-bulk-delete-btn campaign-bulk-summary-delete-btn"
-                        onClick={(e) => {
-                          e.preventDefault();
-                          e.stopPropagation();
-                          setLeadDeleteTarget({
-                            id: selectedBulkLead.id,
-                            name: selectedBulkLead.leadName || "this campaign",
-                            campaignName: selectedBulkLead.leadName,
-                            count: selectedBulkLead.count,
-                          });
-                        }}
-                        aria-label={`Delete ${selectedBulkLead.leadName || "campaign"}`}
-                        title="Delete"
-                      >
-                        <FaTrashAlt />
-                      </button>
-                    </div>
+                        ⌄
+                      </span>
+                    </button>
                     {(() => {
                       const schedule = getBulkLeadSchedule(selectedBulkLead.leadName) as {
                         fromDate?: string;
@@ -9065,15 +8991,9 @@ useEffect(() => {
                       const time = schedule.time || selectedBulkLead.time || "";
                       return (
                         <div className="campaign-bulk-dropdown-item-meta">
-                          {time ? (
-                            <>
-                              From Date: {fromDate ? formatLeadDateLabel(fromDate) : "-"} | To Date:{" "}
-                              {toDate ? formatLeadDateLabel(toDate) : "-"} | Time:{" "}
-                              {formatLeadTimeLabel(time)}
-                            </>
-                          ) : (
-                            "not assigned yet"
-                          )}
+                          From Date: {fromDate ? formatLeadDateLabel(fromDate) : "-"} | To Date:{" "}
+                          {toDate ? formatLeadDateLabel(toDate) : "-"} | Time:{" "}
+                          {time ? formatLeadTimeLabel(time) : "-"}
                         </div>
                       );
                     })()}

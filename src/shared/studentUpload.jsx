@@ -221,7 +221,7 @@ useEffect(() => {
     try {
       console.log('📡 Sending POST request to backend with secretecode...');
       const response = await axios.post(
-        'https://nova.tagsol.tech:3020/api/schoollogodynamic',
+        'https://cleezoclass.com/:3020/api/schoollogodynamic',
         { secretecode: code },
         {
           headers: {

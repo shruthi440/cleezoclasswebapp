@@ -14,6 +14,7 @@ const TeacherManagement = () => {
   const fileInputRef = useRef(null);
   const navigate = useNavigate();
   const [windowWidth, setWindowWidth] = useState(window.innerWidth);
+
   const [editFormData, setEditFormData] = useState({
     name: '',
     username: '',
@@ -754,7 +755,7 @@ useEffect(() => {
       <div className="outer-container">
      
         <div className="main-content">
-         
+       
           <div style={{
             display: 'flex',
             justifyContent: 'center',
@@ -762,6 +763,7 @@ useEffect(() => {
             backgroundColor: '#f4f6f9',
             padding: '20px',
           }}>
+
             <div style={{
               padding: '20px',
               fontFamily: 'Arial, sans-serif',
@@ -772,6 +774,24 @@ useEffect(() => {
               overflowX: 'auto',
               cursor: 'default'
             }}>
+                         <button
+  onClick={() => navigate(-1)}
+  style={{
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    width: "40px",
+    height: "40px",
+    border: "none",
+    borderRadius: "50%",
+    background: "#f1f5f9",
+    cursor: "pointer",
+    boxShadow: "0 2px 6px rgba(0,0,0,0.1)",
+    transition: "all 0.2s ease",
+  }}
+>
+  <ArrowLeft size={20} color="#334155" />
+</button>
               <h1 style={headingStyle}>Teacher Management System</h1>
               <button onClick={() => navigate('/TeacherUpload')} style={buttonStyle}>
                 📤 CLICK HERE TO UPLOAD TEACHERS DATA

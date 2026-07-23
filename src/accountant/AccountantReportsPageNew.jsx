@@ -29,7 +29,7 @@ const reportCards = [
   { icon: transactionsIcon, title: "Transactions", subtitle: "Digital Report" },
   { icon: feesReportIcon, title: "Fees Report", subtitle: "Total Fee & Installments" },
   { icon: dueReportIcon, title: "Due Report", subtitle: "Current & Previous years" },
-  { icon: feeTypeIcon, title: "Fee Type", subtitle: "Tuition, Bus, Books etc.", route: "/AccountantFeeTypeWiseSummary" },
+  { icon: feeTypeIcon, title: "Fee Type", subtitle: "Tuition, Bus, Books etc." },
   { icon: discountsIcon, title: "Discounts", subtitle: "Fees & closings" },
   { icon: referralsIcon, title: "Referrals", subtitle: "Student statements" },
   { icon: feesSearchIcon, title: "Fees Search", subtitle: "Student statements" },
@@ -123,21 +123,7 @@ const AccountantReportsPageNew = () => {
       <div className="accountant-grid accountant-reports-grid accountant-reports-page-content">
         <div className="accountant-reports-card-row">
           {reportCards.map((card) => (
-            <div
-              key={card.title}
-              className="accountant-report-shortcut accountant-card"
-              role={card.route ? "button" : undefined}
-              tabIndex={card.route ? 0 : undefined}
-              onClick={card.route ? () => navigate(card.route) : undefined}
-              onKeyDown={
-                card.route
-                  ? (event) => {
-                      if (event.key === "Enter" || event.key === " ") navigate(card.route);
-                    }
-                  : undefined
-              }
-              style={card.route ? { cursor: "pointer" } : undefined}
-            >
+            <div key={card.title} className="accountant-report-shortcut accountant-card">
               <div className="accountant-report-shortcut-icon">
                 <img src={card.icon} alt={card.title} />
               </div>

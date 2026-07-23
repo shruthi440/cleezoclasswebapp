@@ -11,6 +11,7 @@ import "./AdminEventsAndMeetings.css";
 import EditableProfileMenu from "../shared/EditableProfileMenu.jsx";
 import ErrorPopup from "../shared/ErrorPopup";
 import { resolveInstituteDisplayName } from "../shared/instituteNameUtils";
+import { getUserDisplayName } from "../shared/userDisplayName";
 
 import abcLogo from "../assets/logoab.png";
 import dashboardIcon from "../assets/Dashboard.png";
@@ -2135,7 +2136,7 @@ const AdminGenerations = () => {
           <div className="admin-events-content">
             <div className="admin-events-top">
                <div className="accountant-welcome-block">
-                <h2>Hi, Vinay!</h2>
+                <h2>Hi, {getUserDisplayName()}!</h2>
                 <p>Check Store Inventory,</p>
                 <p>Report Track to Class Teacher</p>
                 <p>Submit Building maintenance</p>

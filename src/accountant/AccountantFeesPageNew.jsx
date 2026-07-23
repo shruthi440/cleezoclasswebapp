@@ -5,12 +5,13 @@ import { useNavigate } from "react-router-dom";
 import "./AccountantDashboardnew.css";
 import "./AccountantFeesPageNew.css";
 import IncomeForm5 from "../shared/IncomeformTwo.jsx";
+import DiscountsPanel from "./Accounatant_FeesManagement_Discounts.jsx";
 import PayementDemo from "./AccountantFeesManagementPayement.jsx";
 import GenerateBills from "./Accountant_FeesManagement_Bills.jsx";
 import EditableProfileMenu from "../shared/EditableProfileMenu.jsx";
 import InstituteBrand from "../shared/InstituteBrand.jsx";
 import { resolveInstituteDisplayName } from "../shared/instituteNameUtils";
-
+import GlobalLoader from "../shared/GlobelLoading.tsx";
 import collectFeeIcon from "../assets/collect.png";
 import addFeeIcon from "../assets/Navbar-AddFee.png";
 import expenseIcon from "../assets/Navbar-Expenses.png";
@@ -22,9 +23,11 @@ import addFeesIcon from "../assets/add-fee.png";
 import assistantIcon from "../assets/Assistant.png";
 import logoab from "../assets/logoab.png";
 import userAvatar from "../assets/user.png";
+import { FiHelpCircle } from "react-icons/fi";
+import HelpCenter from "../shared/HelpCenter.jsx";
 
 const quickCards = [
-  { icon: createFeeIcon, title: "Create Fee type", text: "Eg: Tuition Fee, Books.." },
+  { icon: createFeeIcon, title: "Create Fee type", text: "Create custom fee categories" },
   { icon: addFeesIcon, title: "Add Fees", text: "Fees & Discounts list" },
   { icon: assistantIcon, title: "Assistant", text: "Daily Activity check" },
 ];
@@ -205,6 +208,9 @@ const normalizeFeeKey = (value) =>
     .replace(/_+/g, "_")
     .replace(/^_+|_+$/g, "");
 
+const normalizeFeeColumnBase = (value) =>
+  normalizeFeeKey(String(value || "").replace(/\bfees?\b/gi, ""));
+
 const AccountantFeesPageNew = () => {
   const navigate = useNavigate();
   const [instituteName, setInstituteName] = useState("Institute");
@@ -218,11 +224,6 @@ const AccountantFeesPageNew = () => {
     totalPaid: 0,
     totalDue: 0,
     progress: 0,
-    busDue: 0,
-    booksDue: 0,
-    tuitionDue: 0,
-    savingPaid: 0,
-    savingDue: 0,
   });
   const [previousYearDue, setPreviousYearDue] = useState(0);
   const [unpaidStudents, setUnpaidStudents] = useState([]);
@@ -232,8 +233,8 @@ const AccountantFeesPageNew = () => {
   const [paymentSummaryMap, setPaymentSummaryMap] = useState({});
   const [dynamicFeeTypes, setDynamicFeeTypes] = useState([]);
   const [selectedClassFeeStructure, setSelectedClassFeeStructure] = useState(null);
-  const [selectedClassFilter, setSelectedClassFilter] = useState("All");
-  const [selectedSectionFilter, setSelectedSectionFilter] = useState("All");
+  const [selectedClassFilter, setSelectedClassFilter] = useState(null);
+  const [selectedSectionFilter, setSelectedSectionFilter] = useState(null);
   const [studentSearchTerm, setStudentSearchTerm] = useState("");
   const [isPaymentPopupOpen, setIsPaymentPopupOpen] = useState(false);
   const [selectedStudentCardId, setSelectedStudentCardId] = useState(null);
@@ -245,12 +246,18 @@ const AccountantFeesPageNew = () => {
   });
   const [isCreateFeeTypePopupOpen, setIsCreateFeeTypePopupOpen] = useState(false);
   const [isAddFeesPopupOpen, setIsAddFeesPopupOpen] = useState(false);
+  const [addFeesPanelTab, setAddFeesPanelTab] = useState("fees");
   const [isStudentManagementPopupOpen, setIsStudentManagementPopupOpen] = useState(false);
   const [isAssistantPopupOpen, setIsAssistantPopupOpen] = useState(false);
   const [isBillsPopupOpen, setIsBillsPopupOpen] = useState(false);
   const [isDiscountsPopupOpen, setIsDiscountsPopupOpen] = useState(false);
   const [discountsData, setDiscountsData] = useState([]);
   const [discountsLoading, setDiscountsLoading] = useState(false);
+    const [popupKey, setPopupKey] = useState(0);
+      const [isHelpOpen, setIsHelpOpen] = useState(false);
+const [openHelpSection, setOpenHelpSection] = useState(null);
+
+const userRole = localStorage.getItem("userRole");
   const [discountsError, setDiscountsError] = useState("");
   const [addFeePreview, setAddFeePreview] = useState({
     className: "",
@@ -354,111 +361,52 @@ const AccountantFeesPageNew = () => {
     [toNumber]
   );
 
-  const getFeeTotalsForRow = useCallback(
-    (row) => {
-      const expectedDirect = getAnyNumber(row, [
-        "CompleteFee",
-        "completeFee",
-        "Total_Expected",
-        "total_expected",
-        "TotalFee",
-        "total_fee",
-        "Total_Fee",
-        "Fee_Expected",
-        "fee_expected",
+const getFeeTotalsForRow = useCallback(
+  (row) => {
+    // Check for dynamic fee totals first
+    const dynamicFeePaidTotal = getAnyNumber(row, ["dynamicFeePaidTotal"]);
+    const dynamicFeeTotal = getAnyNumber(row, ["dynamicFeeTotal", "dynamic_fee_total"]);
+
+    // Check for explicit remaining amount
+    const explicitRemaining = getExplicitRemainingAmount(row);
+
+    // If dynamic fee totals are available, use them
+    if (dynamicFeeTotal > 0 || dynamicFeePaidTotal > 0) {
+      const expected = dynamicFeeTotal > 0 ? dynamicFeeTotal : 0;
+      const paid = dynamicFeePaidTotal > 0 ? dynamicFeePaidTotal : 0;
+      const unpaid = Math.max(expected - paid, 0);
+      return { expected, paid, unpaid: explicitRemaining > 0 ? explicitRemaining : unpaid };
+    }
+
+    const expectedDirect = getAnyNumber(row, [
+      "CompleteFee", "completeFee", "Total_Expected", "total_expected",
+      "TotalFee", "total_fee", "Total_Fee", "Fee_Expected", "fee_expected",
+    ]);
+
+    const paidDirect = getAnyNumber(row, [
+      "Paid_Amount", "paid_amount", "Total_Paid", "totalPaid", "dynamicFeePaidTotal",
+    ]);
+
+    const expected = expectedDirect;
+    const paid = paidDirect > 0 ? paidDirect : getDynamicTotalBySuffix(row, "paid");
+    let unpaid = Math.max(expected - paid, 0);
+
+    if (explicitRemaining > 0) {
+      unpaid = explicitRemaining;
+    }
+
+    if (expected === 0 && paid === 0) {
+      const dueAlt = getAnyNumber(row, [
+        "Due_Amount", "Total_Due", "unpaidAmount", "Pending_Amount", "Previous_Fee_Due", "previous_fee_due",
       ]);
+      if (dueAlt > 0) unpaid = dueAlt;
+      else if (explicitRemaining > 0) unpaid = explicitRemaining;
+    }
 
-      const paidDirect = getAnyNumber(row, [
-        "Paid_Amount",
-        "paid_amount",
-        "Total_Paid",
-        "totalPaid",
-        "TuitionPaid",
-        "dynamicFeePaidTotal",
-      ]);
-
-      const expectedFromParts =
-        toNumber(row.Admission_fees) +
-        toNumber(row.Books_Uniform_Expected) +
-        toNumber(row.Bus_Expected) +
-        toNumber(row.TuitionFee) +
-        toNumber(row.StudentBooksFee) +
-        toNumber(row.StudentExamFee) +
-        toNumber(row.Uniform_fees) +
-        toNumber(row.Exam_fees) +
-        toNumber(row.BusFee) +
-        toNumber(row.OtherFee) +
-        toNumber(row.ResidentialCompleteFee) +
-        toNumber(row.Saving_Fees) +
-        toNumber(row.saving_fees) +
-        toNumber(row.Savings_Fees) +
-        toNumber(row.savings_fees);
-
-      const paidFromParts =
-        toNumber(row.Admission_paid) +
-        toNumber(row.Books_Uniform_Paid) +
-        toNumber(row.Bus_Paid) +
-        toNumber(row.books_paid) +
-        toNumber(row.uniform_paid) +
-        toNumber(row.exam_paid) +
-        toNumber(row.bus_paid) +
-        toNumber(row.others_paid) +
-        toNumber(row.Saving_paid) +
-        toNumber(row.saving_paid) +
-        toNumber(row.Savings_paid) +
-        toNumber(row.savings_paid) +
-        toNumber(row.sports_paid) +
-        toNumber(row.stationary_paid) +
-        toNumber(row.tie_paid) +
-        toNumber(row.tie_fee_paid) +
-        toNumber(row.belt_paid) +
-        toNumber(row.guides_paid) +
-        toNumber(row.others_description_paid) +
-        getDynamicTotalBySuffix(row, "paid", [
-          "admission_paid",
-          "books_uniform_paid",
-          "bus_paid",
-          "books_paid",
-          "uniform_paid",
-          "exam_paid",
-          "others_paid",
-          "saving_paid",
-          "savings_paid",
-          "sports_paid",
-          "stationary_paid",
-          "tie_paid",
-          "tie_fee_paid",
-          "belt_paid",
-          "guides_paid",
-          "others_description_paid",
-        ]);
-
-      const expected = expectedDirect > 0 ? expectedDirect : expectedFromParts;
-      const paid = paidDirect > 0 ? paidDirect : paidFromParts;
-      let unpaid = Math.max(expected - paid, 0);
-      const explicitRemaining = getExplicitRemainingAmount(row);
-
-      if (explicitRemaining > 0) {
-        unpaid = explicitRemaining;
-      }
-
-      if (expected === 0 && paid === 0) {
-        const dueAlt = getAnyNumber(row, [
-          "Due_Amount",
-          "Total_Due",
-          "unpaidAmount",
-          "Pending_Amount",
-          "Previous_Fee_Due",
-          "previous_fee_due",
-        ]);
-        if (dueAlt > 0) unpaid = dueAlt;
-        else if (explicitRemaining > 0) unpaid = explicitRemaining;
-      }
-
-      return { expected, paid, unpaid };
-    },
-    [getAnyNumber, toNumber]
-  );
+    return { expected, paid, unpaid };
+  },
+  [getAnyNumber]
+);
 
   const formatINR = useCallback(
     (value) =>
@@ -542,63 +490,22 @@ const AccountantFeesPageNew = () => {
       setUnpaidStudents(unpaid);
       setStudentDirectory(masterStudents);
 
-      let busDue = 0;
-      let booksDue = 0;
-      let tuitionDue = 0;
-      let savingDue = 0;
-      let savingPaid = 0;
-
-      unpaid.forEach((row) => {
-        const busDueRow =
-          getAnyNumber(row, ["Bus_Due", "bus_due", "Transport_Due", "transport_due", "Bus_Pending", "BusDue"]) ||
-          Math.max(toNumber(row.Bus_Expected || row.BusFee) - toNumber(row.Bus_Paid || row.bus_paid), 0);
-
-        const booksDueRow =
-          getAnyNumber(row, ["Book_Due", "Books_Due", "books_due", "book_due", "BookDue", "Books_Pending"]) ||
-          Math.max(
-            toNumber(row.Books_Uniform_Expected || row.StudentBooksFee || row.Book_Fee) -
-              toNumber(row.Books_Uniform_Paid || row.books_paid),
-            0
-          );
-
-        const tuitionDueRow =
-          getAnyNumber(row, ["Tuition_Due", "tuition_due", "TuitionDue", "tuitionDue", "Tuition_Pending"]) ||
-          Math.max(toNumber(row.TuitionFee || row.Tuition_Fee) - toNumber(row.TuitionPaid || row.paid_amount), 0);
-        const savingDueRow =
-          getAnyNumber(row, ["Saving_Due", "saving_due", "Savings_Due", "savings_due"]) ||
-          Math.max(
-            getAnyNumber(row, ["Saving_Fees", "saving_fees", "Savings_Fees", "savings_fees"]) -
-              getAnyNumber(row, ["Saving_paid", "saving_paid", "Savings_paid", "savings_paid"]),
-            0
-          );
-
-        busDue += busDueRow;
-        booksDue += booksDueRow;
-        tuitionDue += tuitionDueRow;
-        savingDue += savingDueRow;
-      });
-
-      savingPaid = allFeesRows.reduce(
-        (sum, row) => sum + getAnyNumber(row, ["Saving_paid", "saving_paid", "Savings_paid", "savings_paid"]),
-        0
-      );
-
       const mobileSummary =
         summaryResult.status === "fulfilled" && summaryResult.value?.data?.success
           ? summaryResult.value.data
           : null;
-      const totalDueFromUnpaid = unpaid.reduce(
-        (sum, row) => sum + getAnyNumber(row, ["Due_Amount", "Total_Due", "unpaidAmount", "Pending_Amount"]),
-        0
-      );
+      const totalDueFromUnpaid = unpaid.reduce((sum, row) => {
+        const explicitRemaining = getExplicitRemainingAmount(row);
+        const dueAmount = getAnyNumber(row, ["Due_Amount", "Total_Due", "unpaidAmount", "Pending_Amount"]);
+        return sum + (explicitRemaining > 0 ? explicitRemaining : dueAmount);
+      }, 0);
 
       let gross = mobileSummary ? toNumber(mobileSummary.totalAmount) : 0;
       let concession = mobileSummary ? toNumber(mobileSummary.totalDiscount) : 0;
       let totalPaid = mobileSummary ? toNumber(mobileSummary.totalPaid) : 0;
+      const mobileBalance = mobileSummary ? toNumber(mobileSummary.balance) : 0;
       let netPayable = Math.max(gross - concession, 0);
-      let totalDue = mobileSummary
-        ? toNumber(mobileSummary.balance) || Math.max(netPayable - totalPaid, 0)
-        : totalDueFromUnpaid;
+      let totalDue = totalDueFromUnpaid || mobileBalance;
 
       const summaryLooksEmpty = gross === 0 && concession === 0 && totalPaid === 0 && totalDue === 0;
       const grossLooksMissing = gross === 0 && allFeesRows.length > 0;
@@ -614,16 +521,14 @@ const AccountantFeesPageNew = () => {
           grossFallback += totals.expected;
           totalPaidFallback += totals.paid;
           totalDueFallback += totals.unpaid;
-          concessionFallback +=
-            getAnyNumber(row, ["Discount", "Total_Discount", "Concession", "feeDiscount"]) +
-            getAnyNumber(row, ["tuitionDiscount", "busDiscount", "admissionDiscount"]);
+          concessionFallback += getAnyNumber(row, ["Discount", "Total_Discount", "Concession", "feeDiscount"]);
         });
 
-        gross = grossFallback;
+        gross = grossFallback + concessionFallback;
         concession = concessionFallback;
         totalPaid = totalPaidFallback;
         netPayable = Math.max(gross - concession, 0);
-        totalDue = totalDueFallback || Math.max(netPayable - totalPaid, 0);
+        totalDue = totalDueFallback;
       }
 
       const progress = netPayable > 0 ? (totalPaid / netPayable) * 100 : 0;
@@ -634,11 +539,6 @@ const AccountantFeesPageNew = () => {
         totalPaid,
         totalDue,
         progress: Math.min(Math.max(progress, 0), 100),
-        busDue,
-        booksDue,
-        tuitionDue,
-        savingPaid,
-        savingDue,
       });
     } catch {
       setSummary({
@@ -648,11 +548,6 @@ const AccountantFeesPageNew = () => {
         totalPaid: 0,
         totalDue: 0,
         progress: 0,
-        busDue: 0,
-        booksDue: 0,
-        tuitionDue: 0,
-        savingPaid: 0,
-        savingDue: 0,
       });
       setUnpaidStudents([]);
       setAllFeeStatusRows([]);
@@ -702,6 +597,7 @@ const AccountantFeesPageNew = () => {
 
   const openAddFeesPopup = useCallback(() => {
     setIsAssistantPopupOpen(false);
+    setAddFeesPanelTab("fees");
     setIsAddFeesPopupOpen(true);
   }, []);
 
@@ -868,6 +764,93 @@ const AccountantFeesPageNew = () => {
     );
   }, [dynamicFeeTypes]);
 
+  const isIndividualFeeRow = useCallback(
+    (row) => {
+      const rowScope = String(row?.scope || row?.source || row?.feeScope || "").trim().toLowerCase();
+      if (rowScope === "individual") return true;
+
+      const rowKey = normalizeFeeColumnBase(row?.key || row?.columnBase || row?.type || row?.feeName || row?.label || "");
+      if (!rowKey) return false;
+
+      return (dynamicFeeTypes || []).some((fee) => {
+        const feeScope = String(fee?.scope || "").trim().toLowerCase();
+        if (feeScope !== "individual") return false;
+
+        const feeKeys = [
+          fee?.columnBase,
+          fee?.feeName,
+          fee?.feesType,
+          fee?.label,
+        ]
+          .map(normalizeFeeColumnBase)
+          .filter(Boolean);
+
+        return feeKeys.includes(rowKey);
+      });
+    },
+    [dynamicFeeTypes]
+  );
+
+const getPaymentBreakdownSummary = useCallback((paymentSummary) => {
+  const rows = Array.isArray(paymentSummary?.dynamicFeeBreakdown)
+    ? paymentSummary.dynamicFeeBreakdown
+    : [];
+
+  return rows.reduce(
+    (summary, row) => {
+      const key = normalizeFeeKey(row?.key || row?.label || "");
+      if (!key || key === "amount") return summary;
+
+      const isIndividual = isIndividualFeeRow(row);
+
+      const total = Number(row?.total ?? row?.amount ?? row?.amountTotal ?? 0);
+      const paid = Number(row?.paid ?? row?.paidAmount ?? row?.amountPaid ?? 0);
+      const discount = Number(row?.discount ?? row?.discountAmount ?? 0);
+      const remaining = Number(row?.remaining ?? row?.due ?? row?.dueAmount ?? 0);
+
+      const safeTotal = Number.isFinite(total) ? Math.max(total, 0) : 0;
+      const safePaid = Number.isFinite(paid) ? Math.max(paid, 0) : 0;
+      const safeDiscount = Number.isFinite(discount) ? Math.max(discount, 0) : 0;
+      const safeRemaining = Number.isFinite(remaining) ? Math.max(remaining, 0) : 0;
+
+      summary.hasRows = true;
+      summary.total += safeTotal;
+      summary.paid += safePaid;
+      summary.discount += safeDiscount;
+      summary.remaining += safeRemaining;
+
+      if (isIndividual) {
+        summary.individualTotal += safeTotal;
+        summary.individualPaid += safePaid;
+        summary.individualDiscount += safeDiscount;
+        summary.individualRemaining += safeRemaining;
+      } else {
+        summary.classWiseTotal += safeTotal;
+        summary.classWisePaid += safePaid;
+        summary.classWiseDiscount += safeDiscount;
+        summary.classWiseRemaining += safeRemaining;
+      }
+
+      return summary;
+    },
+    {
+      hasRows: false,
+      total: 0,
+      paid: 0,
+      discount: 0,
+      remaining: 0,
+      classWiseTotal: 0,
+      classWisePaid: 0,
+      classWiseDiscount: 0,
+      classWiseRemaining: 0,
+      individualTotal: 0,
+      individualPaid: 0,
+      individualDiscount: 0,
+      individualRemaining: 0,
+    }
+  );
+}, [isIndividualFeeRow]);
+
   useEffect(() => {
     let isCancelled = false;
 
@@ -958,57 +941,96 @@ const AccountantFeesPageNew = () => {
         setDynamicFeeTypes([]);
       });
   }, []);
+const handleCreateFeeType = useCallback(
+  async (event) => {
+    event.preventDefault();
 
-  const handleCreateFeeType = useCallback(
-    async (event) => {
-      event.preventDefault();
-      const schoolCode = localStorage.getItem("schoolCode");
-      if (!schoolCode) {
-        setCreateFeeTypeError("School code is missing.");
-        return;
-      }
+    const schoolCode = localStorage.getItem("schoolCode");
+    if (!schoolCode) {
+      setCreateFeeTypeError("School code is missing.");
+      return;
+    }
 
-      setCreateFeeTypeLoading(true);
-      setCreateFeeTypeError("");
+    const feeName = newFeeTypeForm.feesType.trim();
 
-      const nextFeeType = {
-        feeName: newFeeTypeForm.feesType.trim() || "Custom Fee",
-        feesType: newFeeTypeForm.feesType.trim() || "Custom Fee",
-        priority: dynamicFeeTypes.length + 1,
-        scope: newFeeTypeForm.scope || "All",
-        frequency: newFeeTypeForm.frequency || "One time",
-        installments:
-          (newFeeTypeForm.frequency || "One time") === "Term wise"
-            ? Math.max(1, Number(newFeeTypeForm.installments) || 1)
-            : 1,
+    // Required field validations
+    if (!feeName) {
+      setCreateFeeTypeError("Fee name is required.");
+      return;
+    }
+
+    if (!newFeeTypeForm.scope) {
+      setCreateFeeTypeError("Please select a scope.");
+      return;
+    }
+
+    if (!newFeeTypeForm.frequency) {
+      setCreateFeeTypeError("Please select a frequency.");
+      return;
+    }
+
+    // Duplicate fee type validation
+    const alreadyExists = dynamicFeeTypes.some(
+      (item) =>
+        String(item.feeName || "")
+          .trim()
+          .toLowerCase() === feeName.toLowerCase()
+    );
+
+    if (alreadyExists) {
+      setCreateFeeTypeError("This fee type already exists.");
+      return;
+    }
+
+    setCreateFeeTypeLoading(true);
+    setCreateFeeTypeError("");
+
+    const nextFeeType = {
+      feeName,
+      feesType: feeName,
+      priority: dynamicFeeTypes.length + 1,
+      scope: newFeeTypeForm.scope,
+      frequency: newFeeTypeForm.frequency,
+      installments:
+        newFeeTypeForm.frequency === "Term wise"
+          ? Math.max(1, Number(newFeeTypeForm.installments) || 1)
+          : 1,
+    };
+
+    try {
+      const payload = {
+        schoolCode,
+        ...nextFeeType,
       };
 
-      try {
-        const payload = {
-          schoolCode,
-          ...nextFeeType,
-        };
-        await axios.post("https://cleezoclass.com:4000/api/fee-types", payload);
-        setDynamicFeeTypes((prev) => [
-          ...prev,
-          { id: `${Date.now()}`, ...nextFeeType },
-        ]);
-        setNewFeeTypeForm({
-          feesType: "",
-          scope: "",
-          frequency: "",
-          installments: "",
-        });
-        setIsCreateFeeTypePopupOpen(false);
-      } catch (error) {
-        setCreateFeeTypeError(error?.response?.data?.message || "Failed to save fee type.");
-      } finally {
-        setCreateFeeTypeLoading(false);
-      }
-    },
-    [dynamicFeeTypes.length, newFeeTypeForm]
-  );
+      await axios.post(
+        "https://cleezoclass.com:4000/api/fee-types",
+        payload
+      );
 
+      setDynamicFeeTypes((prev) => [
+        ...prev,
+        { id: `${Date.now()}`, ...nextFeeType },
+      ]);
+
+      setNewFeeTypeForm({
+        feesType: "",
+        scope: "",
+        frequency: "",
+        installments: "",
+      });
+
+      setIsCreateFeeTypePopupOpen(false);
+    } catch (error) {
+      setCreateFeeTypeError(
+        error?.response?.data?.message || "Failed to save fee type."
+      );
+    } finally {
+      setCreateFeeTypeLoading(false);
+    }
+  },
+  [dynamicFeeTypes, newFeeTypeForm]
+);
   const normalizedOutstandingStudents = useCallback(() => {
     const sourceStudents =
       selectedClassFilter !== "All" && selectedSectionFilter !== "All" && classSectionStudents.length
@@ -1144,14 +1166,15 @@ const AccountantFeesPageNew = () => {
   const groupedOutstandingStudents = useCallback(() => {
     const groups = new Map();
     normalizedOutstandingStudents().forEach((student, index) => {
-      const key = String(student.id || "").trim() || [
+      const studentKey = [
         String(student.name || "").trim().toLowerCase(),
         String(student.className || "").trim().toLowerCase(),
         String(student.section || "").trim().toLowerCase(),
       ].join("|");
-      const dueAmount = outstandingDueMap().get(key) || 0;
-      if (!groups.has(key)) {
-        groups.set(key, {
+      const groupKey = String(student.id || "").trim() || studentKey;
+      const dueAmount = outstandingDueMap().get(studentKey) || 0;
+      if (!groups.has(groupKey)) {
+        groups.set(groupKey, {
           ...student,
           id: student.id || `student-${index}`,
           dueAmount,
@@ -1163,12 +1186,48 @@ const AccountantFeesPageNew = () => {
 
   const selectedClassDefaultDue = useCallback(() => {
     if (!selectedClassFeeStructure) return 0;
-    return (
-      Number(selectedClassFeeStructure?.CompleteFee) ||
-      Number(selectedClassFeeStructure?.complete_fee) ||
-      0
+
+    const classWiseFeeKeys = new Set(
+      (dynamicFeeTypes || [])
+        .filter((fee) => String(fee?.scope || "").trim().toLowerCase() !== "individual")
+        .flatMap((fee) => [
+          fee?.columnBase,
+          fee?.feeName,
+          fee?.feesType,
+          fee?.label,
+        ])
+        .map(normalizeFeeColumnBase)
+        .filter(Boolean)
     );
-  }, [selectedClassFeeStructure]);
+
+    const ignoredKeys = new Set([
+      "id",
+      "created_at",
+      "updated_at",
+      "class_name",
+      "section",
+      "schoolcode",
+      "school_code",
+      "login_id",
+    ]);
+    const feeAmounts = new Map();
+
+    Object.entries(selectedClassFeeStructure || {}).forEach(([key, value]) => {
+      const rawKey = String(key || "").trim().toLowerCase();
+      const normalizedKey = normalizeFeeColumnBase(key);
+      if (!normalizedKey || ignoredKeys.has(rawKey)) return;
+      if (normalizedKey.includes("paid") || normalizedKey.includes("due")) return;
+      if (normalizedKey.includes("discount") || normalizedKey.includes("remaining")) return;
+      if (!classWiseFeeKeys.has(normalizedKey)) return;
+
+      const numericValue = Number(value);
+      if (!Number.isFinite(numericValue) || numericValue <= 0) return;
+
+      feeAmounts.set(normalizedKey, Math.max(feeAmounts.get(normalizedKey) || 0, numericValue));
+    });
+
+    return [...feeAmounts.values()].reduce((sum, value) => sum + value, 0);
+  }, [dynamicFeeTypes, selectedClassFeeStructure]);
 
   const hasSelectedClassFeeSetup = useCallback(() => {
     if (!selectedClassFeeStructure || typeof selectedClassFeeStructure !== "object") return false;
@@ -1247,27 +1306,78 @@ const AccountantFeesPageNew = () => {
 
     return merged;
   }, [allFeeStatusRows, getAnyNumber, unpaidStudents]);
+const outstandingFilterSourceRows = [
+  ...(studentDirectory || []),
+  ...(unpaidStudents || []),
+  ...(allFeeStatusRows || []),
+];
 
-  const classOptions = [
-    "All",
-    ...sortClassLabels([...new Set(normalizedOutstandingStudents().map((s) => s.className).filter(Boolean))]),
-  ];
+const classOptions = [
+  "All",
+  ...sortClassLabels(
+    [
+      ...new Map(
+        outstandingFilterSourceRows
+          .map((row) => {
+            const className =
+              row?.className ||
+              row?.Class_name ||
+              row?.class_name ||
+              row?.FeeClass ||
+              "";
 
-  const sectionOptions = [
-    "All",
-    ...sortSectionLabels(
-      [...new Set(
-        normalizedOutstandingStudents()
-          .filter(
-            (s) =>
-              selectedClassFilter === "All" ||
-              normalizeClassLabel(s.className) === normalizeClassLabel(selectedClassFilter)
-          )
-          .map((s) => s.section)
+            const classKey = normalizeClassLabel(className);
+
+            return classKey
+              ? [classKey, className]
+              : null;
+          })
           .filter(Boolean)
-      )]
-    ),
-  ];
+      ).values(),
+    ]
+  ),
+];
+
+const sectionOptions = [
+  "All",
+  ...sortSectionLabels(
+    [
+      ...new Map(
+        outstandingFilterSourceRows
+          .filter((row) => {
+            if (selectedClassFilter === "All") return true;
+
+            const className =
+              row?.className ||
+              row?.Class_name ||
+              row?.class_name ||
+              row?.FeeClass ||
+              "";
+
+            return (
+              normalizeClassLabel(className) ===
+              normalizeClassLabel(selectedClassFilter)
+            );
+          })
+          .map((row) => {
+            const section =
+              row?.section ||
+              row?.Section ||
+              row?.sectionName ||
+              row?.FeeSection ||
+              "";
+
+            const sectionKey = normalizeSectionLabel(section);
+
+            return sectionKey
+              ? [sectionKey, section]
+              : null;
+          })
+          .filter(Boolean)
+      ).values(),
+    ]
+  ),
+];
 
   const filteredOutstandingStudents = groupedOutstandingStudents()
     .map((student) => {
@@ -1279,15 +1389,32 @@ const AccountantFeesPageNew = () => {
       const groupedDue = Number(student?.dueAmount) || 0;
       const summaryDue = unpaidSummaryDueMap().get(key) || 0;
       const paymentSummary = paymentSummaryMap[String(student?.id ?? student?.student_id ?? "")] || paymentSummaryMap[key] || null;
-      const paymentApiDue = getExplicitRemainingAmount(paymentSummary);
+      const paymentBreakdownSummary = getPaymentBreakdownSummary(paymentSummary);
+      const hasPaymentSummary = Boolean(paymentSummary && typeof paymentSummary === "object");
+      const paymentSummaryConfirmsZero =
+        hasPaymentSummary &&
+        !hasSelectedClassFeeSetup() &&
+        Number(paymentSummary?.totalFee || 0) === 0 &&
+        Number(paymentSummary?.totalRemaining || 0) === 0 &&
+        Number(paymentSummary?.totalPaid || 0) === 0 &&
+        !paymentBreakdownSummary.hasRows &&
+        (!Array.isArray(paymentSummary?.individualFeeAssignments) ||
+          paymentSummary.individualFeeAssignments.length === 0);
+      const paymentApiDue = paymentBreakdownSummary.hasRows
+        ? paymentBreakdownSummary.remaining
+        : getExplicitRemainingAmount(paymentSummary);
       const overrideDue = getExplicitRemainingAmount(student);
       const individualFeeSummary = paymentSummary ? getIndividualFeeSummary(paymentSummary) : { total: 0, paid: 0, remaining: 0 };
       const paymentPaid =
-        paymentSummary
+        paymentBreakdownSummary.hasRows
+          ? paymentBreakdownSummary.classWisePaid + paymentBreakdownSummary.individualPaid
+          : paymentSummary
           ? getAnyNumber(paymentSummary, ["Paid_Amount", "Total_Paid", "totalPaid", "dynamicFeePaidTotal"]) + individualFeeSummary.paid
           : 0;
       const resolvedStudentDue =
-        groupedDue > 0
+        paymentBreakdownSummary.hasRows
+          ? paymentApiDue
+          : groupedDue > 0
           ? groupedDue
           : summaryDue > 0
             ? summaryDue
@@ -1297,18 +1424,27 @@ const AccountantFeesPageNew = () => {
                 ? paymentApiDue
                 : 0;
       const totalPaidForStudent = selectedClassPaidTotalsMap().get(key) || 0;
+      const classWisePaidForStudent = paymentBreakdownSummary.hasRows
+        ? paymentBreakdownSummary.classWisePaid
+        : Math.max(totalPaidForStudent - individualFeeSummary.paid, 0);
       const computedDueFromSelectedClass =
         selectedClassFilter !== "All" &&
         selectedSectionFilter !== "All" &&
         selectedClassDefaultDue() > 0
-          ? Math.max(selectedClassDefaultDue() - totalPaidForStudent, 0)
+          ? Math.max(selectedClassDefaultDue() - classWisePaidForStudent, 0)
           : 0;
+      const individualDue = paymentBreakdownSummary.hasRows
+        ? Math.max(paymentBreakdownSummary.individualRemaining || individualFeeSummary.remaining || 0, 0)
+        : Math.max(individualFeeSummary.remaining || 0, 0);
+      const classWiseDue = paymentBreakdownSummary.hasRows
+        ? Math.max(paymentBreakdownSummary.classWiseRemaining || 0, computedDueFromSelectedClass || 0)
+        : computedDueFromSelectedClass > 0
+          ? computedDueFromSelectedClass
+          : Math.max(resolvedStudentDue || 0, 0);
       const computedDue =
-        resolvedStudentDue > 0
-          ? Math.max(resolvedStudentDue + individualFeeSummary.remaining, 0)
-          : computedDueFromSelectedClass > 0
-            ? computedDueFromSelectedClass
-            : 0;
+        paymentSummaryConfirmsZero
+          ? 0
+          : Math.max(classWiseDue + individualDue, 0);
 
       if (isAishaDebugStudent(student)) {
         const paidRowsFromAllFeesStatus = (allFeeStatusRows || [])
@@ -1326,11 +1462,6 @@ const AccountantFeesPageNew = () => {
               Total_Due: row?.Total_Due,
               Due_Amount: row?.Due_Amount,
               Total_Expected: row?.Total_Expected,
-              sports_paid: row?.sports_paid,
-              stationary_paid: row?.stationary_paid,
-              guides_paid: row?.guides_paid,
-              belt_paid: row?.belt_paid,
-              tie_paid: row?.tie_paid,
               record_date: row?.record_date,
               totalsFromRow: rowTotals,
               explicitRemaining: getExplicitRemainingAmount(row),
@@ -1353,11 +1484,6 @@ const AccountantFeesPageNew = () => {
               Due_Amount: row?.Due_Amount,
               Due_Alt: getAnyNumber(row, ["unpaidAmount", "Due_Amount", "Total_Due", "Pending_Amount"]),
               Total_Expected: row?.Total_Expected,
-              sports_paid: row?.sports_paid,
-              stationary_paid: row?.stationary_paid,
-              guides_paid: row?.guides_paid,
-              belt_paid: row?.belt_paid,
-              tie_paid: row?.tie_paid,
               record_date: row?.record_date,
               totalsFromRow: rowTotals,
               explicitRemaining: getExplicitRemainingAmount(row),
@@ -1399,6 +1525,7 @@ const AccountantFeesPageNew = () => {
         dueAmount: computedDue,
         paidAmount: paymentPaid,
         paymentSummary,
+        paymentBreakdownSummary,
       };
     })
     .filter((student) => {
@@ -1414,6 +1541,50 @@ const AccountantFeesPageNew = () => {
       return classMatch && sectionMatch && searchMatch;
     })
     .sort((a, b) => a.name.localeCompare(b.name));
+
+  const displaySummary = (() => {
+    const shouldUseStudentBreakdown =
+      selectedClassFilter !== "All" &&
+      selectedSectionFilter !== "All" &&
+      filteredOutstandingStudents.some((student) => student?.paymentBreakdownSummary?.hasRows);
+
+    if (!shouldUseStudentBreakdown) return summary;
+
+    const studentTotals = filteredOutstandingStudents.reduce(
+      (totals, student) => {
+        const breakdown = student?.paymentBreakdownSummary || {};
+        const hasBreakdown = Boolean(breakdown.hasRows);
+        const paid = hasBreakdown ? Number(student?.paidAmount || breakdown.paid || 0) : Number(student?.paidAmount || 0);
+        const discount = hasBreakdown ? Number(breakdown.discount || 0) : 0;
+        const due = Number(student?.dueAmount || 0);
+        const gross = hasBreakdown
+          ? Math.max(Number(breakdown.total || 0) + discount, paid + due + discount)
+          : paid + due;
+
+        totals.gross += Number.isFinite(gross) ? Math.max(gross, 0) : 0;
+        totals.totalPaid += Number.isFinite(paid) ? Math.max(paid, 0) : 0;
+        totals.concession += Number.isFinite(discount) ? Math.max(discount, 0) : 0;
+        totals.totalDue += Number.isFinite(due) ? Math.max(due, 0) : 0;
+        return totals;
+      },
+      {
+        gross: 0,
+        concession: 0,
+        totalPaid: 0,
+        totalDue: 0,
+      }
+    );
+
+    const netPayable = Math.max(studentTotals.gross - studentTotals.concession, 0);
+    const progress = netPayable > 0 ? (studentTotals.totalPaid / netPayable) * 100 : 0;
+
+    return {
+      ...summary,
+      ...studentTotals,
+      netPayable,
+      progress: Math.min(Math.max(progress, 0), 100),
+    };
+  })();
 
   useEffect(() => {
     if (selectedClassFilter === "All" || selectedSectionFilter === "All") return;
@@ -1503,6 +1674,7 @@ const AccountantFeesPageNew = () => {
         studentName,
       });
       setSelectedStudentCardId(studentId);
+        setPopupKey((prev) => prev + 1)
       setIsPaymentPopupOpen(true);
     },
     [selectedClassFilter, selectedSectionFilter]
@@ -1622,6 +1794,18 @@ const AccountantFeesPageNew = () => {
             </div>
 
             <div className="accountant-topbar-right">
+              
+                                   <button
+  className="accountant-help-icon-btn"
+  onClick={() => setIsHelpOpen(true)}
+>
+  <FiHelpCircle
+    style={{
+      color: "#e9818c",
+      fontSize: "34px",
+    }}
+  />
+</button>
               <EditableProfileMenu />
             </div>
           </div>
@@ -1641,11 +1825,11 @@ const AccountantFeesPageNew = () => {
                     <div
                       className="accountant-progress-ring"
                       style={{
-                        "--progress-angle": `${Math.max(0, Math.min(summary.progress, 100)) * 3.6}deg`,
+                        "--progress-angle": `${Math.max(0, Math.min(displaySummary.progress, 100)) * 3.6}deg`,
                       }}
                     >
                       <div className="accountant-progress-ring-inner">
-                        {dashboardLoading ? "..." : `${Math.round(summary.progress)}%`}
+                        {dashboardLoading ? "..." : `${Math.round(displaySummary.progress)}%`}
                       </div>
                     </div>
                   </div>
@@ -1654,38 +1838,38 @@ const AccountantFeesPageNew = () => {
                     <p>
                       <span className="normalText accountant-fees-summary-label">Gross:</span>
                       <strong className="accountant-fees-summary-value">
-                        {dashboardLoading ? "Loading..." : formatINR(summary.gross)}
+                        {dashboardLoading ? "Loading..." : formatINR(displaySummary.gross)}
                       </strong>
                     </p>
                     <p>
-                      <span className="normalText accountant-fees-summary-label">Concession:</span>
+                      <span className="normalText accountant-fees-summary-label">Discounts:</span>
                       <strong className="accountant-fees-summary-value">
-                        {dashboardLoading ? "Loading..." : formatINR(summary.concession)}
+                        {dashboardLoading ? "Loading..." : formatINR(displaySummary.concession)}
                       </strong>
                     </p>
                     <p>
-                      <span className="normalText accountant-fees-summary-label">Net Payable:</span>
+                      <span className="normalText accountant-fees-summary-label">Total Amount:</span>
                       <strong className="accountant-fees-summary-value">
-                        {dashboardLoading ? "Loading..." : formatINR(summary.netPayable)}
+                        {dashboardLoading ? "Loading..." : formatINR(displaySummary.netPayable)}
                       </strong>
                     </p>
                     <p>
                       <span className="normalText accountant-fees-summary-label">Total Paid:</span>
                       <strong className="accountant-fees-summary-value">
-                        {dashboardLoading ? "Loading..." : formatINR(summary.totalPaid)}
+                        {dashboardLoading ? "Loading..." : formatINR(displaySummary.totalPaid)}
                       </strong>
                     </p>
                   </div>
                 </div>
 
                 <div className="accountant-fees-summary-right">
-                  <button type="button" className="collect-filter accountant-fees-summary-filter">
+        <button type="button" className="collect-filter" style={{border:'none',fontSize:'18px',color:'#000'}}>
                     <span>As on today</span>
                   </button>
 
                   <div className="accountant-fees-summary-total">
                     <span>Total Due</span>
-                    <strong>{dashboardLoading ? "Loading..." : formatINR(summary.totalDue)}</strong>
+                    <strong>{dashboardLoading ? "Loading..." : formatINR(displaySummary.totalDue)}</strong>
                   </div>
                 </div>
               </div>
@@ -1745,32 +1929,40 @@ const AccountantFeesPageNew = () => {
                         onChange={(event) => setStudentSearchTerm(event.target.value)}
                       />
 
-                      <select
-                        className="accountant-card-filter"
-                        value={selectedClassFilter}
-                        onChange={(event) => {
-                          setSelectedClassFilter(event.target.value);
-                          setSelectedSectionFilter("All");
-                        }}
-                      >
-                        {classOptions.map((cls) => (
-                          <option key={cls} value={cls}>
-                            {cls}
-                          </option>
-                        ))}
-                      </select>
+                     <select
+  className="accountant-card-filter"
+  value={selectedClassFilter}
+  onChange={(event) => {
+    setSelectedClassFilter(event.target.value);
+    setSelectedSectionFilter(""); // Reset section when class changes
+  }}
+>
+  <option value="">Select Class</option>
 
-                      <select
-                        className="accountant-card-filter"
-                        value={selectedSectionFilter}
-                        onChange={(event) => setSelectedSectionFilter(event.target.value)}
-                      >
-                        {sectionOptions.map((sec) => (
-                          <option key={sec} value={sec}>
-                            {sec}
-                          </option>
-                        ))}
-                      </select>
+  {classOptions.map((cls) => (
+    <option key={cls} value={cls}>
+      {cls}
+    </option>
+  ))}
+</select>
+
+<select
+  className="accountant-card-filter"
+  value={selectedSectionFilter}
+  onChange={(event) => setSelectedSectionFilter(event.target.value)}
+  disabled={!selectedClassFilter}
+>
+  <option value="">
+    {selectedClassFilter ? "Select Section" : "Select Class First"}
+  </option>
+
+  {selectedClassFilter &&
+    sectionOptions.map((sec) => (
+      <option key={sec} value={sec}>
+        {sec}
+      </option>
+    ))}
+</select>
                     </div>
                   </div>
 
@@ -1784,50 +1976,55 @@ const AccountantFeesPageNew = () => {
                       filteredOutstandingStudents.map((student, index) => {
                         const cardId = student?.id ?? student?.student_id ?? index;
                         return (
-                          <div
-                            key={cardId}
-                            className={`accountant-fees-student ${String(selectedStudentCardId) === String(cardId) ? "is-active" : ""} ${
-                              shouldHighlightAddFees ? "is-frozen" : ""
-                            }`}
-                            role="button"
-                            tabIndex={shouldHighlightAddFees ? -1 : 0}
-                            aria-disabled={shouldHighlightAddFees}
-                            onClick={() => {
-                              if (shouldHighlightAddFees) {
-                                openAddFeesPopup();
-                                return;
-                              }
-                              if (student?.name || student?.StudentName) openPaymentGrid(student);
-                            }}
-                            onKeyDown={(event) => {
-                              if (event.key !== "Enter" && event.key !== " ") return;
-                              if (shouldHighlightAddFees) {
-                                openAddFeesPopup();
-                                return;
-                              }
-                              if (student?.name || student?.StudentName) {
-                                openPaymentGrid(student);
-                              }
-                            }}
-                          >
-                            <div className="accountant-fees-student-avatar">
-                              <img src={userAvatar} alt="" />
-                            </div>
-                            <div className="blockText">{student.name || student.StudentName || "Student"}</div>
-                            <div className="normalText">
-                              {student.fatherName || student.father_name || student.FatherName || student.Father_Name || ""}
-                            </div>
-                            <div className="normalText">
-                              {student.className || student.Class_name || student.class_name || "Class"}{" "}
-                              {student.section || student.Section || student.section_name || ""}
-                            </div>
-                            <div className="normalText">Paid: {formatINR(student.paidAmount || 0)}</div>
-                            <div className="normalText">
-                              Due: {formatINR(
-                                student.dueAmount ?? getAnyNumber(student, ["Due_Amount", "Total_Due", "unpaidAmount", "Pending_Amount"])
-                              )}
-                            </div>
-                          </div>
+                        <div
+  key={cardId}
+  className={`accountant-fees-student ${
+    String(selectedStudentCardId) === String(cardId) ? "is-active" : ""
+  }`}
+  role="button"
+  tabIndex={0}
+  onClick={() => {
+    if (student?.name || student?.StudentName) {
+      openPaymentGrid(student);
+    }
+  }}
+  onKeyDown={(event) => {
+    if (event.key !== "Enter" && event.key !== " ") return;
+
+    if (student?.name || student?.StudentName) {
+      openPaymentGrid(student);
+    }
+  }}
+>
+  <div className="accountant-fees-student-avatar">
+    <img src={userAvatar} alt="" />
+  </div>
+
+  <div className="blockText">
+    {student.name || student.StudentName || "Student"}
+  </div>
+
+  <div className="normalText">
+    {student.fatherName ||
+      student.father_name ||
+      student.FatherName ||
+      student.Father_Name ||
+      ""}
+  </div>
+
+  <div className="normalText">
+    {student.className ||
+      student.Class_name ||
+      student.class_name ||
+      "Class"}{" "}
+    {student.section ||
+      student.Section ||
+      student.section_name ||
+      ""}
+  </div>
+
+  
+</div>
                         );
                       })
                     ) : (
@@ -1976,7 +2173,7 @@ const AccountantFeesPageNew = () => {
                   <div className="accountant-income-card accountant-card">
                     <div className="accountant-income-ring accountant-progress-ring">
                       <div className="accountant-progress-ring-inner">
-                        {dashboardLoading ? "..." : `${Math.round(summary.progress)}%`}
+                        {dashboardLoading ? "..." : `${Math.round(displaySummary.progress)}%`}
                       </div>
                     </div>
                     <div className="blockText">Income & Exp.</div>
@@ -1988,31 +2185,14 @@ const AccountantFeesPageNew = () => {
                       {dashboardLoading ? "Loading..." : formatINR(previousYearDue)}
                     </p>
                     <div className="blockText">Previous Year Due</div>
-                    <div className="normalText">Pending Dues for Yr. {previousYearLabel}</div>
+                    <div className="normalText">Pending Dues for Yr. </div>
                   </div>
                 </div>
 
-                <div className="accountant-total-strip accountant-card">
-                  <div className="accountant-total-strip-list">
-                    <div className="accountant-total-strip-item">
-                      <strong>{dashboardLoading ? "Loading..." : formatINR(summary.busDue)}</strong>
-                      <span>Transport Due</span>
-                    </div>
-
-                    <div className="accountant-total-strip-item">
-                      <strong>{dashboardLoading ? "Loading..." : formatINR(summary.booksDue)}</strong>
-                      <span>Books Due</span>
-                    </div>
-
-                    <div className="accountant-total-strip-item">
-                      <strong>{dashboardLoading ? "Loading..." : formatINR(summary.tuitionDue)}</strong>
-                      <span>Tuition Due</span>
-                    </div>
-                  </div>
-
+                <div className="accountant-total-stripKEM_KEM_HIGH_SCHOOLKEM_KEM_HIGH_SCHOOLKEM_KEM_HIGH_SCHOOL accountant-card">
                   <div className="accountant-total-strip-right">
                     <span>Total Due</span>
-                    <h2>{dashboardLoading ? "Loading..." : formatINR(summary.totalDue)}</h2>
+                    <h2>{dashboardLoading ? "Loading..." : formatINR(displaySummary.totalDue)}</h2>
                     <p>
                       {new Date().toLocaleDateString("en-US", {
                         month: "short",
@@ -2033,26 +2213,9 @@ const AccountantFeesPageNew = () => {
       </div>
 
       {isPaymentPopupOpen && (
-        <div>
-          <div
-            style={{
-              position: "fixed",
-              top: "14px",
-              left: "50%",
-              transform: "translateX(-50%)",
-              zIndex: 4200,
-              background: "#fff",
-              border: "1px solid #e5e7eb",
-              borderRadius: "10px",
-              padding: "8px 14px",
-              fontSize: "14px",
-              fontWeight: 600,
-              color: "#111827",
-              boxShadow: "0 6px 18px rgba(0,0,0,0.12)",
-            }}
-          >
-            Student: {popupSelection.studentName || "N/A"}
-          </div>
+                <div key={popupKey}>
+
+ 
           <PayementDemo
             className={popupSelection.className}
             sectionName={popupSelection.sectionName}
@@ -2064,6 +2227,7 @@ const AccountantFeesPageNew = () => {
               await fetchDashboardData();
               await fetchPreviousYearDue();
               await refreshPaymentSummaryMap();
+                    setSelectedStudentCardId(null);
             }}
           />
         </div>
@@ -2192,6 +2356,7 @@ const AccountantFeesPageNew = () => {
           className="globalpopup-overlay"
           onClick={() => {
             setIsAddFeesPopupOpen(false);
+            setAddFeesPanelTab("fees");
             setAddFeePreview({ className: "", section: "", rows: [] });
           }}
           style={{ zIndex: 3200 }}
@@ -2210,17 +2375,57 @@ const AccountantFeesPageNew = () => {
                 className="globalpopup-close-btn"
                 onClick={() => {
                   setIsAddFeesPopupOpen(false);
+                  setAddFeesPanelTab("fees");
                   setAddFeePreview({ className: "", section: "", rows: [] });
                 }}
               >
                 ×
               </button>
             </div>
-            <IncomeForm5
-              selectedClassSection={{ class: "", section: "" }}
-              onFeeStructurePreviewChange={setAddFeePreview}
-              embeddedInPopup
-            />
+            <div
+              style={{
+                display: "flex",
+                gap: "10px",
+                padding: "0 24px 12px",
+                flexWrap: "wrap",
+              }}
+            >
+              <button
+                type="button"
+                className="accountant-create-new-btn"
+                onClick={() => setAddFeesPanelTab("fees")}
+                style={{
+                  background: addFeesPanelTab === "fees" ? "#fdecef" : "#ffffff",
+                  color: "#c44755",
+                  border: "1px solid #f2c9cf",
+                }}
+              >
+                Fees
+              </button>
+              <button
+                type="button"
+                className="accountant-create-new-btn"
+                onClick={() => setAddFeesPanelTab("discount")}
+                style={{
+                  background: addFeesPanelTab === "discount" ? "#fdecef" : "#ffffff",
+                  color: "#c44755",
+                  border: "1px solid #f2c9cf",
+                }}
+              >
+                Discounts
+              </button>
+            </div>
+            {addFeesPanelTab === "discount" ? (
+              <div style={{ padding: "0 12px 12px" }}>
+                <DiscountsPanel dynamicFeeTypes={dynamicFeeTypes} />
+              </div>
+            ) : (
+              <IncomeForm5
+                selectedClassSection={{ class: "", section: "" }}
+                onFeeStructurePreviewChange={setAddFeePreview}
+                embeddedInPopup
+              />
+            )}
           </div>
         </div>
       )}
@@ -2398,6 +2603,15 @@ const AccountantFeesPageNew = () => {
           </div>,
           document.body
         )}
+        {dashboardLoading && <GlobalLoader timeoutSeconds={7}/>}
+                   {isHelpOpen && (
+  <HelpCenter
+    userRole={userRole}
+    openHelpSection={openHelpSection}
+    setOpenHelpSection={setOpenHelpSection}
+    setIsHelpOpen={setIsHelpOpen}
+  />
+)}
     </div>
   );
 };

@@ -12,7 +12,9 @@ import IncomeForm5 from "../shared/IncomeformTwo.jsx";
 import EditableProfileMenu from "../shared/EditableProfileMenu.jsx";
 import InstituteBrand from "../shared/InstituteBrand.jsx";
 import { resolveInstituteDisplayName } from "../shared/instituteNameUtils";
-
+  import * as XLSX from 'xlsx';
+import { jsPDF } from 'jspdf';
+import autoTable from 'jspdf-autotable';
 import collectFeeIcon from "../assets/collect.png";
 import addFeeIcon from "../assets/Navbar-AddFee.png";
 import expenseIcon from "../assets/Navbar-Expenses.png";
@@ -24,6 +26,9 @@ import addFeesIcon from "../assets/add-fee.png";
 import assistantIcon from "../assets/Assistant.png";
 import logoab from "../assets/logoab.png";
 import userAvatar from "../assets/user.png";
+import GlobalLoader from "../shared/GlobelLoading.js";
+import { FiHelpCircle } from "react-icons/fi";
+import HelpCenter from "../shared/HelpCenter.jsx";
 
 const quickCards = [
   { icon: createFeeIcon, title: "Create Expense", text: "Expense type & category" },
@@ -77,12 +82,6 @@ const assistantRecentActions = [
   { id: 1, text: "Expense bills matched with submitted entries", status: "OK" },
   { id: 2, text: "Salary register reviewed for current cycle", status: "OK" },
   { id: 3, text: "High-value expense requires final verification", status: "PENDING" },
-];
-
-const summaryCards = [
-  { amount: "₹0.00", label: "Transport Due" },
-  { amount: "₹22,000.00", label: "Books Due" },
-  { amount: "₹7,05,320.00", label: "Tuition Due" },
 ];
 
 const expenseActionPlans = [
@@ -160,6 +159,9 @@ const AccountantExpensesPageNew = () => {
   const [ledgerFromDate, setLedgerFromDate] = useState("");
   const [ledgerToDate, setLedgerToDate] = useState("");
   const [expenseSearch, setExpenseSearch] = useState("");
+    const [openHelpSection, setOpenHelpSection] = useState(null);
+  const[isHelpOpen,setIsHelpOpen]=useState(false)
+  const userRole = localStorage.getItem("userRole")
   const studentManagementPopupUrl =
     typeof window === "undefined"
       ? ""
@@ -397,10 +399,12 @@ const AccountantExpensesPageNew = () => {
   const assistantVisibleSalaries = showAllAssistantSalaries
     ? assistantSalaryRows
     : assistantSalaryRows.slice(0, 4);
+
   const totalExpenseAmount = useMemo(
     () => expenseRows.reduce((sum, item) => sum + Number(item.price || item.amount || item.paid_amount || 0), 0),
     [expenseRows]
   );
+
   const totalSalaryAmount = useMemo(
     () =>
       assistantSalaryRows.reduce(
@@ -409,6 +413,7 @@ const AccountantExpensesPageNew = () => {
       ),
     [assistantSalaryRows]
   );
+
   const stationaryTotal = useMemo(
     () =>
       expenseRows.reduce((sum, item) => {
@@ -417,6 +422,7 @@ const AccountantExpensesPageNew = () => {
       }, 0),
     [expenseRows]
   );
+
   const utilitiesTotal = useMemo(
     () =>
       expenseRows.reduce((sum, item) => {
@@ -427,6 +433,7 @@ const AccountantExpensesPageNew = () => {
       }, 0),
     [expenseRows]
   );
+
   const transportTotal = useMemo(
     () =>
       expenseRows.reduce((sum, item) => {
@@ -437,6 +444,7 @@ const AccountantExpensesPageNew = () => {
       }, 0),
     [expenseRows]
   );
+
   const filteredLedgerRows = useMemo(() => {
     const parseRowDate = (item) => {
       const raw = item.payment_date || item.expense_date || item.date || "";
@@ -461,14 +469,17 @@ const AccountantExpensesPageNew = () => {
       return true;
     });
   }, [expenseRows, expenseSearch, ledgerFromDate, ledgerToDate]);
+
   const filteredLedgerTotalAmount = useMemo(
     () => filteredLedgerRows.reduce((sum, item) => sum + Number(item.totalAmount || item.amount || item.price || 0), 0),
     [filteredLedgerRows]
   );
+
   const filteredLedgerPaidAmount = useMemo(
     () => filteredLedgerRows.reduce((sum, item) => sum + Number(item.paidAmount || item.paid_amount || item.price || 0), 0),
     [filteredLedgerRows]
   );
+
   const filteredLedgerBalance = useMemo(
     () =>
       filteredLedgerRows.reduce(
@@ -484,9 +495,25 @@ const AccountantExpensesPageNew = () => {
     [filteredLedgerRows]
   );
 
+  const expenseDuePercent = useMemo(() => {
+    if (filteredLedgerTotalAmount <= 0) return 0;
+    return (filteredLedgerBalance / filteredLedgerTotalAmount) * 100;
+  }, [filteredLedgerBalance, filteredLedgerTotalAmount]);
+
+  const expenseDuePercentLabel = `${Math.round(expenseDuePercent)}%`;
+  const expenseDueProgressAngle = `${Math.max(0, Math.min(expenseDuePercent, 100)) * 3.6}deg`;
+
+  const expenseSummaryCards = useMemo(
+    () => [
+      { amount: formatINR(filteredLedgerPaidAmount), label: "Total Paid" },
+      { amount: formatINR(filteredLedgerTotalAmount), label: "Total Amount" },
+      { amount: formatINR(filteredLedgerBalance), label: "Balance" },
+    ],
+    [filteredLedgerBalance, filteredLedgerPaidAmount, filteredLedgerTotalAmount]
+  );
+
   const handleSubmitExpense = async () => {
     const schoolCode = localStorage.getItem("schoolCode");
-
     if (!schoolCode) {
       setPopup({ message: "School code not found!", type: "error" });
       return;
@@ -520,8 +547,11 @@ const AccountantExpensesPageNew = () => {
       };
 
       await axios.post("https://cleezoclass.com:4000/Accountntdata", payload);
-      await fetchExpenseRows();
-      setActiveRightPanel("transactions");
+
+      const nextExpenseRows = await fetchCombinedExpenseRows(schoolCode);
+      setExpenseRows(nextExpenseRows);
+      setAssistantSalaryRows(nextExpenseRows.filter(row => row.final_salary || row.salary_amount || row.base_salary));
+
       setPopup({ message: "Expense created successfully!", type: "success" });
       setIsAddExpensePopupOpen(false);
       resetAddExpenseFlow();
@@ -535,6 +565,113 @@ const AccountantExpensesPageNew = () => {
       setExpenseSubmitLoading(false);
     }
   };
+
+  // Updated validation logic to only require expenseType and expenseName
+  const isFormValid = expenseTransactionForm.expenseType && expenseTransactionForm.expenseName && expenseTransactionForm.description;
+
+
+// ==========================================
+// 📊 DOWNLOAD EXCEL
+// ==========================================
+const handleDownloadExpenseExcel = () => {
+  if (!filteredLedgerRows.length) {
+    alert("No data available to download.");
+    return;
+  }
+
+  // Map the data to match the table columns
+  const data = filteredLedgerRows.map((item, index) => {
+    const totalAmount = Number(item.totalAmount || item.amount || item.price || 0);
+    const paidAmount = Number(item.paidAmount || item.paid_amount || item.price || 0);
+    const balanceAmount = Number(item.balance || totalAmount - paidAmount);
+    const displayDate = item.payment_date || item.expense_date || item.date || "-";
+
+    return {
+      "Bill No.": index + 1,
+      "Date": formatDisplayDate(displayDate),
+      "Type": item.expense_type || "-",
+      "Description": item.description || item.expense_name || "-",
+      "Mode": item.paymentMode || item.payment_mode || "-",
+      "Total Amt": totalAmount,
+      "Paid Amt": paidAmount,
+      "Balance": balanceAmount,
+    };
+  });
+
+  // Create and download the workbook
+  const ws = XLSX.utils.json_to_sheet(data);
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, "Expense Ledger");
+  XLSX.writeFile(wb, `Expense_Ledger_${new Date().toISOString().slice(0, 10)}.xlsx`);
+};
+
+// ==========================================
+// 📄 DOWNLOAD PDF
+// ==========================================
+const handleDownloadExpensePDF = () => {
+  if (!filteredLedgerRows.length) {
+    alert("No data available to download.");
+    return;
+  }
+
+  const doc = new jsPDF();
+  
+  // 1. Add Title
+  doc.setFontSize(16);
+  doc.setFont(undefined, 'bold');
+  doc.text("Expense Ledger Report", 14, 15);
+  
+  // 2. Add Date Range (if filtered)
+  doc.setFontSize(10);
+  doc.setFont(undefined, 'normal');
+  if (ledgerFromDate || ledgerToDate) {
+    doc.text(`From: ${ledgerFromDate || "N/A"}  |  To: ${ledgerToDate || "N/A"}`, 14, 22);
+  }
+
+  // 3. Prepare Table Data
+  const head = [["Bill No.", "Date", "Type", "Description", "Mode", "Total Amt", "Paid Amt", "Balance"]];
+  
+  const body = filteredLedgerRows.map((item, index) => {
+    const totalAmount = Number(item.totalAmount || item.amount || item.price || 0);
+    const paidAmount = Number(item.paidAmount || item.paid_amount || item.price || 0);
+    const balanceAmount = Number(item.balance || totalAmount - paidAmount);
+    const displayDate = item.payment_date || item.expense_date || item.date || "-";
+
+    return [
+      index + 1,
+      formatDisplayDate(displayDate),
+      item.expense_type || "-",
+      item.description || item.expense_name || "-",
+      item.paymentMode || item.payment_mode || "-",
+      formatINR(totalAmount),
+      formatINR(paidAmount),
+      formatINR(balanceAmount),
+    ];
+  });
+
+  // 4. Generate Table
+  autoTable(doc, {
+    head,
+    body,
+    startY: ledgerFromDate || ledgerToDate ? 28 : 22,
+    styles: { fontSize: 8, cellPadding: 2 },
+    headStyles: { fillColor: [52, 73, 94], textColor: 255, fontStyle: 'bold' },
+    alternateRowStyles: { fillColor: [245, 245, 245] },
+  });
+
+  // 5. Add Totals at the bottom
+  const finalY = doc.lastAutoTable.finalY || 20;
+  doc.setFontSize(10);
+  doc.setFont(undefined, 'bold');
+  
+  doc.text(`Total Records: ${filteredLedgerRows.length}`, 14, finalY + 10);
+  doc.text(`Total Amt: ${formatINR(filteredLedgerTotalAmount)}`, 14, finalY + 16);
+  doc.text(`Paid Amt: ${formatINR(filteredLedgerPaidAmount)}`, 14, finalY + 22);
+  doc.text(`Balance: ${formatINR(filteredLedgerBalance)}`, 14, finalY + 28);
+
+  // 6. Save PDF
+  doc.save(`Expense_Ledger_${new Date().toISOString().slice(0, 10)}.pdf`);
+};
 
   return (
     <div className="accountant-dashboard-page accountant-fees-page accountant-expenses-page">
@@ -564,18 +701,16 @@ const AccountantExpensesPageNew = () => {
               if (event.key === "Enter" || event.key === " ") navigate("/AccountantFees");
             }}
           >
-            <div className="accountant-sidebar-item-icon"
-            >
+            <div className="accountant-sidebar-item-icon">
               <img src={collectFeeIcon} alt="" />
             </div>
             <span>Fees</span>
           </div>
 
-          <div className="accountant-sidebar-item"
-
-              onClick={() => setIsAddFeesPopupOpen(true)}
-            >
-            
+          <div
+            className="accountant-sidebar-item"
+            onClick={() => setIsAddFeesPopupOpen(true)}
+          >
             <div className="accountant-sidebar-item-icon">
               <img src={addFeeIcon} alt="" />
             </div>
@@ -657,6 +792,17 @@ const AccountantExpensesPageNew = () => {
             </div>
 
             <div className="accountant-topbar-right">
+                <button
+                 className="accountant-help-icon-btn"
+                 onClick={() => setIsHelpOpen(true)}
+               >
+               <FiHelpCircle
+               style={{
+                 color: "#e9818c",
+                 fontSize: "34px"
+               }}
+             />
+               </button>
               <EditableProfileMenu />
             </div>
           </div>
@@ -673,15 +819,18 @@ const AccountantExpensesPageNew = () => {
               <div className="accountant-fees-summary-card accountant-card">
                 <div className="accountant-fees-summary-left">
                   <div className="accountant-progress-panel">
-                    <div className="accountant-progress-ring" style={{ "--progress-angle": "10.8deg" }}>
-                      <div className="accountant-progress-ring-inner">3%</div>
+                    <div
+                      className="accountant-progress-ring"
+                      style={{ "--admission-progress": expenseDueProgressAngle }}
+                    >
+                      <div className="accountant-progress-ring-inner">{expenseDuePercentLabel}</div>
                     </div>
                   </div>
 
                   <div className="accountant-fees-summary-stats">
-                    <p>
-                      <span className="normalText accountant-fees-summary-label">Total Expenses:</span>
-                      <strong className="accountant-fees-summary-value">{formatINR(totalExpenseAmount)}</strong>
+                    <p> 
+                      <span className="normalText accountant-fees-summary-label">Total Bus Expenses:</span>
+                      <strong className="accountant-fees-summary-value">{formatINR(transportTotal)}</strong>
                     </p>
                     <p>
                       <span className="normalText accountant-fees-summary-label">Total Salaries:</span>
@@ -704,8 +853,8 @@ const AccountantExpensesPageNew = () => {
                   </button>
 
                   <div className="accountant-fees-summary-total">
-                    <span>Total Bus Expenses</span>
-                    <strong>{formatINR(transportTotal)}</strong>
+                    <span>Total  Expenses</span>
+                    <strong>{formatINR(totalExpenseAmount)}</strong>
                   </div>
                 </div>
               </div>
@@ -798,34 +947,54 @@ const AccountantExpensesPageNew = () => {
                   </div>
 
                   <div className="accountant-expense-ledger-card">
-                    <div className="accountant-expense-ledger-toolbar">
-                      <label className="accountant-expense-ledger-filter">
-                        <span>From:</span>
-                        <input
-                          type="date"
-                          value={ledgerFromDate}
-                          onChange={(event) => setLedgerFromDate(event.target.value)}
-                        />
-                      </label>
-                      <label className="accountant-expense-ledger-filter">
-                        <span>To:</span>
-                        <input
-                          type="date"
-                          value={ledgerToDate}
-                          onChange={(event) => setLedgerToDate(event.target.value)}
-                        />
-                      </label>
-                      <button
-                        type="button"
-                        className="accountant-expense-ledger-reset"
-                        onClick={() => {
-                          setLedgerFromDate("");
-                          setLedgerToDate("");
-                        }}
-                      >
-                        Reset
-                      </button>
-                    </div>
+                  <div className="accountant-expense-ledger-toolbar">
+  <label className="accountant-expense-ledger-filter">
+    <span>From:</span>
+    <input
+      type="date"
+      value={ledgerFromDate}
+      onChange={(event) => setLedgerFromDate(event.target.value)}
+    />
+  </label>
+  <label className="accountant-expense-ledger-filter">
+    <span>To:</span>
+    <input
+      type="date"
+      value={ledgerToDate}
+      onChange={(event) => setLedgerToDate(event.target.value)}
+    />
+  </label>
+  <button
+    type="button"
+    className="accountant-expense-ledger-reset"
+    onClick={() => {
+      setLedgerFromDate("");
+      setLedgerToDate("");
+    }}
+  >
+    Reset
+  </button>
+
+  {/* 👇 NEW DOWNLOAD BUTTONS 👇 */}
+  <div style={{ marginLeft: "auto", display: "flex", gap: "8px" }}>
+    <button 
+      type="button" 
+      className="accountant-expense-ledger-download" 
+      onClick={handleDownloadExpenseExcel}
+      style={{ padding: "6px 12px", background: "#16558a", color: "#fff", border: "none", borderRadius: "8px", cursor: "pointer", fontWeight: 600 }}
+    >
+       Excel
+    </button>
+    <button 
+      type="button" 
+      className="accountant-expense-ledger-download" 
+      onClick={handleDownloadExpensePDF}
+      style={{ padding: "6px 12px", background: "#f9b1b8", color: "#fff", border: "none", borderRadius: "8px", cursor: "pointer", fontWeight: 600 }}
+    >
+       PDF
+    </button>
+  </div>
+</div>
 
                     <div className="accountant-expense-ledger-table-wrap">
                       <table className="accountant-expense-ledger-table">
@@ -916,12 +1085,12 @@ const AccountantExpensesPageNew = () => {
                   <div className="accountant-total-others-card accountant-card">
                     <div className="accountant-total-others-left">
                       <div className="accountant-total-strip-item">
-                        <strong>Rs 23,496.00</strong>
+                        <strong>0</strong>
                         <span>Office Expense</span>
                       </div>
 
                       <div className="accountant-total-strip-item">
-                        <strong>Rs 3,86,412.00</strong>
+                        <strong>0</strong>
                         <span>Salary Expense</span>
                       </div>
                     </div>
@@ -956,7 +1125,7 @@ const AccountantExpensesPageNew = () => {
                         >
                           <strong style={{ fontSize: "13px" }}>Expense List ({expenseRows.length})</strong>
                           <div
-                          className="normalText"
+                            className="normalText"
                             style={{
                               marginTop: "6px",
                               maxHeight: showAllAssistantExpenses ? "220px" : "120px",
@@ -1072,46 +1241,42 @@ const AccountantExpensesPageNew = () => {
                                   </div>
                                 </div>
                               ))}
-                            {!assistantLoadingLists &&
-                              assistantSalaryRows.length > 4 &&
-                              !showAllAssistantSalaries && (
-                                <button
-                                  type="button"
-                                  onClick={() => setShowAllAssistantSalaries(true)}
-                                  style={{
-                                    border: "none",
-                                    background: "transparent",
-                                    color: "#1a73e8",
-                                    textAlign: "left",
-                                    padding: 0,
-                                    cursor: "pointer",
-                                    fontSize: "12px",
-                                    textDecoration: "underline",
-                                  }}
-                                >
-                                  + {assistantSalaryRows.length - 4} more... (View all)
-                                </button>
-                              )}
-                            {!assistantLoadingLists &&
-                              assistantSalaryRows.length > 4 &&
-                              showAllAssistantSalaries && (
-                                <button
-                                  type="button"
-                                  onClick={() => setShowAllAssistantSalaries(false)}
-                                  style={{
-                                    border: "none",
-                                    background: "transparent",
-                                    color: "#1a73e8",
-                                    textAlign: "left",
-                                    padding: 0,
-                                    cursor: "pointer",
-                                    fontSize: "12px",
-                                    textDecoration: "underline",
-                                  }}
-                                >
-                                  Show less
-                                </button>
-                              )}
+                            {!assistantLoadingLists && assistantSalaryRows.length > 4 && !showAllAssistantSalaries && (
+                              <button
+                                type="button"
+                                onClick={() => setShowAllAssistantSalaries(true)}
+                                style={{
+                                  border: "none",
+                                  background: "transparent",
+                                  color: "#1a73e8",
+                                  textAlign: "left",
+                                  padding: 0,
+                                  cursor: "pointer",
+                                  fontSize: "12px",
+                                  textDecoration: "underline",
+                                }}
+                              >
+                                + {assistantSalaryRows.length - 4} more... (View all)
+                              </button>
+                            )}
+                            {!assistantLoadingLists && assistantSalaryRows.length > 4 && showAllAssistantSalaries && (
+                              <button
+                                type="button"
+                                onClick={() => setShowAllAssistantSalaries(false)}
+                                style={{
+                                  border: "none",
+                                  background: "transparent",
+                                  color: "#1a73e8",
+                                  textAlign: "left",
+                                  padding: 0,
+                                  cursor: "pointer",
+                                  fontSize: "12px",
+                                  textDecoration: "underline",
+                                }}
+                              >
+                                Show less
+                              </button>
+                            )}
                           </div>
                         </div>
 
@@ -1170,8 +1335,6 @@ const AccountantExpensesPageNew = () => {
                             ))}
                           </div>
                         </div>
-
-                   
                       </div>
                     ) : activeRightPanel === "transactions" ? (
                       <div className="accountant-feetype-list">
@@ -1207,7 +1370,6 @@ const AccountantExpensesPageNew = () => {
                               <span>
                                 O {item.expenseName} - {item.category}
                               </span>
-                             
                             </div>
                           ))
                         ) : (
@@ -1220,10 +1382,13 @@ const AccountantExpensesPageNew = () => {
 
                 <div className="accountant-fees-right-mini-row">
                   <div className="accountant-income-card accountant-card">
-                    <div className="accountant-income-ring accountant-progress-ring">
-                      <div className="accountant-progress-ring-inner">3%</div>
+                    <div
+                      className="accountant-income-ring accountant-progress-ring"
+                      style={{ "--admission-progress": expenseDueProgressAngle }}
+                    >
+                      <div className="accountant-progress-ring-inner">{expenseDuePercentLabel}</div>
                     </div>
-                    <div className="blockText">Income & Exp.</div>
+                    <div className="blockText">Expenses.</div>
                     <div className="normalText">Percentile Profit</div>
                   </div>
 
@@ -1236,7 +1401,7 @@ const AccountantExpensesPageNew = () => {
 
                 <div className="accountant-total-strip accountant-card">
                   <div className="accountant-total-strip-list">
-                    {summaryCards.map((item) => (
+                    {expenseSummaryCards.map((item) => (
                       <div key={item.label} className="accountant-total-strip-item">
                         <strong>{item.amount}</strong>
                         <span>{item.label}</span>
@@ -1245,9 +1410,9 @@ const AccountantExpensesPageNew = () => {
                   </div>
 
                   <div className="accountant-total-strip-right">
-                    <span>Total Due</span>
-                    <h2>₹6,86,757.00</h2>
-                    <p>Apr 2026</p>
+                    <span>Balance</span>
+                    <h2>{formatINR(filteredLedgerBalance)}</h2>
+                    <p>Expense Summary</p>
                   </div>
                 </div>
               </div>
@@ -1421,10 +1586,12 @@ const AccountantExpensesPageNew = () => {
                       </button>
                       <button
                         type="button"
-                        className="accountant-expense-popup-action accountant-expense-popup-action-active"
-                        onClick={() => {
-                          if (!expenseTransactionForm.expenseType || !expenseTransactionForm.expenseName) return;
-                          setAddExpenseStep(2);
+                        className="btn-solid"
+                        disabled={!isFormValid}
+                        onClick={() => setAddExpenseStep(2)}
+                        style={{
+                          opacity: isFormValid ? 1 : 0.5,
+                          cursor: isFormValid ? "pointer" : "not-allowed"
                         }}
                       >
                         Next: Add Payment
@@ -1460,28 +1627,43 @@ const AccountantExpensesPageNew = () => {
                           <option value="CHECK">CHECK</option>
                         </select>
                       </label>
-                      <label className="accountant-create-fee-label">
-                        Total Amount
-                        <input
-                          type="number"
-                          value={expensePaymentForm.totalAmount}
-                          onChange={(event) =>
-                            setExpensePaymentForm((prev) => ({ ...prev, totalAmount: event.target.value }))
-                          }
-                          placeholder="Total Amount"
-                        />
-                      </label>
-                      <label className="accountant-create-fee-label">
-                        Paid
-                        <input
-                          type="number"
-                          value={expensePaymentForm.paidAmount}
-                          onChange={(event) =>
-                            setExpensePaymentForm((prev) => ({ ...prev, paidAmount: event.target.value }))
-                          }
-                          placeholder="Paid Amount"
-                        />
-                      </label>
+              <label className="accountant-create-fee-label">
+  Total Amount
+  <input
+    type="number"
+    value={expensePaymentForm.totalAmount}
+    onChange={(event) =>
+      setExpensePaymentForm((prev) => ({
+        ...prev,
+        totalAmount: event.target.value,
+      }))
+    }
+    placeholder="Total Amount"
+  />
+</label>
+
+<label className="accountant-create-fee-label">
+  Paid
+  <input
+    type="number"
+    value={expensePaymentForm.paidAmount}
+    onChange={(event) => {
+      const paid = Number(event.target.value);
+      const total = Number(expensePaymentForm.totalAmount);
+
+      if (paid > total) {
+        alert("Paid amount cannot be greater than the total amount.");
+        return;
+      }
+
+      setExpensePaymentForm((prev) => ({
+        ...prev,
+        paidAmount: event.target.value,
+      }));
+    }}
+    placeholder="Paid Amount"
+  />
+</label>
                       <label className="accountant-create-fee-label">
                         Balance
                         <input type="text" value={expensePaymentForm.balance} readOnly />
@@ -1512,6 +1694,7 @@ const AccountantExpensesPageNew = () => {
           </div>
         </div>
       )}
+
       {isAddFeesPopupOpen && (
         <div
           className="globalpopup-overlay"
@@ -1549,6 +1732,7 @@ const AccountantExpensesPageNew = () => {
           </div>
         </div>
       )}
+
       {isStudentManagementPopupOpen && (
         <div
           className="globalpopup-overlay accountant-student-management-popup-overlay"
@@ -1583,12 +1767,27 @@ const AccountantExpensesPageNew = () => {
           </div>
         </div>
       )}
+
       <ErrorPopup
         message={popup.message}
         type={popup.type}
         onClose={() => setPopup({ message: "", type: "" })}
       />
+      {expenseRowsLoading && <GlobalLoader timeoutSeconds={7}/>}
+      {
+  isHelpOpen && (
+    <>
+    <HelpCenter
+    userRole={userRole}
+    openHelpSection={openHelpSection}
+        setOpenHelpSection={setOpenHelpSection}
+    setIsHelpOpen={setIsHelpOpen}
+    />
+    </>
+  )
+}
     </div>
+  
   );
 };
 

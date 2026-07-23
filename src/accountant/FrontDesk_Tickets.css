@@ -90,7 +90,7 @@
  height: 34px;
   border: 1px solid #000;
   border-radius: 8px;
-  padding: 6px 10px;
+  padding: 10px 10px;
   font-size: 12px;
   outline: none;
   background: #fff;
@@ -728,9 +728,10 @@
 }
 
 /* FrontDeskDashboard ticket students panel (legacy markup) */
+/* syam */
 .frontdesk-dashboard-page .accountant-ticket-card .tickets-content {
   flex: 1 1 auto !important;
-  height: auto !important;
+  height: 300px !important;
   max-height: 100% !important;
   overflow: hidden !important;
   min-height: 0 !important;

@@ -14,7 +14,7 @@ const NormalizeNames = () => {
       return;
     }
     try {
-      const res = await axios.get("http://localhost:4000/api/students", {
+      const res = await axios.get("http://localhost:5000/api/students", {
         params: { class_name: className, section },
       });
       setStudents(res.data);
@@ -37,7 +37,7 @@ const NormalizeNames = () => {
       return;
     }
     try {
-      await axios.post("http://localhost:4000/api/normalize-name", {
+      await axios.post("http://localhost:5000/api/normalize-name", {
         class_name: className,
         section,
         oldIds: selectedNames,

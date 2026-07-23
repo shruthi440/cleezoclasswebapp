@@ -99,7 +99,7 @@ const TeacherSalaryTable1 = () => {
       setDynamicSchoolCode(code);
       try {
         const response = await axios.post(
-          'https://nova-a.tagsol.in:4000/api/schoollogodynamic',
+          'https://nova-a.tagsol.in:5000/api/schoollogodynamic',
           { secretecode: code },
           { headers: { 'Content-Type': 'application/json' } }
         );
@@ -303,7 +303,7 @@ const handleMonthlyPayslipUpload = async () => {
   // Handle mail payslip send
   const handleMailPayslipSend = async (formData_new) => {
     try {
-      const res = await fetch("https://nova-a.tagsol.in:4000/api/sendpaySlip", {
+      const res = await fetch("https://nova-a.tagsol.in:5000/api/sendpaySlip", {
         method: "POST",
         body: formData_new,
       });

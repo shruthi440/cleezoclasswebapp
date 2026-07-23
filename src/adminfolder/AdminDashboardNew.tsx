@@ -7,6 +7,7 @@ import "./AdminDashboardNew.css";
 import "./AdminEventsAndMeetings.css";
 import InstituteBrand from "../shared/InstituteBrand.jsx";
 import { resolveInstituteDisplayName } from "../shared/instituteNameUtils";
+import { getUserDisplayName } from "../shared/userDisplayName";
 
 import abcLogo from "../assets/logoab.png";
 import dashboardIcon from "../assets/Dashboard.png";
@@ -24,7 +25,43 @@ import { FaEdit, FaUser } from "react-icons/fa";
 import TaskOfTheDay from "../shared/TaskOfTheDay.tsx";
 import FrontDesk_Tickets from "../frontdeskdahboard/FrontDesk_Tickets.tsx";
 import ErrorPopup from "../shared/ErrorPopup";
+import SchoolEventsPosters from "../shared/SchoolEventsPosters.jsx";
+import SchoolEventsHeading from "../shared/SchoolEventsHeading.jsx";
+import HelpCenter from "../shared/HelpCenter.jsx";
+import { FiHelpCircle } from "react-icons/fi";
 // import StoreDashboard from "../shared/AdminStoreNew.jsx";
+
+const API_BASE = "https://cleezoclass.com:4000/api";
+const PREMIUM_SUPPORT_MESSAGE =
+  "Premium content is available after activation. For more details, contact our support team: supprteam@gmail.com";
+
+
+interface Teacher {
+  teacher_id: string | number;
+  teacher_name: string;
+  phone_no: string;
+  subject?: string;
+  designation?: string;
+}
+type AttendanceRow = {
+  name: string;
+  class_name: string;
+  section: string;
+  present_days: number;
+  informed_days: number;
+  uninformed_days: number;
+  total_days: number;
+  attendance_percentage: number;
+};
+type MarksRow = {
+  name: string;
+  class_name: string;
+  section: string;
+  subject: string;
+  test_type: string;
+  marks_obtained: number;
+  created_at: string;
+};
 
 const ADMIN_API_BASE = "https://cleezoclass.com:4000/api";
 
@@ -98,6 +135,9 @@ const AdminDashboard: React.FC = () => {
     phone_no: "",
     email: "",
   });
+  const [eventSelected, setEventSelected] = useState<boolean>(false) // to display events in Assistant actions container
+  const [festival, setFestival] = useState(null);
+  const [schoolCode] = useState(localStorage.getItem("schoolCode"));
   const [profileSaveStatus, setProfileSaveStatus] = useState("");
   const [profileSaving, setProfileSaving] = useState(false);
   const [profileImageOpen, setProfileImageOpen] = useState(false);
@@ -119,6 +159,74 @@ const AdminDashboard: React.FC = () => {
     date: new Date().toISOString().split("T")[0],
     time: "",
   });
+  const [announcements, setAnnouncements] = useState([]);
+  const [teachers, setTeachers] = useState<Teacher[]>([]);
+  const [loadingTeachers, setLoadingTeachers] = useState(false);
+  const [attendanceRows, setAttendanceRows] = useState<AttendanceRow[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
+  const [marksRows, setMarksRows] = useState<MarksRow[]>([]);
+  const [selectedClass, setSelectedClass] = useState("All");
+  const [selectedSection, setSelectedSection] = useState("All");
+  const [selectedMonth, setSelectedMonth] = useState("");
+  const [behaviour, setBehaviour] = useState({});
+  const [openHelpSection, setOpenHelpSection] = useState(null);
+  const[isHelpOpen,setIsHelpOpen]=useState(false)
+  const userRole = localStorage.getItem("userRole")
+
+  useEffect(() => {
+    getBehaviourPercentage();
+  }, []);
+
+  const getBehaviourPercentage = async () => {
+    try {
+      const schoolCode = localStorage.getItem("schoolCode");
+
+      const res = await axios.get(
+        "https://cleezoclass.com:4000/api/overall-behaviour-percentage",
+        {
+          params: { schoolCode },
+        }
+      );
+
+      if (res.data.success) {
+        setBehaviour(res.data.data);
+      }
+    } catch (err) {
+      console.error(err);
+    }
+  };
+      const [performance, setPerformance] = useState({});
+  
+      useEffect(() => {
+          getOverallPerformance();
+      }, []);
+  
+      const getOverallPerformance = async () => {
+  
+          try {
+  
+              const schoolCode = localStorage.getItem("schoolCode");
+  
+              const response = await axios.get(
+                  "https://cleezoclass.com:4000/api/overall-performance-percentage",
+                  {
+                      params: {
+                          schoolCode,
+                      },
+                  }
+              );
+  
+              if (response.data.success) {
+                  setPerformance(response.data.data);
+              }
+  
+          } catch (error) {
+              console.log(error);
+          }
+  
+      };
+
   const pendingChatCount = pendingChats.filter((item: any) => {
     const status = String(item?.status || item?.approval_status || "pending").toLowerCase();
     return status === "pending" || status === "awaiting";
@@ -170,6 +278,8 @@ const AdminDashboard: React.FC = () => {
     },
   ];
 
+
+
   const academicTeacherCards = [
     { name: "B. Ravindra Reddy, 7A", meta: "S/O - B. Bhaskar.", stats: "FA-3, 42% Gr: E, Att: 82%" },
     { name: "B. Ravindra Reddy, 7A", meta: "S/O - B. Bhaskar.", stats: "FA-3, 59% Gr: D, Att: 91%" },
@@ -199,6 +309,99 @@ const AdminDashboard: React.FC = () => {
     { date: "524 / 534", title: "2 Fail / 8 Exits", sub: "Promotions" },
     { date: "Complaints", title: "Live Chat", sub: "Unofficial" },
   ];
+
+  const fetchAllTeachers = async () => {
+    if (!schoolCode) return;
+    setLoadingTeachers(true);
+    try {
+      const res = await axios.post("https://cleezoclass.com:4000/api/users", {
+        schoolCode,
+        user_type: "teacher",
+      });
+      const data = Array.isArray(res.data) ? res.data : [];
+      setTeachers(
+        data.map((teacher: any, index: number) => ({
+          ...teacher,
+
+        }))
+      );
+    } catch (err) {
+      console.error("Error loading teachers", err);
+      setTeachers([]);
+    } finally {
+      setLoadingTeachers(false);
+    }
+  };
+  useEffect(() => {
+    fetchAllTeachers();
+  }, [schoolCode]);
+
+
+  useEffect(() => {
+    const schoolCode = localStorage.getItem("schoolCode");
+    if (!schoolCode) return;
+
+    let cancelled = false;
+
+    const loadReports = async () => {
+      setLoading(true);
+      setError("");
+
+      try {
+        const params = {
+          schoolCode,
+          className: selectedClass,
+          section: selectedSection,
+          month: selectedMonth || "All",
+        };
+
+        const [attendanceRes, marksRes] = await Promise.all([
+          axios.get(`${API_BASE}/admin/class-wise-attendance-list`, { params }),
+          axios.get(`${API_BASE}/admin/class-wise-academic-marks-list`, { params }),
+        ]);
+
+        if (!cancelled) {
+          setAttendanceRows(Array.isArray(attendanceRes.data) ? attendanceRes.data : []);
+          setMarksRows(Array.isArray(marksRes.data) ? marksRes.data : []);
+        }
+      } catch (err: any) {
+        if (cancelled) return;
+        setAttendanceRows([]);
+        setMarksRows([]);
+        setError(
+          err?.response?.data?.error ||
+          err?.message ||
+          "Failed to load admin reports."
+        );
+      } finally {
+        if (!cancelled) {
+          setLoading(false);
+        }
+      }
+    };
+
+    loadReports();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedClass, selectedSection, selectedMonth]);
+
+ console.log("Attendance :",attendanceRows)
+ 
+ let attendanceWithPercentage = 0;
+
+ attendanceRows.map(student =>{
+  attendanceWithPercentage += Math.floor(student.attendance_percentage)
+ })
+
+const teacherPerformance = (teachers.length / teachers.length) * 100
+const studentPerformance = Math.floor(attendanceWithPercentage/attendanceRows.length)
+const overallPerformance = Math.floor((teacherPerformance + studentPerformance) / 2);
+
+console.log("attenance percentage",attendanceWithPercentage);
+
+ console.log(attendanceRows.length)
 
   useEffect(() => {
     const fetchEvents = async () => {
@@ -250,6 +453,29 @@ const AdminDashboard: React.FC = () => {
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [isStoreModalOpen]);
+  useEffect(() => {
+    console.log("🔥 Component Loaded");
+    console.log("schoolCode:", schoolCode);
+
+    if (!schoolCode) {
+      console.log("❌ Missing schoolCode");
+      return;
+    }
+
+    axios
+      .get("https://cleezoclass.com:4000/api/school-festival", {
+        params: { schoolCode },
+      })
+      .then((res) => {
+        console.log("✅ Festival API:", res.data);
+        setFestival(res.data.data?.[0] || null);
+
+      })
+      .catch((err) => {
+        console.log("❌ Festival API Error:", err.message);
+
+      });
+  }, [schoolCode]);
 
   const normalizeUserPhoto = (rawPhoto: any) => {
     if (!rawPhoto) return "";
@@ -819,6 +1045,46 @@ const AdminDashboard: React.FC = () => {
     return cells;
   }, [calendarMonth, calendarYear]);
 
+  const latestAnnouncement = announcements[0] || null;
+  const latestEvent = events[0] || null;
+  const latestMeeting = meetings[0] || null;
+
+
+  const footerCards = [
+    {
+      title: latestAnnouncement ? formatDateLabel(latestAnnouncement.announcementDate) : "--",
+      subtitle: latestAnnouncement?.title || "No announcements",
+      meta: "Announcements",
+    },
+    {
+      title: latestEvent ? formatDateLabel(latestEvent.eventDate) : "--",
+      subtitle: latestEvent?.eventName || "No events",
+      meta: "Events",
+    },
+    {
+      title: latestMeeting ? formatDateLabel(latestMeeting.meetingDate) : "--",
+      subtitle: latestMeeting?.meetingTitle || "No meetings",
+      meta: "Meetings",
+    },
+    { title: "Complaints", subtitle: "Store", meta: "Uniform" },
+  ];
+const academicPercentage = Number(performance.overallPercentage || 0);
+
+
+
+const behaviourPercentage =
+  100 -
+  (Number(behaviour.needsImprovementPercentage || 0) +
+   Number(behaviour.negativePercentage || 0));
+
+const overallPerformance1 = (
+  (
+    academicPercentage 
+  ) / 1
+).toFixed(1);
+
+
+const progressAngle = `${(academicPercentage / 100) * 360}deg`;
   return (
     <div className="dashboard-page dashboard-home-page frontdesk-dashboard-page accountant-dashboard-page accountant-dashboard-home-page admission-dashboard-page">
       <div className="dashboard-shell accountant-dashboard-shell" style={{ position: "relative" }}>
@@ -923,6 +1189,7 @@ const AdminDashboard: React.FC = () => {
               ))}
             </div>
 
+  
             <div className="dashboard-topbar-center accountant-topbar-center">
               <InstituteBrand
                 logoSrc={schoolLogo || "/default-logo.png"}
@@ -932,15 +1199,38 @@ const AdminDashboard: React.FC = () => {
             </div>
 
             <div className="dashboard-topbar-right accountant-topbar-right">
-        
+
               <div className="header-profile-wrap" ref={userDropdownRef}>
-                <button
-                  className="header-profile-trigger"
-                  type="button"
-                  onClick={() => setUserDropdownOpen((prev) => !prev)}
-                >
-                  <FaUser className="header-profile-trigger-icon" />
-                </button>
+
+             <div style={{ 
+  display: "flex", 
+  alignItems: "center", 
+  gap: "12px" 
+}}>
+  <button
+    className="accountant-help-icon-btn"
+    // style={{marginTop:"40px"}}
+    onClick={() => setIsHelpOpen(true)}
+    title="Help"
+  >
+    <FiHelpCircle
+      style={{
+        color: "#e9818c",
+        fontSize: "34px"
+      }}
+    />
+  </button>
+
+  <button
+    className="header-profile-trigger"
+    type="button"
+    onClick={() => setUserDropdownOpen((prev) => !prev)}
+    style={{marginTop:"20px"}}
+    title="Profile"
+  >
+    <FaUser className="header-profile-trigger-icon" />
+  </button>
+</div>
 
                 {userDropdownOpen && (
                   <div className="header-profile-dropdown">
@@ -1035,12 +1325,11 @@ const AdminDashboard: React.FC = () => {
                       <>
                         {profileSaveStatus && (
                           <div
-                            className={`header-profile-status ${
-                              profileSaveStatus.toLowerCase().includes("failed") ||
+                            className={`header-profile-status ${profileSaveStatus.toLowerCase().includes("failed") ||
                               profileSaveStatus.toLowerCase().includes("missing")
-                                ? "header-profile-status-error"
-                                : "header-profile-status-success"
-                            }`}
+                              ? "header-profile-status-error"
+                              : "header-profile-status-success"
+                              }`}
                           >
                             {profileSaveStatus}
                           </div>
@@ -1084,7 +1373,7 @@ const AdminDashboard: React.FC = () => {
           <div className="accountant-grid">
             <div className="accountant-row accountant-row-top">
               <div className="accountant-welcome-block">
-                <h2>Hi, Vinay!</h2>
+                <h2>Hi, {userInfo?.name || userInfo?.username || getUserDisplayName()}!</h2>
                 <p>Check Store Inventory,</p>
                 <p>Report Track to Class Teacher</p>
                 <p>Submit Building maintenance</p>
@@ -1124,45 +1413,35 @@ const AdminDashboard: React.FC = () => {
                   </button>
                 </div>
 
-              <button
-  type="button"
-  className="accountant-inline-plus accountant-inline-plus-below"
-  onClick={() => navigate("/AdiminAcademicsNew")}
->
-  +
-</button>
+                <button
+                  type="button"
+                  className="accountant-inline-plus accountant-inline-plus-below"
+                  onClick={() => navigate("/AdiminAcademicsNew")}
+                >
+                  +
+                </button>
 
                 <div className="accountant-collect-content">
-                  <div className="accountant-progress-panel" style={{ ["--admission-progress" as any]: "252deg" }}>
-                    <div className="accountant-progress-ring">
-                      <div className="accountant-progress-ring-inner">70%</div>
+<div className="accountant-progress-panel" style={{ ["--admission-progress" as any]: progressAngle }}>
+                      <div className="accountant-progress-ring">
+                      <div className="accountant-progress-ring-inner">{academicPercentage || 0}%</div>
                     </div>
                   </div>
 
                   <div className="collect-stats">
+                   
+                                <p><span>Performance - student:</span> <strong>{performance.overallPercentage || 0}%</strong></p>
+      <p> Positive: <strong>{behaviour.positivePercentage || 0}%</strong></p>
+
                     <p>
-                      <span>Performance - Staff:</span>
-                      <strong>70%</strong>
-                    </p>
-                    <p>
-                      <span>Performance - Student:</span>
-                      <strong>89%</strong>
-                    </p>
-                    <p>
-                      <span>Behavior:</span>
-                      <strong>0% Misbehavior</strong>
-                    </p>
-                    <p>
-                      <span>Staff Overtime:</span>
-                      <strong>6 Teachers</strong>
-                    </p>
+ <p> Needs Improvement: <strong>{behaviour.needsImprovementPercentage || 0}%</strong></p>
+
+      <p>Negative: <strong>{behaviour.negativePercentage || 0}%</strong></p>                    </p>
+                    
                   </div>
                 </div>
 
-                <div className="accountant-total-due">
-                  <span>Exam Schedule</span>
-                  <p>SA-2 | 15/04/2026</p>
-                </div>
+               
               </div>
 
               <div className="accountant-feetype-card accountant-card admission-events-card admin-events-calendar">
@@ -1275,7 +1554,16 @@ const AdminDashboard: React.FC = () => {
                 </div>
                 {activeQuickPanel === "assistant" ? (
                   <div style={{ padding: "0 0.35rem", display: "grid", gap: "0.6rem", maxHeight: "10.5rem", overflowY: "auto" }}>
-                    {assistantPanelItems.map((item) => (
+                    <div >{festival &&
+                      <div className="admin-events-assistant-item admin-events-assistant-posters"
+                        onClick={() => setEventSelected(!eventSelected)}>
+                        <strong><SchoolEventsHeading /></strong>
+                      </div>
+                    }
+                    </div>
+
+
+                    {eventSelected ? <div><SchoolEventsPosters /> </div> : assistantPanelItems.map((item) => (
                       <div
                         key={item.title}
                         style={{
@@ -1319,8 +1607,7 @@ const AdminDashboard: React.FC = () => {
                       >
                         <div style={{ fontSize: "0.78rem", fontWeight: 700, color: "#222" }}>
                           {action.text ||
-                            `${action.stockName || "Stock"} • Qty ${action.quantity || "-"} • ${
-                              action.category || "PO"
+                            `${action.stockName || "Stock"} • Qty ${action.quantity || "-"} • ${action.category || "PO"
                             }`}
                         </div>
                         <div style={{ fontSize: "0.7rem", color: "#666" }}>
@@ -1407,30 +1694,49 @@ const AdminDashboard: React.FC = () => {
                 <FrontDesk_Tickets showTable={false} />
               </div>
 
-              <div className="accountant-premium-card accountant-card">
+              <div
+                className="accountant-premium-card accountant-card"
+                role="button"
+                tabIndex={0}
+                onClick={() => setPopupMessage(PREMIUM_SUPPORT_MESSAGE)}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter" || event.key === " ") {
+                    event.preventDefault();
+                    setPopupMessage(PREMIUM_SUPPORT_MESSAGE);
+                  }
+                }}
+              >
                 <img src={premiumIcon} alt="Premium" className="accountant-premium-icon" />
                 <h3>Go Premium!</h3>
                 <p>opt in for premium pack and get full access of Timetable, Performance analysis and more.</p>
-                <button type="button">Find out More</button>
+                <button
+                  type="button"
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    setPopupMessage(PREMIUM_SUPPORT_MESSAGE);
+                  }}
+                >
+                  Find out More
+                </button>
               </div>
 
               <div className="accountant-bottom-right">
                 <div className="accountant-income-card accountant-card">
-                  <div className="accountant-progress-ring" style={{ ["--admission-progress" as any]: "162deg" }}>
-                    <div className="accountant-progress-ring-inner">45%</div>
+                  <div className="accountant-progress-ring" style={{ ["--admission-progress" as any]: progressAngle }}>
+                    <div className="accountant-progress-ring-inner">{performance.overallPercentage || 0}%</div>
                   </div>
                   <h3>Performance</h3>
-                  <p>45%</p>
+                  <p>{performance.overallPercentage || 0}%</p>
                 </div>
 
                 <div className="accountant-prevdue-card accountant-card">
-                  <p className="accountant-prevdue-amount">8 abs / 12 avl</p>
+                  <p className="accountant-prevdue-amount">8 abs / {teachers.length} avl</p>
                   <h3>Substitute</h3>
                   <p>8 teachers absent today</p>
                 </div>
 
                 <div className="accountant-total-strip accountant-card">
-                  <div className="accountant-total-strip-list">
+                  {/* <div className="accountant-total-strip-list">
                     <div className="accountant-total-strip-item">
                       <strong>12/02/2026</strong>
                       <span>9A - Extra Class</span>
@@ -1448,7 +1754,21 @@ const AdminDashboard: React.FC = () => {
                     <span>Complaints</span>
                     <h2>Store</h2>
                     <p>Uniform</p>
+                  </div> */}
+                  <div className="admin-events-footer accountant-card "
+                    style={{
+                      border: "none",
+                      boxShadow: "none"
+                    }}>
+                    {footerCards.map((item) => (
+                      <div key={`${item.meta}-${item.title}`} className="admin-events-footer-item">
+                        <strong>{item.title}</strong>
+                        <span>{item.subtitle}</span>
+                        <small>{item.meta}</small>
+                      </div>
+                    ))}
                   </div>
+
                 </div>
               </div>
             </div>
@@ -1604,7 +1924,7 @@ const AdminDashboard: React.FC = () => {
         <img src={abcLogo} alt="Cleezo Class" className="accountant-footer-logo" />
       </div>
 
-    
+
 
       {selectedCalendarItems.length > 0 ? (
         <div
@@ -1673,6 +1993,19 @@ const AdminDashboard: React.FC = () => {
           </div>
         </div>
       ) : null}
+      {
+  isHelpOpen && (
+    <>
+    <HelpCenter
+    userRole={userRole}
+    openHelpSection={openHelpSection}
+        setOpenHelpSection={setOpenHelpSection}
+    setIsHelpOpen={setIsHelpOpen}
+    />
+    </>
+  )
+}
+  
 
     </div>
   );

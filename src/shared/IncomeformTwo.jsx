@@ -66,7 +66,7 @@ const getFeeKeyAliases = (key = "") => {
 };
 
 const readFirstNumericValue = (source, keys = []) => {
-  if (!source) return 0;
+  if (!source) return undefined;
 
   const entries = Object.entries(source);
 
@@ -82,7 +82,7 @@ const readFirstNumericValue = (source, keys = []) => {
     }
   }
 
-  return 0;
+  return undefined;
 };
 
 const normalizeStudentName = (value = "") =>
@@ -195,15 +195,15 @@ const findSavedIndividualFeeAmountForStudent = (payload, student, fee) => {
           entry?.amount ?? entry?.total ?? entry?.feeAmount ?? entry?.value ?? entry?.assignedAmount ?? 0
         );
 
-        if (Number.isFinite(amount) && amount > 0) return amount;
+        if (Number.isFinite(amount)) return amount;
       }
     }
 
     const directAmount = readFirstNumericValue(candidate, feeAliases);
-    if (directAmount > 0) return directAmount;
+    if (directAmount !== undefined) return directAmount;
   }
 
-  return 0;
+  return undefined;
 };
 
 const normalizeClassSelectionValue = (value) => {
@@ -213,7 +213,6 @@ const normalizeClassSelectionValue = (value) => {
     return raw.toUpperCase() === "NURSERY" ? "Nursery" : raw.toUpperCase();
   }
   if (/^Class\s+/i.test(raw)) return raw;
-  if (/^\d+$/.test(raw)) return `Class ${raw}`;
   return raw;
 };
 
@@ -350,8 +349,12 @@ const IncomeForm5 = ({ selectedClassSection, embeddedInPopup = false, onFeeStruc
   const [dynamicFeeValues, setDynamicFeeValues] = useState({});
   const [feeTypeInstallmentCounts, setFeeTypeInstallmentCounts] = useState({});
   const [feeTypeInstallmentDetails, setFeeTypeInstallmentDetails] = useState({});
+  const getFeeInstallmentScopeKey = (feeTypeId, targetClass = className, targetSection = section) =>
+    `${String(targetClass || "").trim()}|${String(targetSection || "").trim()}|${feeTypeId}`;
   const [isCompactFeeRowLayout, setIsCompactFeeRowLayout] = useState(false);
   const individualFeeAmountInputRefs = useRef({});
+  const localDynamicFeeValueOverridesRef = useRef({});
+  const localDynamicFeeValueScopeRef = useRef("");
 
   useEffect(() => {
     const mediaQuery = window.matchMedia("(max-width: 1024px)");
@@ -547,24 +550,52 @@ const [defaultFees, setDefaultFees] = useState({
           params: { schoolCode },
         });
 
-        const rows = Array.isArray(response.data?.data) ? response.data.data : [];
-        const normalized = rows
-          .map((item) => {
-            const columnBase = normalizeFeeColumnBase(item?.feeName);
-            if (!columnBase) return null;
-            return {
-              id: item?.id,
-              feeName: item?.feeName || columnBase,
-              feesType: item?.feesType || 'Custom Fee',
-              scope: item?.scope || 'All',
-              frequency: item?.frequency || 'One time',
-              installments: item?.installments || 1,
-              columnBase,
-            };
-          })
-          .filter(Boolean);
+// Inside fetchDynamicFeeTypes useEffect
+const rows = Array.isArray(response.data?.data) ? response.data.data : [];
+let normalized = rows
+  .map((item) => {
+    const columnBase = normalizeFeeColumnBase(item?.feeName);
+    if (!columnBase) return null;
+    return {
+      id: item?.id,
+      feeName: item?.feeName || columnBase,
+      feesType: item?.feesType || 'Custom Fee',
+      scope: item?.scope || 'All',
+      frequency: item?.frequency || 'One time',
+      installments: item?.installments || 1,
+      columnBase,
+    };
+  })
+  .filter(Boolean);
 
-        setDynamicFeeTypes(normalized);
+// 👇 ADD THIS: Include static fees if missing
+// const staticFees = [
+//   { columnBase: 'admission', feeName: 'Admission Fee' },
+//   { columnBase: 'tuition', feeName: 'Tuition Fee' },
+//   { columnBase: 'exam', feeName: 'Exam Fee' },
+//   { columnBase: 'bus', feeName: 'Bus Fee' },
+//   { columnBase: 'uniform', feeName: 'Uniform Fee' },
+//   { columnBase: 'books', feeName: 'Books Fee' }, // 👈 This fixes Book Fee
+//   { columnBase: 'other', feeName: 'Other Fees' },
+//   { columnBase: 'residential', feeName: 'Residential Fee' },
+//   { columnBase: 'previousfeedue', feeName: 'Previous Fee Due' },
+// ];
+
+// staticFees.forEach((staticFee) => {
+//   if (!normalized.some(fee => fee.columnBase === staticFee.columnBase)) {
+//     normalized.push({
+//       id: `static-${staticFee.columnBase}`,
+//       feeName: staticFee.feeName,
+//       feesType: staticFee.feeName,
+//       scope: 'All',
+//       frequency: 'One time',
+//       installments: 1,
+//       columnBase: staticFee.columnBase,
+//     });
+//   }
+// });
+
+setDynamicFeeTypes(normalized);
         setDynamicFeeValues((prev) => {
           const next = { ...prev };
           normalized.forEach((fee) => {
@@ -589,6 +620,8 @@ const [defaultFees, setDefaultFees] = useState({
                   params: {
                     schoolCode,
                     feeTypeId: fee.id,
+                    className,
+                    section,
                   },
                 }
               );
@@ -596,10 +629,10 @@ const [defaultFees, setDefaultFees] = useState({
                 ? installmentResponse.data.data
                 : [];
               return [
-                fee.id,
+                getFeeInstallmentScopeKey(fee.id),
                 {
                   count: rows.length,
-                  rows: rows.slice(0, 5).map((row) => ({
+                  rows: rows.map((row) => ({
                     installmentNo: Number(row.installmentNo) || 0,
                     amount: Number(row.amount) || 0,
                     deadlineDate: row.deadlineDate || "",
@@ -609,7 +642,7 @@ const [defaultFees, setDefaultFees] = useState({
               ];
             } catch (error) {
               return [
-                fee.id,
+                getFeeInstallmentScopeKey(fee.id),
                 {
                   count: Number(fee.installments) || 0,
                   rows: [],
@@ -634,7 +667,7 @@ const [defaultFees, setDefaultFees] = useState({
     };
 
     fetchDynamicFeeTypes();
-  }, []);
+  }, [className, section]);
 
   const [feeStructure, setFeeStructure] = useState({});
 
@@ -677,12 +710,82 @@ const [defaultFees, setDefaultFees] = useState({
       }
     }
   }, [selectedStudentId, students]);
+const getValueFromBackendData = (backendData, key, context = '') => {
+  if (!backendData) {
+    console.log(`[getValueFromBackendData${context}] No backendData for key:`, key);
+    return undefined;
+  }
 
+  const feeVariations = {
+   
+    previousfeedue: ['Previous_Fee_Due', 'previous_fee_due', 'previousfeedue', 'Previous Fee Due'],
+   
+  };
+
+  if (feeVariations[key]) {
+    for (const variation of feeVariations[key]) {
+      if (backendData[variation] !== undefined) {
+        const value = backendData[variation];
+        if (value !== undefined && value !== null && value !== '') {
+          const numericValue = parseFloat(value);
+          if (!isNaN(numericValue)) {
+            console.log(`[getValueFromBackendData${context}] ✅ Found "${variation}" = ${numericValue} for "${key}"`);
+            return numericValue;
+          }
+        }
+      }
+    }
+    console.log(`[getValueFromBackendData${context}] ⚠️ No valid value for "${key}" variations:`, feeVariations[key]);
+  }
+
+  if (backendData[key] !== undefined) {
+    const value = backendData[key];
+    if (value !== undefined && value !== null && value !== '') {
+      const numericValue = parseFloat(value);
+      if (!isNaN(numericValue)) {
+        console.log(`[getValueFromBackendData${context}] Exact match "${key}" -> ${numericValue}`);
+        return numericValue;
+      }
+    }
+  }
+
+  const lowerKey = key.toLowerCase();
+  for (const [backendKey, value] of Object.entries(backendData)) {
+    if (backendKey.toLowerCase() === lowerKey) {
+      const numericValue = parseFloat(value);
+      if (!isNaN(numericValue)) {
+        console.log(`[getValueFromBackendData${context}] Case-insensitive "${key}" -> "${backendKey}": ${numericValue}`);
+        return numericValue;
+      }
+    }
+  }
+
+  const normalizedKey = key.toLowerCase().replace(/[^a-z0-9]/g, '_');
+  for (const [backendKey, value] of Object.entries(backendData)) {
+    const normalizedBackendKey = backendKey.toLowerCase().replace(/[^a-z0-9]/g, '_');
+    if (normalizedBackendKey === normalizedKey) {
+      const numericValue = parseFloat(value);
+      if (!isNaN(numericValue)) {
+        console.log(`[getValueFromBackendData${context}] Normalized "${key}" -> "${backendKey}": ${numericValue}`);
+        return numericValue;
+      }
+    }
+  }
+
+  console.log(`[getValueFromBackendData${context}] ❌ NO MATCH for "${key}". Available keys:`, Object.keys(backendData));
+  return undefined;
+};
   useEffect(() => {
     const fetchFeeStructure = async () => {
       if (!className || !section) return;
 
       try {
+        const dynamicValueScope = `${className}|${section}`;
+        if (localDynamicFeeValueScopeRef.current !== dynamicValueScope) {
+          localDynamicFeeValueScopeRef.current = dynamicValueScope;
+          localDynamicFeeValueOverridesRef.current = {};
+        }
+
         const schoolCode = localStorage.getItem('schoolCode') || "TAGSOLNOVALLP";
         const response = await axios.get(
           `https://cleezoclass.com:4000/feeStructure/${className}`,
@@ -695,16 +798,16 @@ const [defaultFees, setDefaultFees] = useState({
         }
 
         const backendData = response.data.feeStructure;
-        const dynamicFeeSnapshot = dynamicFeeTypes.reduce((acc, fee) => {
-          const value = backendData?.[fee.columnBase];
-          if (value !== undefined && value !== null && value !== "") {
-            const numericValue = parseFloat(value);
-            if (!Number.isNaN(numericValue)) {
-              acc[fee.columnBase] = numericValue;
-            }
-          }
-          return acc;
-        }, {});
+const dynamicFeeSnapshot = dynamicFeeTypes.reduce((acc, fee) => {
+  const value = getValueFromBackendData(backendData, fee.columnBase);
+  if (value !== undefined && value !== null && value !== "") {
+    const numericValue = parseFloat(value);
+    if (!Number.isNaN(numericValue)) {
+      acc[fee.columnBase] = numericValue;
+    }
+  }
+  return acc;
+}, {});
         console.log('[feeStructure] Dynamic fee snapshot from backend:', dynamicFeeSnapshot);
 
         const fetchedFees = {
@@ -724,10 +827,18 @@ const [defaultFees, setDefaultFees] = useState({
 
         setDefaultFees(fetchedFees);
         setFees(fetchedFees);
-        setDynamicFeeValues((prev) => ({
-          ...prev,
-          ...dynamicFeeSnapshot,
-        }));
+        setDynamicFeeValues((prev) => {
+          const next = { ...prev };
+          Object.entries(dynamicFeeSnapshot).forEach(([key, value]) => {
+            const localValue = Number(prev[key]) || 0;
+            const backendValue = Number(value) || 0;
+            next[key] =
+              localDynamicFeeValueOverridesRef.current[key] && localValue > 0
+                ? localValue
+                : backendValue;
+          });
+          return next;
+        });
         setFeeStructure({
           ...fetchedFees,
           ...dynamicFeeSnapshot,
@@ -753,7 +864,8 @@ const [defaultFees, setDefaultFees] = useState({
               feesType: fee.feesType || "Custom Fee",
               installments: fee.installments || 1,
               amount: parseFloat(dynamicFeeSnapshot[fee.columnBase]) || 0,
-              installmentDetails: feeTypeInstallmentDetails[fee.id] || [],
+              installmentDetails:
+                feeTypeInstallmentDetails[getFeeInstallmentScopeKey(fee.id)] || [],
             }))
             .filter((fee) => fee.amount > 0);
 
@@ -906,51 +1018,73 @@ useEffect(() => {
   const [installments, setInstallments] = useState([]);
   const [tuitionFee, setTuitionFee] = useState(0);
   const [activeInstallmentFee, setActiveInstallmentFee] = useState(null);
+  const [activeIndividualInstallmentStudent, setActiveIndividualInstallmentStudent] = useState(null);
   const activeInstallmentAmount =
-    activeInstallmentFee?.columnBase != null
+    activeIndividualInstallmentStudent
+      ? Number(activeIndividualInstallmentStudent?.assignedAmount) || 0
+      : activeInstallmentFee?.columnBase != null
       ? Number(dynamicFeeValues?.[activeInstallmentFee.columnBase]) || 0
       : Number(fees.tuition) || 0;
 
-  const buildInstallments = (count, totalAmount) => {
-    const normalizedCount = Math.max(1, Math.min(5, Number(count) || 0));
-    const total = Number(totalAmount) || 0;
+const buildInstallments = (count, totalAmount) => {
+  const normalizedCount = Math.max(1, Number(count) || 0);
+  const total = Math.max(0, Number(totalAmount) || 0);
 
-    if (normalizedCount <= 0 || total <= 0) {
-      return [];
-    }
+  if (normalizedCount <= 0 || total <= 0) {
+    return [];
+  }
 
-    const baseAmount = Math.floor((total / normalizedCount) * 100) / 100;
-    let remaining = Number(total.toFixed(2));
+  const baseAmount = Math.floor((total / normalizedCount) * 100) / 100;
+  let remaining = Number(total.toFixed(2));
 
-    return Array.from({ length: normalizedCount }, (_, index) => {
-      const amount =
-        index === normalizedCount - 1 ? Number(remaining.toFixed(2)) : Number(baseAmount.toFixed(2));
-      remaining = Number((remaining - amount).toFixed(2));
+  return Array.from({ length: normalizedCount }, (_, index) => {
+    const amount = index === normalizedCount - 1
+      ? Number(remaining.toFixed(2))
+      : Number(baseAmount.toFixed(2));
+    remaining = Number((remaining - amount).toFixed(2));
 
-      const deadline = new Date();
-      deadline.setMonth(deadline.getMonth() + index + 1);
+    const deadline = new Date();
+    deadline.setMonth(deadline.getMonth() + index + 1);
 
-      return {
-        id: index + 1,
-        amount,
-        date: deadline.toISOString().split("T")[0],
-      };
-    });
-  };
+    return {
+      id: index + 1,
+      amount,
+      date: deadline.toISOString().split("T")[0],
+    };
+  });
+};
 
 const buildPlaceholderInstallments = (count) => {
-    const normalizedCount = Math.max(1, Math.min(5, Number(count) || 0));
-    return Array.from({ length: normalizedCount }, (_, index) => {
-      const deadline = new Date();
-      deadline.setMonth(deadline.getMonth() + index + 1);
+  const normalizedCount = Math.max(1, Number(count) || 0);
+  return Array.from({ length: normalizedCount }, (_, index) => {
+    const deadline = new Date();
+    deadline.setMonth(deadline.getMonth() + index + 1);
 
-      return {
-        id: index + 1,
-        amount: 0,
-        date: deadline.toISOString().split("T")[0],
-      };
-    });
-  };
+    return {
+      id: index + 1,
+      amount: 0,
+      date: deadline.toISOString().split("T")[0],
+    };
+  });
+};
+
+const normalizeInstallmentRowsForSave = (rows = []) =>
+  (Array.isArray(rows) ? rows : []).map((installment, index) => ({
+    installmentNo: Number(installment.installmentNo || installment.id) || index + 1,
+    amount: Number(installment.amount) || 0,
+    deadlineDate: installment.deadlineDate || installment.date || null,
+    fine: Number(installment.fine) || 0,
+  }));
+
+const getStudentIdentityMatches = (left = {}, right = {}) => {
+  const leftId = String(left?.id ?? left?.student_id ?? left?.studentId ?? "").trim();
+  const rightId = String(right?.id ?? right?.student_id ?? right?.studentId ?? "").trim();
+  if (leftId && rightId) return leftId === rightId;
+
+  const leftName = String(left?.name || left?.StudentName || "").trim().toLowerCase();
+  const rightName = String(right?.name || right?.StudentName || "").trim().toLowerCase();
+  return Boolean(leftName && rightName && leftName === rightName);
+};
 
   const formatDateForInput = (value) => {
     if (!value) return "";
@@ -962,46 +1096,49 @@ const buildPlaceholderInstallments = (count) => {
     return date.toISOString().split("T")[0];
   };
 
-  const loadInstallmentsForFeeType = async (feeTypeId, fallbackCount, fallbackAmount) => {
-    const normalizedCount = Math.max(1, Math.min(5, Number(fallbackCount) || 1));
-    const normalizedAmount = Number(fallbackAmount) || 0;
+const loadInstallmentsForFeeType = async (feeTypeId, fallbackCount, fallbackAmount) => {
+  const normalizedCount = Math.max(1, Number(fallbackCount) || 1);
+  const normalizedAmount = Number(fallbackAmount) || 0;
 
-    try {
-      const schoolCode = localStorage.getItem("schoolCode");
-      if (!schoolCode || !feeTypeId) {
-        return normalizedAmount > 0
-          ? buildInstallments(normalizedCount, normalizedAmount)
-          : buildPlaceholderInstallments(normalizedCount);
-      }
-
-      const response = await axios.get("https://cleezoclass.com:4000/api/fee-type-installments", {
-        params: {
-          schoolCode,
-          feeTypeId,
-        },
-      });
-
-      const rows = Array.isArray(response.data?.data) ? response.data.data : [];
-      if (rows.length > 0) {
-        return rows.slice(0, 5).map((row, index) => ({
-          id: Number(row.installmentNo) || index + 1,
-          amount: Number(row.amount) || 0,
-          date: formatDateForInput(row.deadlineDate || row.deadline_date || row.deadline || (() => {
-            const deadline = new Date();
-            deadline.setMonth(deadline.getMonth() + index + 1);
-            return deadline.toISOString().split("T")[0];
-          })()),
-        }));
-      }
-    } catch (error) {
-      console.error("Failed to load fee type installments:", error);
+  try {
+    const schoolCode = localStorage.getItem("schoolCode");
+    if (!schoolCode || !feeTypeId) {
+      return normalizedAmount > 0
+        ? buildInstallments(normalizedCount, normalizedAmount)
+        : buildPlaceholderInstallments(normalizedCount);
     }
 
-    return normalizedAmount > 0
-      ? buildInstallments(normalizedCount, normalizedAmount)
-      : buildPlaceholderInstallments(normalizedCount);
-  };
+    const response = await axios.get("https://cleezoclass.com:4000/api/fee-type-installments", {
+      params: {
+        schoolCode,
+        feeTypeId,
+        className,
+        section,
+      },
+    });
 
+    const rows = Array.isArray(response.data?.data) ? response.data.data : [];
+    const savedTotal = rows.reduce((sum, row) => sum + (Number(row.amount) || 0), 0);
+
+    if (rows.length > 0 && Math.abs(savedTotal - normalizedAmount) < 0.01) {
+      return rows.map((row, index) => ({
+        id: Number(row.installmentNo) || index + 1,
+        amount: Number(row.amount) || 0,
+        date: formatDateForInput(
+          row.deadlineDate ||
+          row.deadline_date ||
+          row.deadline
+        ),
+      }));
+    }
+  } catch (error) {
+    console.error("Failed to load fee type installments:", error);
+  }
+
+  return normalizedAmount > 0
+    ? buildInstallments(normalizedCount, normalizedAmount)
+    : buildPlaceholderInstallments(normalizedCount);
+};
   const getInstallmentSplitAmount = (fallbackAmount = activeInstallmentAmount) => {
     const configuredAmount = Array.isArray(installments)
       ? installments.reduce((sum, inst) => sum + (Number(inst.amount) || 0), 0)
@@ -1010,46 +1147,47 @@ const buildPlaceholderInstallments = (count) => {
     return configuredAmount > 0 ? configuredAmount : baseAmount;
   };
 
-  const regenerateInstallments = (count = installmentCount, totalAmount = activeInstallmentAmount) => {
-    const currentTuitionFee = parseFloat(totalAmount) || 0;
+const regenerateInstallments = (count = installmentCount, totalAmount = activeInstallmentAmount) => {
+  const currentTuitionFee = parseFloat(totalAmount) || 0;
+  if (!count || count <= 0) {
+    displayToast("Installment count must be greater than zero.", "error");
+    return [];
+  }
 
-    if (!count || count <= 0) {
-      displayToast("Installment count must be greater than zero.", "error");
-      return [];
-    }
+  // Ensure the total does not exceed the original amount
+  const validatedTotal = Math.min(currentTuitionFee, totalAmount);
+  const nextInstallments = validatedTotal > 0
+    ? buildInstallments(count, validatedTotal)
+    : buildPlaceholderInstallments(count);
 
-    const nextInstallments =
-      currentTuitionFee > 0 ? buildInstallments(count, currentTuitionFee) : buildPlaceholderInstallments(count);
-    setInstallments(nextInstallments);
-    return nextInstallments;
-  };
+  setInstallments(nextInstallments);
+  return nextInstallments;
+};
 
-  const handleAddInstallments = () => {
-    regenerateInstallments(installmentCount, getInstallmentSplitAmount());
-  };
+const handleAddInstallments = () => {
+  regenerateInstallments(installmentCount, Math.min(getInstallmentSplitAmount(), activeInstallmentAmount));
+};
+const handleIncreaseInstallments = () => {
+  const nextCount = (Number(installmentCount) || 0) + 1;
+  setInstallmentCount(nextCount);
+  const nextTotal = getInstallmentSplitAmount();
+  setInstallments(
+    nextTotal > 0
+      ? buildInstallments(nextCount, Math.min(nextTotal, activeInstallmentAmount))
+      : buildPlaceholderInstallments(nextCount)
+  );
+};
 
-  const handleIncreaseInstallments = () => {
-    const nextCount = Math.min(5, (Number(installmentCount) || 0) + 1);
-    setInstallmentCount(nextCount);
-    const nextTotal = getInstallmentSplitAmount();
-    setInstallments(
-      nextTotal > 0
-        ? buildInstallments(nextCount, nextTotal)
-        : buildPlaceholderInstallments(nextCount)
-    );
-  };
-
-  const handleDecreaseInstallments = () => {
-    const nextCount = Math.max(1, (Number(installmentCount) || 1) - 1);
-    setInstallmentCount(nextCount);
-    const nextTotal = getInstallmentSplitAmount();
-    setInstallments(
-      nextTotal > 0
-        ? buildInstallments(nextCount, nextTotal)
-        : buildPlaceholderInstallments(nextCount)
-    );
-  };
-
+const handleDecreaseInstallments = () => {
+  const nextCount = Math.max(1, (Number(installmentCount) || 1) - 1);
+  setInstallmentCount(nextCount);
+  const nextTotal = getInstallmentSplitAmount();
+  setInstallments(
+    nextTotal > 0
+      ? buildInstallments(nextCount, Math.min(nextTotal, activeInstallmentAmount))
+      : buildPlaceholderInstallments(nextCount)
+  );
+};
   const [loadStudentsValue, setLoadStudentsValue] = useState(false);
   const [showDiscountBillModal, setShowDiscountBillModal] = useState(false);
   const [schoolCode, setSchoolCode] = useState('');
@@ -1061,29 +1199,6 @@ const buildPlaceholderInstallments = (count) => {
     }
   }, []);
 
-  useEffect(() => {
-    const fetchData = async () => {
-      if (schoolCode) {
-        try {
-          const response = await axios.get('https://cleezoclass.com:4000/api/discounted-students', {
-            params: {
-              className,
-              section,
-              schoolCode
-            }
-          });
-          setStudents(response.data);
-        } catch (error) {
-          console.error('Error fetching data: ', error);
-        }
-      }
-    };
-
-    fetchData();
-  }, [className, section, schoolCode]);
-
-
-
   const [studentData, setStudentData] = useState(null);
 
   const handleDateChange = (index, newDate) => {
@@ -1093,17 +1208,53 @@ const buildPlaceholderInstallments = (count) => {
   };
 
 
-  const handleAmountChange = (index, newAmount) => {
-    const updatedInstallments = [...installments];
-    updatedInstallments[index].amount = parseFloat(newAmount) || 0;
-    setInstallments(updatedInstallments);
-  };
+const handleAmountChange = (index, newAmount) => {
+  const numericValue = Math.max(0, Number(newAmount) || 0);
+  const currentTotal = installments.reduce((sum, inst) => sum + (Number(inst.amount) || 0), 0);
+  const remainingAmount = Math.max(
+    activeInstallmentAmount - (currentTotal - (Number(installments[index]?.amount) || 0)),
+    0
+  );
+
+  // Ensure the new amount does not exceed the remaining amount
+  const validatedAmount = Math.min(
+    numericValue,
+    remainingAmount + (Number(installments[index]?.amount) || 0)
+  );
+
+  const updatedInstallments = [...installments];
+  updatedInstallments[index].amount = validatedAmount;
+  setInstallments(updatedInstallments);
+};
 
   useEffect(() => {
     if (!showInstallmentModal || !activeInstallmentFee?.id) return;
 
     const loadInstallments = async () => {
-      const fallbackCount = Math.min(5, Number(activeInstallmentFee.installments) || 1);
+      if (activeIndividualInstallmentStudent) {
+        const studentAmount = Number(activeIndividualInstallmentStudent?.assignedAmount) || 0;
+        const existingRows = normalizeInstallmentRowsForSave(
+          activeIndividualInstallmentStudent?.installments ||
+            activeIndividualInstallmentStudent?.installmentDetails ||
+            []
+        );
+        const fallbackCount = Math.max(1, existingRows.length || Number(activeInstallmentFee.installments) || 1);
+        const mappedRows = existingRows.length
+          ? existingRows.map((row, index) => ({
+              id: Number(row.installmentNo) || index + 1,
+              amount: Number(row.amount) || 0,
+              date: formatDateForInput(row.deadlineDate),
+            }))
+          : (studentAmount > 0
+              ? buildInstallments(fallbackCount, studentAmount)
+              : buildPlaceholderInstallments(fallbackCount));
+
+        setInstallmentCount(mappedRows.length || fallbackCount);
+        setInstallments(mappedRows);
+        return;
+      }
+
+      const fallbackCount = Math.max(1, Number(activeInstallmentFee.installments) || 1);
       const mappedRows = await loadInstallmentsForFeeType(
         activeInstallmentFee.id,
         fallbackCount,
@@ -1114,7 +1265,7 @@ const buildPlaceholderInstallments = (count) => {
     };
 
     loadInstallments();
-  }, [showInstallmentModal, activeInstallmentFee?.id, activeInstallmentAmount]);
+  }, [showInstallmentModal, activeInstallmentFee?.id, activeInstallmentAmount, activeIndividualInstallmentStudent]);
 
   const openDiscountModal = () => {
     setShowDiscountBillModal(true);
@@ -1141,7 +1292,8 @@ const buildPlaceholderInstallments = (count) => {
         scope: fee.scope || "All",
         frequency: fee.frequency || "One time",
         installments: fee.installments || 1,
-        installmentDetails: feeTypeInstallmentDetails[fee.id] || [],
+        installmentDetails:
+          feeTypeInstallmentDetails[getFeeInstallmentScopeKey(fee.id)] || [],
         amount: String(fee.scope || "").trim().toLowerCase() === "individual"
           ? (Array.isArray(individualFeeStudentMap[fee.columnBase])
               ? individualFeeStudentMap[fee.columnBase].reduce(
@@ -1154,132 +1306,143 @@ const buildPlaceholderInstallments = (count) => {
       .filter((fee) => fee.amount > 0);
   }, [dynamicFeeTypes, feeTypeInstallmentDetails, individualFeeStudentMap, dynamicFeeValues]);
 
-  const openIndividualFeeStudentPicker = async (fee) => {
-    if (!className || !section) {
-      displayToast('Please select both class and section', "error");
-      return;
-    }
+const openIndividualFeeStudentPicker = async (fee) => {
 
-    setActiveIndividualFee(fee);
-    const currentStudents = students.length ? students : await loadStudents();
-    const feeStudents = Array.isArray(currentStudents) ? currentStudents : [];
-    const schoolCode = localStorage.getItem('schoolCode') || "TAGSOLNOVALLP";
-    const classNameOptions = Array.from(
-      new Set([
-        className,
-        String(className || "").replace(/^Class\s+/i, "").trim(),
-      ])
-    ).filter(Boolean);
-    const hydratedAmountLookup = {};
+   console.log("[INDIVIDUAL FEE POPUP] Opening for fee:", {
+    feeName: fee?.feeName,
+    columnBase: fee?.columnBase,
+    frequency: fee?.frequency,
+    scope: fee?.scope,
+  });
+  if (!className || !section) {
+    displayToast('Please select both class and section', "error");
+    return;
+  }
 
-    if (feeStudents.length > 0) {
-      const feeResponses = await Promise.all(
-        feeStudents.map(async (student) => {
-          try {
-            const studentName = String(student?.name || student?.StudentName || "").trim();
-            if (!studentName) return null;
-            const studentId = String(student?.id ?? student?.student_id ?? "").trim();
-
-            let response = null;
-            let lastError = null;
-
-            for (const classOption of classNameOptions) {
-              try {
-                response = await axios.get('https://cleezoclass.com:4000/api/student-fee-details', {
-                  params: {
-                    schoolCode,
-                    class: classOption,
-                    section,
-                    name: studentName,
-                  },
-                });
-                if (response?.data) break;
-              } catch (requestError) {
-                lastError = requestError;
-              }
-            }
-
-            if (!response?.data) {
-              throw lastError || new Error('Failed to fetch student fee details');
-            }
-
-            let savedAmount = findSavedIndividualFeeAmountForStudent(response?.data, student, fee);
-
-            if (Number(savedAmount) <= 0 && studentId) {
-              try {
-                const historyResponse = await axios.get(
-                  `https://cleezoclass.com:4000/api/paymentHistory/${studentId}`,
-                  {
-                    params: { schoolCode },
-                  }
-                );
-                savedAmount = findSavedIndividualFeeAmountForStudent(
-                  historyResponse?.data?.payments || historyResponse?.data,
-                  student,
-                  fee
-                );
-              } catch (historyError) {
-                console.error('[individual-fee] payment history lookup failed', {
-                  studentName,
-                  studentId,
-                  feeName: fee?.feeName || fee?.columnBase || null,
-                  error: historyError?.response?.data || historyError?.message || historyError,
-                });
-              }
-            }
-
-            const amount = Number(savedAmount) || 0;
-            const lookupKey = getStudentLookupKey(student);
-            if (lookupKey) {
-              hydratedAmountLookup[lookupKey] = amount;
-            }
-
-            return {
-              ...student,
-              assignedAmount: amount,
-            };
-          } catch (error) {
-            console.error('[individual-fee] failed to hydrate student amount', {
-              studentName: student?.name || student?.StudentName || null,
-              feeName: fee?.feeName || fee?.columnBase || null,
-              error: error?.response?.data || error?.message || error,
-            });
-            const lookupKey = getStudentLookupKey(student);
-            if (lookupKey && !(lookupKey in hydratedAmountLookup)) {
-              hydratedAmountLookup[lookupKey] = 0;
-            }
-            return {
-              ...student,
-              assignedAmount: 0,
-            };
-          }
-        })
-      );
-
-    }
-
-    setIndividualFeeStudentSavedAmounts((prev) => ({
-      ...prev,
-      [fee.columnBase]: hydratedAmountLookup,
-    }));
-    setIndividualFeeBatchMap((prev) => ({
-      ...prev,
-      [fee.columnBase]: [],
-    }));
-    setIndividualFeeDraftAmount("0");
-
-    setDynamicFeeValues((prev) => ({
-      ...prev,
-      [fee.columnBase]: Object.values(hydratedAmountLookup).reduce(
-        (sum, amount) => sum + (Number(amount) || 0),
-        0
-      ),
-    }));
-
-    setIndividualFeeStudentSearch("");
-    setShowIndividualFeeStudentPopup(true);
+  // Ensure the fee object includes the `frequency` property
+  const feeWithFrequency = {
+    ...fee,
+    frequency: fee?.frequency || "One time", // Default to "One time" if not provided
   };
+ console.log("[INDIVIDUAL FEE POPUP] feeWithFrequency:", feeWithFrequency);
+  setActiveIndividualFee(feeWithFrequency); // Set the fee with frequency
+  const currentStudents = students.length ? students : await loadStudents();
+  const feeStudents = Array.isArray(currentStudents) ? currentStudents : [];
+  const schoolCode = localStorage.getItem('schoolCode') || "TAGSOLNOVALLP";
+  const classNameOptions = Array.from(
+    new Set([
+      className,
+      String(className || "").replace(/^Class\s+/i, "").trim(),
+    ])
+  ).filter(Boolean);
+  const hydratedAmountLookup = {};
 
+  if (feeStudents.length > 0) {
+    const feeResponses = await Promise.all(
+      feeStudents.map(async (student) => {
+        try {
+          const studentName = String(student?.name || student?.StudentName || "").trim();
+          if (!studentName) return null;
+          const studentId = String(student?.id ?? student?.student_id ?? "").trim();
+
+          let response = null;
+          let lastError = null;
+
+          for (const classOption of classNameOptions) {
+            try {
+              response = await axios.get('https://cleezoclass.com:4000/api/student-fee-details', {
+                params: {
+                  schoolCode,
+                  class: classOption,
+                  section,
+                  name: studentName,
+                },
+              });
+              if (response?.data) break;
+            } catch (requestError) {
+              lastError = requestError;
+            }
+          }
+
+          if (!response?.data) {
+            throw lastError || new Error('Failed to fetch student fee details');
+          }
+
+          let savedAmount = findSavedIndividualFeeAmountForStudent(response?.data, student, feeWithFrequency);
+
+          if (savedAmount === undefined && studentId) {
+            try {
+              const historyResponse = await axios.get(
+                `https://cleezoclass.com:4000/api/paymentHistory/${studentId}`,
+                {
+                  params: { schoolCode },
+                }
+              );
+              savedAmount = findSavedIndividualFeeAmountForStudent(
+                historyResponse?.data?.payments || historyResponse?.data,
+                student,
+                feeWithFrequency
+              );
+            } catch (historyError) {
+              console.error('[individual-fee] payment history lookup failed', {
+                studentName,
+                studentId,
+                feeName: feeWithFrequency?.feeName || feeWithFrequency?.columnBase || null,
+                error: historyError?.response?.data || historyError?.message || historyError,
+              });
+            }
+          }
+
+          const amount = Number(savedAmount) || 0;
+          const lookupKey = getStudentLookupKey(student);
+          if (lookupKey) {
+            hydratedAmountLookup[lookupKey] = amount;
+          }
+
+          return {
+            ...student,
+            assignedAmount: amount,
+          };
+        } catch (error) {
+          console.error('[individual-fee] failed to hydrate student amount', {
+            studentName: student?.name || student?.StudentName || null,
+            feeName: feeWithFrequency?.feeName || feeWithFrequency?.columnBase || null,
+            error: error?.response?.data || error?.message || error,
+          });
+          const lookupKey = getStudentLookupKey(student);
+          if (lookupKey && !(lookupKey in hydratedAmountLookup)) {
+            hydratedAmountLookup[lookupKey] = 0;
+          }
+          return {
+            ...student,
+            assignedAmount: 0,
+          };
+        }
+      })
+    );
+  }
+
+  setIndividualFeeStudentSavedAmounts((prev) => ({
+    ...prev,
+    [feeWithFrequency.columnBase]: hydratedAmountLookup,
+  }));
+  setIndividualFeeBatchMap((prev) => ({
+    ...prev,
+    [feeWithFrequency.columnBase]: [],
+  }));
+  setIndividualFeeDraftAmount("");
+
+  setDynamicFeeValues((prev) => ({
+    ...prev,
+    [feeWithFrequency.columnBase]: Object.values(hydratedAmountLookup).reduce(
+      (sum, amount) => sum + (Number(amount) || 0),
+      0
+    ),
+  }));
+
+  setIndividualFeeStudentSearch("");
+  setShowIndividualFeeStudentPopup(true);
+};
   const handleDeleteFeeType = async (fee) => {
     if (!fee?.id) {
       displayToast("Cannot delete this fee type.", "error");
@@ -1287,7 +1450,15 @@ const buildPlaceholderInstallments = (count) => {
     }
 
     const confirmed = window.confirm(
-      `Delete fee type "${fee.feeName}"? This will remove it from the school fee list and delete the related columns from FeesDetails.`
+      [
+        `Delete fee type "${fee.feeName}"?`,
+        "",
+        "This deletes the complete fee type from the school fee master. It will be removed everywhere this fee type combination is used, including all classes, sections, term-wise setup, fee collection, due tracking, and reports.",
+        "",
+        "If you only want to remove this fee for the selected class/section or term-wise fee setup, do not delete it. Set the amount to 0 or leave it blank, then submit fees.",
+        "",
+        "Do you still want to delete the complete fee type?"
+      ].join("\n")
     );
     if (!confirmed) return;
 
@@ -1405,8 +1576,8 @@ const buildPlaceholderInstallments = (count) => {
     let nextSelection = [];
     const savedAmount = getSavedAmountForIndividualFeeStudent(activeIndividualFee.columnBase, student);
     const draftAmount = Math.max(0, Number(individualFeeDraftAmount) || 0);
-    const selectionAmount = draftAmount > 0 ? draftAmount : savedAmount;
-
+    const displayedAmount = getDisplayedAmountForIndividualFeeStudent(activeIndividualFee.columnBase, student);
+    const selectionAmount = draftAmount > 0 ? draftAmount : displayedAmount || savedAmount;
     setIndividualFeeStudentMap((prev) => {
       const existingSelection = prev[activeIndividualFee.columnBase];
       const currentSelection = Array.isArray(existingSelection)
@@ -1514,11 +1685,50 @@ const buildPlaceholderInstallments = (count) => {
       if (input?.select) input.select();
     });
   };
+const openIndividualStudentInstallments = (student) => {
+  console.log("[OPEN INDIVIDUAL STUDENT INSTALLMENTS] Called for student:", {
+    studentName: student?.name || student?.StudentName || "Unknown",
+    assignedAmount: student?.assignedAmount,
+    hasInstallments: Array.isArray(student?.installments) && student.installments.length > 0,
+    hasInstallmentDetails: Array.isArray(student?.installmentDetails) && student.installmentDetails.length > 0,
+    activeIndividualFee: {
+      id: activeIndividualFee?.id,
+      feeName: activeIndividualFee?.feeName,
+      frequency: activeIndividualFee?.frequency,
+    },
+  });
+
+  if (!activeIndividualFee?.id || !student) return;
+
+  const amount = Number(student?.assignedAmount) || 0;
+  if (amount <= 0) {
+    displayToast("Please enter amount for this student before adding installments.", "error");
+    return;
+  }
+
+  const existingRows = normalizeInstallmentRowsForSave(student?.installments || student?.installmentDetails || []);
+  const fallbackCount = Math.max(1, existingRows.length || Number(activeIndividualFee.installments) || 1);
+
+  setActiveInstallmentFee(activeIndividualFee);
+  setActiveIndividualInstallmentStudent(student);
+  setInstallmentCount(fallbackCount);
+  setInstallments(
+    existingRows.length
+      ? existingRows.map((row, index) => ({
+          id: Number(row.installmentNo) || index + 1,
+          amount: Number(row.amount) || 0,
+          date: formatDateForInput(row.deadlineDate),
+        }))
+      : buildInstallments(fallbackCount, amount)
+  );
+  setShowInstallmentModal(true);
+};
 
   const handleIndividualFeeDraftAmountChange = (rawValue) => {
     setIndividualFeeDraftAmount(rawValue);
 
     if (!activeIndividualFee?.columnBase) return;
+    if (rawValue === "") return;
 
     const amount = Math.max(0, Number(rawValue) || 0);
     const currentSelection = getSelectedIndividualFeeStudents(activeIndividualFee.columnBase);
@@ -1588,7 +1798,7 @@ const buildPlaceholderInstallments = (count) => {
       ...prev,
       [activeIndividualFee.columnBase]: [],
     }));
-    setIndividualFeeDraftAmount("0");
+    setIndividualFeeDraftAmount("");
   };
 
   const updateIndividualFeeBatchAmount = (batchNo, rawValue) => {
@@ -1608,6 +1818,12 @@ const buildPlaceholderInstallments = (count) => {
           ? batch.students.map((student) => ({
               ...student,
               assignedAmount: amount,
+              installments: Array.isArray(student?.installments) && student.installments.length
+                ? buildInstallments(student.installments.length, amount)
+                : student?.installments,
+              installmentDetails: Array.isArray(student?.installmentDetails) && student.installmentDetails.length
+                ? buildInstallments(student.installmentDetails.length, amount)
+                : student?.installmentDetails,
             }))
           : [];
 
@@ -1677,11 +1893,11 @@ const buildPlaceholderInstallments = (count) => {
     }
 
     setStudents([]);
-    await loadStudents('discount');
+    await loadStudents();
     openDiscountModal();
   };
 
-  const loadStudents = async (mode = 'normal') => {
+  const loadStudents = async () => {
     if (!className || !section) {
       displayToast('Please select both class and section', "error");
       return [];
@@ -1690,27 +1906,17 @@ const buildPlaceholderInstallments = (count) => {
     const apiClassName = className.replace("Class ", "");
 
     try {
-      let responseData;
-      if (mode === 'discount') {
-        const response = await axios.get('https://cleezoclass.com:4000/api/discounted-students', {
-          params: { className: apiClassName, section: section, schoolCode }
-        });
-        responseData = response.data;
-        setStudents(responseData);
-        return Array.isArray(responseData) ? responseData : [];
-      } else {
-        const response = await fetch(`https://cleezoclass.com:4000/get-students?className=${apiClassName}&section=${section}&schoolCode=${schoolCode}`);
-        if (!response.ok) throw new Error('Failed to fetch students');
-        responseData = await response.json();
-        if (responseData.success && responseData.students?.length > 0) {
-          setStudents(responseData.students);
-          return responseData.students;
-        } else {
-          setStudents([]);
-          displayToast('No students found for the selected class and section', "error");
-          return [];
-        }
+      const response = await fetch(`https://cleezoclass.com:4000/get-students?className=${apiClassName}&section=${section}&schoolCode=${schoolCode}`);
+      if (!response.ok) throw new Error('Failed to fetch students');
+      const responseData = await response.json();
+      if (responseData.success && responseData.students?.length > 0) {
+        setStudents(responseData.students);
+        return responseData.students;
       }
+
+      setStudents([]);
+      displayToast('No students found for the selected class and section', "error");
+      return [];
     } catch (error) {
       console.error('Error loading students:', error);
       displayToast('Error loading students', "error");
@@ -1719,74 +1925,169 @@ const buildPlaceholderInstallments = (count) => {
     }
   };
 
-  const handleSaveFeeTypeInstallments = async () => {
-    try {
-      if (!activeInstallmentFee?.id) {
-        displayToast('Please select a fee type first.', 'error');
-        return;
-      }
-      const schoolCode = localStorage.getItem('schoolCode');
-      if (!schoolCode) {
-        throw new Error('School code not found in localStorage');
-      }
-      if (!installments.length) {
-        displayToast('Please generate installments first.', 'error');
-        return;
-      }
+const handleSaveFeeTypeInstallments = async () => {
+  try {
+    if (!activeInstallmentFee?.id) {
+      displayToast('Please select a fee type first.', 'error');
+      return;
+    }
 
-      const payload = {
-        schoolCode,
-        feeTypeId: activeInstallmentFee.id,
-        installments: installments.map((installment, index) => ({
-          installmentNo: Number(installment.id) || index + 1,
-          amount: Number(installment.amount) || 0,
-          deadlineDate: installment.date || null,
-          fine: 0,
-        })),
-      };
+    const schoolCode = localStorage.getItem('schoolCode');
+    if (!schoolCode) {
+      throw new Error('School code not found in localStorage');
+    }
 
-      const response = await fetch('https://cleezoclass.com:4000/api/fee-type-installments', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(payload),
-      });
+    if (!installments.length) {
+      displayToast('Please generate installments first.', 'error');
+      return;
+    }
 
-      if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.message || 'Failed to save fee type installments');
-      }
+    const installmentRows = normalizeInstallmentRowsForSave(installments);
+    const installmentTotal = installmentRows.reduce(
+      (sum, installment) => sum + (Number(installment.amount) || 0),
+      0
+    );
 
-      setDynamicFeeTypes((prev) =>
-        prev.map((fee) =>
-          fee.id === activeInstallmentFee.id
-            ? { ...fee, installments: installments.length }
-            : fee
-        )
+    // Ensure the total does not exceed the original fee amount
+    if (installmentTotal > activeInstallmentAmount) {
+      displayToast(
+        `Total installment amount (₹${installmentTotal}) exceeds the original fee amount (₹${activeInstallmentAmount}).`,
+        "error"
       );
-      setFeeTypeInstallmentCounts((prev) => ({
-        ...prev,
-        [activeInstallmentFee.id]: installments.length,
+      return;
+    }
+
+
+    const effectiveFeeAmount =
+      Number(activeInstallmentAmount) > 0 ? Number(activeInstallmentAmount) : installmentTotal;
+
+    if (effectiveFeeAmount <= 0) {
+      displayToast('Please enter installment amount before saving.', 'error');
+      return;
+    }
+
+    if (activeIndividualInstallmentStudent && activeInstallmentFee?.columnBase) {
+      const feeKey = activeInstallmentFee.columnBase;
+      const nextSelectionSnapshot = getSelectedIndividualFeeStudents(feeKey).map((student) =>
+        getStudentIdentityMatches(student, activeIndividualInstallmentStudent)
+          ? {
+              ...student,
+              assignedAmount: effectiveFeeAmount,
+              installments: installmentRows,
+              installmentDetails: installmentRows,
+            }
+          : student
+      );
+      const nextBatchSnapshot = getSelectedIndividualFeeBatches(feeKey).map((batch) => ({
+        ...batch,
+        students: Array.isArray(batch?.students)
+          ? batch.students.map((student) =>
+              getStudentIdentityMatches(student, activeIndividualInstallmentStudent)
+                ? {
+                    ...student,
+                    assignedAmount: effectiveFeeAmount,
+                    installments: installmentRows,
+                    installmentDetails: installmentRows,
+                  }
+                : student
+            )
+          : [],
       }));
-      setFeeTypeInstallmentDetails((prev) => ({
+
+      setIndividualFeeStudentMap((prev) => ({
         ...prev,
-        [activeInstallmentFee.id]: installments.map((installment, index) => ({
-          installmentNo: Number(installment.id) || index + 1,
-          amount: Number(installment.amount) || 0,
-          deadlineDate: formatDateForInput(installment.date) || null,
-          fine: 0,
-        })),
+        [feeKey]: nextSelectionSnapshot,
       }));
-      displayToast('✅ Fee type installments saved successfully!', 'success');
+
+      setIndividualFeeBatchMap((prev) => ({
+        ...prev,
+        [feeKey]: nextBatchSnapshot,
+      }));
+
+      setDynamicFeeValues((prev) => ({
+        ...prev,
+        [feeKey]:
+          nextSelectionSnapshot.reduce(
+            (sum, student) => sum + (Number(student?.assignedAmount) || 0),
+            0
+          ) +
+          nextBatchSnapshot.reduce(
+            (sum, batch) =>
+              sum + (Array.isArray(batch?.students)
+                ? batch.students.reduce((batchSum, student) => batchSum + (Number(student?.assignedAmount) || 0), 0)
+                : 0),
+            0
+          ),
+      }));
+
+      displayToast('✅ Student installments saved successfully!', 'success');
       setShowInstallmentModal(false);
       setActiveInstallmentFee(null);
+      setActiveIndividualInstallmentStudent(null);
       setInstallments([]);
-    } catch (error) {
-      console.error('Error saving fee type installments:', error);
-      displayToast(error.message || 'Error saving fee type installments. Please try again.', 'error');
+      return;
     }
-  };
+
+    const payload = {
+      schoolCode,
+      feeTypeId: activeInstallmentFee.id,
+      feeName: activeInstallmentFee.feeName || activeInstallmentFee.columnBase,
+      className,
+      section,
+      amount: effectiveFeeAmount,
+      installments: installmentRows,
+    };
+
+    const response = await fetch('https://cleezoclass.com:4000/api/fee-type-installments', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(payload),
+    });
+
+    if (!response.ok) {
+      const errorData = await response.json();
+      throw new Error(errorData.message || 'Failed to save fee type installments');
+    }
+
+    setDynamicFeeTypes((prev) =>
+      prev.map((fee) =>
+        fee.id === activeInstallmentFee.id
+          ? { ...fee, installments: installments.length }
+          : fee
+      )
+    );
+    setFeeTypeInstallmentCounts((prev) => ({
+      ...prev,
+      [getFeeInstallmentScopeKey(activeInstallmentFee.id)]: installments.length,
+    }));
+    if (activeInstallmentFee.columnBase) {
+      localDynamicFeeValueOverridesRef.current[activeInstallmentFee.columnBase] = true;
+      setDynamicFeeValues((prev) => ({
+        ...prev,
+        [activeInstallmentFee.columnBase]: effectiveFeeAmount,
+      }));
+    }
+    setFeeTypeInstallmentDetails((prev) => ({
+      ...prev,
+      [getFeeInstallmentScopeKey(activeInstallmentFee.id)]: installments.map((installment, index) => ({
+        installmentNo: Number(installment.id) || index + 1,
+        amount: Number(installment.amount) || 0,
+        deadlineDate: formatDateForInput(installment.date) || null,
+        fine: 0,
+      })),
+    }));
+    displayToast('✅ Fee type installments saved successfully!', 'success');
+    setShowInstallmentModal(false);
+    setActiveInstallmentFee(null);
+    setActiveIndividualInstallmentStudent(null);
+    setInstallments([]);
+  } catch (error) {
+    console.error('Error saving fee type installments:', error);
+    displayToast(error.message || 'Error saving fee type installments. Please try again.', 'error');
+  }
+};
 
 const submitIncomeData = async ({
   event,
@@ -1877,17 +2178,22 @@ const submitIncomeData = async ({
           return;
         }
 
-        const selectedTotal = selectedStudents.reduce(
-          (sum, student) => sum + (Number(student?.assignedAmount) || amount || 0),
-          0
-        );
+        const selectedTotal = selectedStudents.reduce((sum, student) => {
+          const studentAmount = Number(student?.assignedAmount);
+          return sum + (Number.isFinite(studentAmount) ? studentAmount : amount || 0);
+        }, 0);
         totalAmount += selectedTotal;
 
         selectedStudents.forEach((student) => {
           individualFeeAssignments.push({
             type: fee.columnBase,
             feeName: fee.feeName,
-            amount: Number(student?.assignedAmount) || amount || 0,
+            feeTypeId: fee.id,
+            amount: Number.isFinite(Number(student?.assignedAmount))
+              ? Number(student?.assignedAmount)
+              : amount || 0,
+            installments: normalizeInstallmentRowsForSave(student?.installments || student?.installmentDetails || []),
+            installmentDetails: normalizeInstallmentRowsForSave(student?.installments || student?.installmentDetails || []),
             studentId: student?.id ?? student?.student_id ?? null,
             studentName: student?.name || student?.StudentName || "",
             className,
@@ -1919,9 +2225,13 @@ const submitIncomeData = async ({
       feeEntries: Object.keys(calculatedFees).map(key => ({
         type: key,
         amount: calculatedFees[key],
+        className,
+        section,
       })).concat(
         dynamicFees.map((fee) => ({
           type: fee.columnBase,
+          feeName: fee.feeName,
+          feeTypeId: fee.id,
           amount: String(fee.scope || "").trim().toLowerCase() === "individual"
             ? (Array.isArray(individualFeeAssignments)
                 ? individualFeeAssignments
@@ -1930,6 +2240,8 @@ const submitIncomeData = async ({
                 : 0)
             : calculatedDynamicFees[fee.columnBase] || 0,
           scope: fee.scope || "All",
+          className,
+          section,
           studentName: getSelectedIndividualFeeStudentsForSubmit(fee.columnBase)
             .map((student) => student?.name || student?.StudentName || "")
             .filter(Boolean)
@@ -1988,12 +2300,6 @@ const submitIncomeData = async ({
         admission: 0,
         previousfeedue: 0,
       });
-    setDynamicFeeValues(
-        dynamicFeeTypes.reduce((acc, fee) => {
-          acc[fee.columnBase] = 0;
-          return acc;
-        }, {})
-      );
       setIndividualFeeStudentMap({});
       setActiveIndividualFee(null);
       setIndividualFeeDraftAmount("");
@@ -2111,17 +2417,14 @@ const handleSubmit = async (event) => {
   const displayToast = (message, type) => {
     setToast({ show: true, message, type });
   };
-
-
-  const formatINR = (value) => {
-    if (value === 0 || value === "") return "";
-    return new Intl.NumberFormat("en-IN", {
-      minimumFractionDigits: 2,
-      maximumFractionDigits: 2,
-    }).format(value);
-  };
-
-
+const formatINR = (value) => {
+  if (value === "" || value === null || value === undefined) return "";
+  const num = Number(value) || 0;
+  return new Intl.NumberFormat("en-IN", {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  }).format(num);
+};
 
 
 
@@ -2230,57 +2533,78 @@ const installmentRowsToRender = Array.isArray(installments) && installments.leng
                 </div>
 
                 {/* RIGHT BLOCK - Class & Section */}
-                <div className="FeesManagement-rightBlock">
-                  <div className={`FeesManagement-dropdown${popupLayout ? " FeesManagement-dropdown-static" : ""}`}>
-                    <div>
-                      <label className="footprintsinner">Class</label>
-                      <div className="expense-input-field">
-                        <select
-                          value={className}
-                          onChange={(e) => {
-                            setClassName(e.target.value);
-                            setSection("");
-                          }}
-                          className="btn-dropdown-FeesManagement"
-                        >
-                          <option value="">
-                            {metadataLoading ? 'Loading Classes...' : 'Select Class'}
-                          </option>
-                          {availableClassOptions.map((item) => (
-                            <option key={item} value={item}>
-                              {item}
-                            </option>
-                          ))}
-                        </select>
-                      </div>
-                    </div>
+             <div className="FeesManagement-rightBlock">
+  <div className={`FeesManagement-dropdown${popupLayout ? " FeesManagement-dropdown-static" : ""}`}>
+    <div>
+      <label className="footprintsinner">Class</label>
+      <div className="expense-input-field">
+        <select
+          value={className}
+          onChange={(e) => {
+            setClassName(e.target.value);
+            setSection("");
+            // 🔄 REFRESH: Clear all fee amounts and overrides when class changes
+            setDynamicFeeValues({});
+            if (localDynamicFeeValueOverridesRef && localDynamicFeeValueOverridesRef.current) {
+              localDynamicFeeValueOverridesRef.current = {};
+            }
+          }}
+          className="btn-dropdown-FeesManagement"
+        >
+          <option value="">
+            {metadataLoading ? 'Loading Classes...' : 'Select Class'}
+          </option>
+          {availableClassOptions.map((item) => (
+            <option key={item} value={item}>
+              {item}
+            </option>
+          ))}
+        </select>
+      </div>
+    </div>
 
-                    <div>
-                      <label className="footprintsinner">Section</label>
-                      <div className="expense-input-field">
-                        <select
-                          value={section}
-                          onChange={(e) => setSection(e.target.value)}
-                          disabled={!className}
-                          className="btn-dropdown-FeesManagement"
-                        >
-                          <option value="">
-                            {className
-                              ? metadataLoading && availableSectionOptions.length === 0
-                                ? 'Loading Sections...'
-                                : 'Select Section'
-                              : 'Select Class First'}
-                          </option>
-                          {sectionSelectOptions.map((item) => (
-                            <option key={item} value={item}>
-                              {item}
-                            </option>
-                          ))}
-                        </select>
-                      </div>
-                    </div>
-                  </div>
-                </div>
+    <div>
+      <label className="footprintsinner">Section</label>
+      <div className="expense-input-field">
+        <select
+          value={section}
+          onChange={(e) => {
+            setSection(e.target.value);
+            // 🔄 REFRESH: Clear all fee amounts and overrides when section changes
+            setDynamicFeeValues({});
+            if (localDynamicFeeValueOverridesRef && localDynamicFeeValueOverridesRef.current) {
+              localDynamicFeeValueOverridesRef.current = {};
+            }
+          }}
+          disabled={!className}
+          className="btn-dropdown-FeesManagement"
+        >
+          <option value="">
+            {className
+              ? metadataLoading && availableSectionOptions.length === 0
+                ? 'Loading Sections...'
+                : 'Select Section'
+              : 'Select Class First'}
+          </option>
+          {sectionSelectOptions.map((item) => (
+            <option key={item} value={item}>
+              {item}
+            </option>
+          ))}
+        </select>
+      </div>
+    </div>
+  </div>
+</div>
+                                    <div className="FeesManagement-bottomBtns" style={{border:'none'}}>
+                <button
+                  type="submit"
+                  className="btn-solid"
+                  style={{ width: "200px", flexShrink: 0 }}
+                >
+                  Submit Fees
+                </button>
+              </div>
               </div>
 
               {/* FEE STRUCTURE SECTION */}
@@ -2288,196 +2612,233 @@ const installmentRowsToRender = Array.isArray(installments) && installments.leng
   <h3 className="FeesManagement-sectionHeader footprintsinner">
     Created Fee Types
   </h3>
+  <div
+    style={{
+      margin: "0 0 12px",
+      padding: "10px 12px",
+      border: "1px solid #f3c5cd",
+      borderRadius: "8px",
+      background: "#fff7f8",
+      color: "#8a2634",
+      fontSize: "12px",
+      fontWeight: 600,
+      lineHeight: 1.45,
+    }}
+  >
+    To remove a class-wise or term-wise fee for the selected class/section, set its amount to 0 or leave it blank, then submit fees. Use the delete button only when you want to remove the complete fee type everywhere it is used.
+  </div>
 
-{dynamicFeeTypes.map((fee) => {
-  const isIndividualFee = String(fee.scope || "").trim().toLowerCase() === "individual";
-  const isTermWise = String(fee.frequency || "").trim().toLowerCase() === "term wise";
-  const installmentSavedCount = feeTypeInstallmentCounts[fee.id];
-  const fallbackInstallmentCount = Number(fee.installments) || 0;
-  const selectedStudentSummary = getSelectedIndividualFeeStudents(fee.columnBase);
+{/* --- Check if class and section are selected --- */}
+{className && section ? (
+  <>
+    {dynamicFeeTypes.map((fee) => {
+      const isIndividualFee = String(fee.scope || "").trim().toLowerCase() === "individual";
+      const isTermWise = String(fee.frequency || "").trim().toLowerCase() === "term wise";
+      const installmentSavedCount =
+        feeTypeInstallmentCounts[getFeeInstallmentScopeKey(fee.id)];
+      const fallbackInstallmentCount = Number(fee.installments) || 0;
+      const selectedStudentSummary = getSelectedIndividualFeeStudents(fee.columnBase);
 
-  return (
-    <div
-      key={fee.columnBase}
-      className="FeesManagement-feeRow"
-      style={{
-        display: "grid",
-        gridTemplateColumns: isCompactFeeRowLayout ? "120px 1fr 94px 94px 42px" : "150px 170px 100px 100px 42px",
-        alignItems: "stretch",
-        columnGap: 0,
-        rowGap: 0,
-        border: "1px solid #cbd5e1",
-        borderRadius: "8px",
-        overflow: "hidden",
-        background: "#fff",
-        marginBottom: "10px",
-      }}
-    >
-      <div style={{
-        padding: isCompactFeeRowLayout ? "8px 10px" : "10px 12px",
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "center",
-        minHeight: "64px"
-      }}>
-        <label className="FeesManagement-feeLabel" style={{ marginTop: 0, width: "100%", textAlign: "center", fontSize: isCompactFeeRowLayout ? "9px" : "10px" }}>
-          {fee.feeName}:
-        </label>
-      </div>
-
-      <div style={{
-        padding: isCompactFeeRowLayout ? "8px 10px" : "10px 12px",
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "center",
-        minWidth: 0,
-        minHeight: "64px"
-      }}>
-        <div className="FeesManagement-labelInputFlex" style={{ minWidth: 0, width: "100%", justifyContent: "center", gap: isCompactFeeRowLayout ? "4px" : "6px" }}>
-          <span style={{ color: "#555", flex: "0 0 auto", fontSize: isCompactFeeRowLayout ? "10px" : "inherit" }}>₹</span>
-          <div className="expense-input-field" style={{ width: "100%", flex: "1 1 auto", maxWidth: isCompactFeeRowLayout ? "92px" : "118px" }}>
-            <input
-              type="text"
-              className="btn-dropdown-FeesManagement FeesManagement"
-              value={
-                editingField === fee.columnBase
-                  ? (dynamicFeeValues[fee.columnBase] === 0 ? "" : String(dynamicFeeValues[fee.columnBase]))
-                  : (dynamicFeeValues[fee.columnBase] === 0 ? "" : formatINR(dynamicFeeValues[fee.columnBase]))
-              }
-              onFocus={() => setEditingField(fee.columnBase)}
-              onBlur={() => setEditingField(null)}
-              onChange={(e) => {
-                const rawValue = e.target.value;
-                if (rawValue === "") {
-                  setDynamicFeeValues((prev) => ({ ...prev, [fee.columnBase]: 0 }));
-                  return;
-                }
-                if (/^\d*\.?\d*$/.test(rawValue)) {
-                  const numericValue = parseFloat(rawValue);
-                  if (!isNaN(numericValue)) {
-                    setDynamicFeeValues((prev) => ({ ...prev, [fee.columnBase]: numericValue }));
-                  }
-                }
-              }}
-            />
+      return (
+        <div
+          key={fee.columnBase}
+          className="FeesManagement-feeRow"
+          style={{
+            display: "grid",
+            gridTemplateColumns: isCompactFeeRowLayout ? "120px 1fr 94px 94px 42px" : "150px 170px 100px 100px 42px",
+            alignItems: "stretch",
+            columnGap: 0,
+            rowGap: 0,
+            border: "1px solid #cbd5e1",
+            borderRadius: "8px",
+            overflow: "hidden",
+            background: "#fff",
+            marginBottom: "10px",
+          }}
+        >
+          <div style={{
+            padding: isCompactFeeRowLayout ? "8px 10px" : "10px 12px",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            minHeight: "64px"
+          }}>
+            <label className="FeesManagement-feeLabel" style={{ marginTop: 0, width: "100%", textAlign: "center", fontSize: isCompactFeeRowLayout ? "9px" : "10px" }}>
+              {fee.feeName}:
+            </label>
           </div>
-        </div>
-      </div>
 
-      <div style={{
-        padding: isCompactFeeRowLayout ? "8px 8px" : "10px 12px",
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "center",
-        minHeight: "64px"
-      }}>
-        {isTermWise ? (
-          <div style={{ display: "grid", gap: "3px", width: "100%", justifyItems: "center" }}>
+          <div style={{
+            padding: isCompactFeeRowLayout ? "8px 10px" : "10px 12px",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            minWidth: 0,
+            minHeight: "64px"
+          }}>
+            <div className="FeesManagement-labelInputFlex" style={{ minWidth: 0, width: "100%", justifyContent: "center", gap: isCompactFeeRowLayout ? "4px" : "6px" }}>
+              <span style={{ color: "#555", flex: "0 0 auto", fontSize: isCompactFeeRowLayout ? "10px" : "inherit" }}>₹</span>
+              <div className="expense-input-field" style={{ width: "100%", flex: "1 1 auto", maxWidth: isCompactFeeRowLayout ? "92px" : "118px" }}>
+                <input
+                  type="text"
+                  className="btn-dropdown-FeesManagement FeesManagement"
+                  value={
+                    editingField === fee.columnBase
+                      ? String(dynamicFeeValues[fee.columnBase] || "")
+                      : formatINR(dynamicFeeValues[fee.columnBase] || 0)
+                  }
+                  onFocus={() => setEditingField(fee.columnBase)}
+                  onBlur={() => setEditingField(null)}
+                  onChange={(e) => {
+                    const rawValue = e.target.value;
+                    if (rawValue === "") {
+                      localDynamicFeeValueOverridesRef.current[fee.columnBase] = true;
+                      setDynamicFeeValues((prev) => ({ ...prev, [fee.columnBase]: 0 }));
+                      return;
+                    }
+                    if (/^\d*\.?\d*$/.test(rawValue)) {
+                      const numericValue = parseFloat(rawValue);
+                      if (!isNaN(numericValue)) {
+                        localDynamicFeeValueOverridesRef.current[fee.columnBase] = true;
+                        setDynamicFeeValues((prev) => ({ ...prev, [fee.columnBase]: numericValue }));
+                      }
+                    }
+                  }}
+                />
+              </div>
+            </div>
+          </div>
+
+          <div style={{
+            padding: isCompactFeeRowLayout ? "8px 8px" : "10px 12px",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            minHeight: "64px"
+          }}>
+            {isTermWise && !isIndividualFee ? (
+              <div style={{ display: "grid", gap: "3px", width: "100%", justifyItems: "center" }}>
+                <button
+                  type="button"
+                  className="btn-solid"
+                  style={{
+                    whiteSpace: "wrap",
+                    padding: isCompactFeeRowLayout ? "4px 5px" : "5px 6px",
+                    width: "100%",
+                    fontSize: isCompactFeeRowLayout ? "10px" : "11px",
+                    lineHeight: 1.1
+                  }}
+                  onClick={() => {
+                    const fallbackCount = Math.max(1, Number(fee.installments) || 1);
+                    const feeAmount = Number(dynamicFeeValues[fee.columnBase] || 0);
+                    setActiveInstallmentFee(fee);
+                    setActiveIndividualInstallmentStudent(null);
+                    setInstallmentCount(fallbackCount);
+                    setShowInstallmentModal(true);
+                    loadInstallmentsForFeeType(fee.id, fallbackCount, feeAmount).then((rows) => {
+                      setInstallments(rows);
+                      setInstallmentCount(rows.length || fallbackCount);
+                    });
+                  }}
+                >
+                  Add Installments
+                </button>
+                <span style={{ fontSize: "11px", color: "#6b7280", textAlign: "center" }}>
+                  {`Saved: ${installmentSavedCount ?? fallbackInstallmentCount}`}
+                </span>
+              </div>
+            ) : null}
+          </div>
+
+          <div style={{
+            padding: isCompactFeeRowLayout ? "8px 8px" : "10px 12px",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            minHeight: "64px"
+          }}>
+            {isIndividualFee ? (
+              <button
+                type="button"
+                className="btn-solid"
+                style={{
+                  whiteSpace: "wrap",
+                  padding: isCompactFeeRowLayout ? "4px 5px" : "5px 6px",
+                  width: "100%",
+                  fontSize: isCompactFeeRowLayout ? "10px" : "11px",
+                  lineHeight: 1.1
+                }}
+                onClick={() => openIndividualFeeStudentPicker(fee)}
+              >
+                {selectedStudentSummary.length > 0 ? "Change Students" : "Select Students"}
+              </button>
+            ) : null}
+          </div>
+
+          <div style={{
+            padding: isCompactFeeRowLayout ? "8px 8px" : "10px 12px",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            minHeight: "64px"
+          }}>
             <button
               type="button"
               className="btn-solid"
+              title="Delete complete fee type everywhere"
+              aria-label={`Delete complete fee type ${fee.feeName}`}
               style={{
-                whiteSpace: "wrap",
-                padding: isCompactFeeRowLayout ? "4px 5px" : "5px 6px",
-                width: "100%",
-                fontSize: isCompactFeeRowLayout ? "10px" : "11px",
-                lineHeight: 1.1
+                whiteSpace: "nowrap",
+                padding: "3px 4px",
+                width: "30px",
+                minWidth: "30px",
+                height: "30px",
+                background: "#fee2e2",
+                color: "#b91c1c",
+                display: "inline-flex",
+                alignItems: "center",
+                justifyContent: "center",
               }}
-              onClick={() => {
-                const fallbackCount = Math.min(5, Number(fee.installments) || 1);
-                const feeAmount = Number(dynamicFeeValues[fee.columnBase] || 0);
-                setActiveInstallmentFee(fee);
-                setInstallmentCount(fallbackCount);
-                setShowInstallmentModal(true);
-                loadInstallmentsForFeeType(fee.id, fallbackCount, feeAmount).then((rows) => {
-                  setInstallments(rows);
-                  setInstallmentCount(rows.length || fallbackCount);
-                });
-              }}
+              onClick={() => handleDeleteFeeType(fee)}
             >
-              Add Installments
+              <Trash2 size={12} />
             </button>
-            <span style={{ fontSize: "11px", color: "#6b7280", textAlign: "center" }}>
-              {`Saved: ${installmentSavedCount ?? fallbackInstallmentCount}`}
-            </span>
           </div>
-          ) : null}
-      </div>
 
-      <div style={{
-        padding: isCompactFeeRowLayout ? "8px 8px" : "10px 12px",
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "center",
-        minHeight: "64px"
-      }}>
-        {isIndividualFee ? (
-          <button
-            type="button"
-            className="btn-solid"
-            style={{
-              whiteSpace: "wrap",
-              padding: isCompactFeeRowLayout ? "4px 5px" : "5px 6px",
-              width: "100%",
-              fontSize: isCompactFeeRowLayout ? "10px" : "11px",
-              lineHeight: 1.1
-
-            }}
-            onClick={() => openIndividualFeeStudentPicker(fee)}
-          >
-            {selectedStudentSummary.length > 0 ? "Change Students" : "Select Students"}
-          </button>
-        ) : null}
-      </div>
-
-      <div style={{
-        padding: isCompactFeeRowLayout ? "8px 8px" : "10px 12px",
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "center",
-        minHeight: "64px"
-      }}>
-        <button
-          type="button"
-          className="btn-solid"
-          title="Delete"
-          aria-label="Delete fee type"
-          style={{
-            whiteSpace: "nowrap",
-            padding: "3px 4px",
-            width: "30px",
-            minWidth: "30px",
-            height: "30px",
-            background: "#fee2e2",
-            color: "#b91c1c",
-            display: "inline-flex",
-            alignItems: "center",
-            justifyContent: "center",
-          }}
-          onClick={() => handleDeleteFeeType(fee)}
-        >
-          <Trash2 size={12} />
-        </button>
-      </div>
-
-      <div style={{ gridColumn: "1 / -1", padding: isCompactFeeRowLayout ? "6px 10px" : "8px 12px", fontSize: "12px", color: "#6b7280", background: "#fbfdff" }}>
-        {isIndividualFee
-          ? (selectedStudentSummary.length > 0
-              ? `Students: ${selectedStudentSummary
-                  .slice(0, 2)
-                  .map((student) => student.name || student.StudentName || "Student")
-                  .join(", ")}${
-                  selectedStudentSummary.length > 2
-                    ? ` +${selectedStudentSummary.length - 2} more`
-                    : ""
-                }`
-              : "This fee type is individual. Select one or more students before submitting.")
-          : "\u00A0"}
-      </div>
-    </div>
-  );
-})}
-
+          <div style={{ gridColumn: "1 / -1", padding: isCompactFeeRowLayout ? "6px 10px" : "8px 12px", fontSize: "12px", color: "#6b7280", background: "#fbfdff" }}>
+            {isIndividualFee
+              ? (selectedStudentSummary.length > 0
+                  ? `Students: ${selectedStudentSummary
+                      .slice(0, 2)
+                      .map((student) => student.name || student.StudentName || "Student")
+                      .join(", ")}${
+                      selectedStudentSummary.length > 2
+                        ? ` +${selectedStudentSummary.length - 2} more`
+                        : ""
+                    }`
+                  : "This fee type is individual. Select one or more students before submitting.")
+              : "\u00A0"}
+          </div>
+        </div>
+      );
+    })}
+  </>
+) : (
+  /* --- Message shown when Class/Section are empty --- */
+  <div style={{
+    margin: "12px 0",
+    padding: "20px",
+    border: "2px dashed #cbd5e1",
+    borderRadius: "10px",
+    textAlign: "center",
+    backgroundColor: "#f8fafc",
+    color: "#64748b",
+    fontSize: "13px",
+    fontWeight: "500"
+  }}>
+    Please select Class and Section above to enter the fees.
+  </div>
+)}
 
   <div className="FeesManagement-totalRow">
     <span>Total Fees:</span>
@@ -2491,7 +2852,7 @@ const installmentRowsToRender = Array.isArray(installments) && installments.leng
 </div>
 
               {/* BOTTOM BUTTONS */}
-              <div className="FeesManagement-bottomBtns">
+              {/* <div className="FeesManagement-bottomBtns">
                 <button
                   type="submit"
                   className="btn-solid"
@@ -2499,7 +2860,7 @@ const installmentRowsToRender = Array.isArray(installments) && installments.leng
                 >
                   Submit Fees
                 </button>
-              </div>
+              </div> */}
             </div>
           )}
         </form>
@@ -2543,7 +2904,7 @@ const installmentRowsToRender = Array.isArray(installments) && installments.leng
   </div>
 )}
 
-{showIndividualPreviousFeeDuePopup && (
+{/* {showIndividualPreviousFeeDuePopup && (
   <div className="FeesManagement-popupOverlay" onClick={() => setShowIndividualPreviousFeeDuePopup(false)}>
     <div className="FeesManagement-popupContent" style={{ width: 'min(90%, 480px)' }} onClick={(e) => e.stopPropagation()}>
       <button className="FeesManagement-popupCloseBtn" onClick={() => setShowIndividualPreviousFeeDuePopup(false)}>
@@ -2606,7 +2967,7 @@ const installmentRowsToRender = Array.isArray(installments) && installments.leng
       </button>
     </div>
   </div>
-)}
+)} */}
 
 {showResidentialFeePopup && (
   <div className="FeesManagement-popupOverlay" onClick={() => setShowResidentialFeePopup(false)}>
@@ -2716,7 +3077,10 @@ const installmentRowsToRender = Array.isArray(installments) && installments.leng
       {showInstallmentModal && (
         <div
           className="FeesManagement-installmentModalOverlay"
-          onClick={() => setShowInstallmentModal(false)}
+          onClick={() => {
+            setShowInstallmentModal(false);
+            setActiveIndividualInstallmentStudent(null);
+          }}
         >
           <div
             className="FeesManagement-installmentModal"
@@ -2726,14 +3090,19 @@ const installmentRowsToRender = Array.isArray(installments) && installments.leng
               <div className="FeesManagement-installmentHeaderMain">
                 <div className="FeesManagement-installmentHeaderText">
                   <h3 className="footprintsinner FeesManagement-sectionHeader" style={{ borderBottom: "none", paddingBottom: 0 }}>
-                    {activeInstallmentFee?.feeName || "Selected Fee"} Installments
+                    {activeIndividualInstallmentStudent
+                      ? `${activeIndividualInstallmentStudent?.name || activeIndividualInstallmentStudent?.StudentName || "Selected Student"} - ${activeInstallmentFee?.feeName || "Individual Fee"} Installments`
+                      : `${activeInstallmentFee?.feeName || "Selected Fee"} Installments`}
                   </h3>
                 </div>
               </div>
               <button
                 type="button"
                 className="FeesManagement-installmentClose"
-                onClick={() => setShowInstallmentModal(false)}
+                onClick={() => {
+                  setShowInstallmentModal(false);
+                  setActiveIndividualInstallmentStudent(null);
+                }}
               >
                 ×
               </button>
@@ -2754,24 +3123,23 @@ const installmentRowsToRender = Array.isArray(installments) && installments.leng
                     <button type="button" className="FeesManagement-installmentStepperBtn" onClick={handleDecreaseInstallments} disabled={(Number(installmentCount) || 0) <= 1}>
                       −
                     </button>
-                    <input
-                      type="number"
-                      value={installmentCount || ""}
-                      onChange={(e) => {
-                        const nextCount = Math.min(Math.max(parseInt(e.target.value, 10) || 0, 0), 5);
-                        setInstallmentCount(nextCount);
-                        const nextTotal = getInstallmentSplitAmount();
-                        if (nextCount > 0 && nextTotal > 0) {
-                          setInstallments(buildInstallments(nextCount, nextTotal));
-                        } else {
-                          setInstallments(buildPlaceholderInstallments(nextCount || 1));
-                        }
-                      }}
-                      min="1"
-                      max="5"
-                      onWheel={(e) => e.target.blur()}
-                      className="FeesManagement-installmentCountInput"
-                    />
+              <input
+  type="number"
+  value={installmentCount || ""}
+  onChange={(e) => {
+    const nextCount = Math.max(parseInt(e.target.value, 10) || 0, 1);
+    setInstallmentCount(nextCount);
+    const nextTotal = getInstallmentSplitAmount();
+    if (nextCount > 0 && nextTotal > 0) {
+      setInstallments(buildInstallments(nextCount, nextTotal));
+    } else {
+      setInstallments(buildPlaceholderInstallments(nextCount || 1));
+    }
+  }}
+  min="1"
+  onWheel={(e) => e.target.blur()}
+  className="FeesManagement-installmentCountInput"
+/>
                     <button type="button" className="FeesManagement-installmentStepperBtn FeesManagement-installmentStepperBtnPlus" onClick={handleIncreaseInstallments}>
                       +
                     </button>
@@ -2832,10 +3200,22 @@ const installmentRowsToRender = Array.isArray(installments) && installments.leng
                   Reset All
                 </button>
                 <div className="FeesManagement-installmentFooterActions">
-                  <button type="button" className="btn-solid1" onClick={() => setShowInstallmentModal(false)}>
+                  <button
+                    type="button"
+                    className="btn-solid1"
+                    onClick={() => {
+                      setShowInstallmentModal(false);
+                      setActiveIndividualInstallmentStudent(null);
+                    }}
+                  >
                     Cancel
                   </button>
-                  <button type="button" className="btn-solid" onClick={handleSaveFeeTypeInstallments} disabled={Number(activeInstallmentAmount) <= 0}>
+                  <button
+                    type="button"
+                    className="btn-solid"
+                    onClick={handleSaveFeeTypeInstallments}
+                    disabled={Number(activeInstallmentAmount) <= 0 && Number(installmentConfiguredAmount) <= 0}
+                  >
                     Save Installments
                   </button>
                 </div>
@@ -3112,35 +3492,77 @@ Add                </button>
                         </button>
                       </div>
                       <div style={{ display: "grid", gap: "6px" }}>
-                        {batchStudents.map((student, studentIndex) => (
-                          <div
-                            key={`${batch.batchNo || batchIndex}-${student?.id || student?.student_id || student?.name || "student"}-${studentIndex}`}
-                            style={{
-                              display: "flex",
-                              alignItems: "center",
-                              justifyContent: "space-between",
-                              gap: "12px",
-                              fontSize: "13px",
-                              color: "#374151",
-                              padding: "6px 8px",
-                              borderRadius: "8px",
-                              background: "#f8fafc",
-                            }}
-                          >
-                            <span style={{ flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                              {student.name || student.StudentName || "Student"}
-                            </span>
-                            <div style={{ display: "flex", alignItems: "center", gap: "6px", flexShrink: 0 }}>
-                              <span style={{ fontWeight: 700, color: "#ef4444", whiteSpace: "nowrap" }}>
-                                ₹
-                                {Number(student?.assignedAmount || batch.amount || 0).toLocaleString("en-IN", {
-                                  minimumFractionDigits: 2,
-                                  maximumFractionDigits: 2,
-                                })}
-                              </span>
-                            </div>
-                          </div>
-                        ))}
+                {batchStudents.map((student, studentIndex) => {
+  // Debug log for button visibility
+  console.log("[INSTALLMENTS BUTTON DEBUG] Batch Student:", {
+    studentName: student.name || student.StudentName || "Unknown",
+    feeFrequency: activeIndividualFee?.frequency,
+    hasInstallments: Array.isArray(student?.installments) && student.installments.length > 0,
+    hasInstallmentDetails: Array.isArray(student?.installmentDetails) && student.installmentDetails.length > 0,
+    conditionMet:
+      activeIndividualFee?.frequency?.toLowerCase() === "term wise" ||
+      (Array.isArray(student?.installments) && student.installments.length > 0) ||
+      (Array.isArray(student?.installmentDetails) && student.installmentDetails.length > 0),
+  });
+
+  return (
+    <div
+      key={`${batch.batchNo || batchIndex}-${student?.id || student?.student_id || student?.name || "student"}-${studentIndex}`}
+      style={{
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "space-between",
+        gap: "12px",
+        fontSize: "13px",
+        color: "#374151",
+        padding: "6px 8px",
+        borderRadius: "8px",
+        background: "#f8fafc",
+      }}
+    >
+      <span style={{ flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+        {student.name || student.StudentName || "Student"}
+      </span>
+      <div style={{ display: "flex", alignItems: "center", gap: "6px", flexShrink: 0 }}>
+        <span style={{ fontWeight: 700, color: "#ef4444", whiteSpace: "nowrap" }}>
+          ₹
+          {Number(student?.assignedAmount || batch.amount || 0).toLocaleString("en-IN", {
+            minimumFractionDigits: 2,
+            maximumFractionDigits: 2,
+          })}
+        </span>
+        {(activeIndividualFee?.frequency?.toLowerCase() === "term wise" ||
+          (Array.isArray(student?.installments) && student.installments.length > 0) ||
+          (Array.isArray(student?.installmentDetails) && student.installmentDetails.length > 0)) && (
+          <button
+            type="button"
+            className="btn-solid"
+            title="Add installments for this student"
+            aria-label={`Add installments for ${student.name || student.StudentName || "student"}`}
+            style={{
+              height: "28px",
+              minWidth: "86px",
+              padding: "3px 8px",
+              background: Array.isArray(student?.installments) && student.installments.length ? "#dcfce7" : "#fef3c7",
+              color: Array.isArray(student?.installments) && student.installments.length ? "#166534" : "#92400e",
+              display: "inline-flex",
+              alignItems: "center",
+              justifyContent: "center",
+              fontSize: "11px",
+              whiteSpace: "nowrap",
+            }}
+            onClick={() => {
+              console.log("[INSTALLMENTS BUTTON CLICKED] Student:", student.name || student.StudentName || "Unknown");
+              openIndividualStudentInstallments(student);
+            }}
+          >
+            Installments
+          </button>
+        )}
+      </div>
+    </div>
+  );
+})}
                       </div>
                     </div>
                   );
@@ -3164,64 +3586,106 @@ Add                </button>
               </div>
             ) : selectedIndividualFeeStudents.length > 0 ? (
               <div style={{ display: "grid", gap: "8px", maxHeight: "360px", overflowY: "auto", paddingRight: "4px" }}>
-                {selectedIndividualFeeStudents.map((student, index) => (
-                  <div
-                    key={`${student?.id || student?.student_id || student?.name || "student"}-${index}`}
-                    style={{
-                      display: "grid",
-                      gap: "8px",
-                      fontSize: "13px",
-                      color: "#374151",
-                      padding: "8px 10px",
-                      borderRadius: "10px",
-                      border: "1px solid #e5e7eb",
-                      background: "#fff",
-                    }}
-                  >
-                    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "10px" }}>
-                      <span style={{ flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", fontWeight: 600 }}>
-                        {student.name || student.StudentName || "Student"}
-                      </span>
-                      <div style={{ display: "flex", alignItems: "center", gap: "6px", flexShrink: 0 }}>
-                        <button
-                          type="button"
-                          className="btn-solid"
-                          title="Edit student amount"
-                          aria-label={`Edit amount for ${student.name || student.StudentName || "student"}`}
-                          style={{
-                            whiteSpace: "nowrap",
-                            padding: "3px 4px",
-                            width: "30px",
-                            minWidth: "30px",
-                            height: "30px",
-                            background: "#dbeafe",
-                            color: "#1d4ed8",
-                            display: "inline-flex",
-                            alignItems: "center",
-                            justifyContent: "center",
-                          }}
-                          onClick={() => focusIndividualFeeStudentAmount(student)}
-                        >
-                          <Pencil size={12} />
-                        </button>
-                      </div>
-                    </div>
-                    <input
-                      ref={(node) => {
-                        const lookupKey = getStudentLookupKey(student);
-                        if (lookupKey) individualFeeAmountInputRefs.current[lookupKey] = node;
-                      }}
-                      type="number"
-                      min="0"
-                      value={student?.assignedAmount ?? individualFeeDraftAmount ?? ""}
-                      onChange={(e) => updateIndividualFeeStudentAmount(student, e.target.value)}
-                      onWheel={(e) => e.target.blur()}
-                      className="btn-dropdown-FeesManagement"
-                      style={{ width: "160px" }}
-                      placeholder="Amount"
-                    />
-                  </div>
-                ))}
+     {selectedIndividualFeeStudents.map((student, index) => {
+  // Debug log for button visibility
+  console.log("[INSTALLMENTS BUTTON DEBUG] Selected Student:", {
+    studentName: student.name || student.StudentName || "Unknown",
+    feeFrequency: activeIndividualFee?.frequency,
+    hasInstallments: Array.isArray(student?.installments) && student.installments.length > 0,
+    hasInstallmentDetails: Array.isArray(student?.installmentDetails) && student.installmentDetails.length > 0,
+    conditionMet:
+      activeIndividualFee?.frequency?.toLowerCase() === "term wise" ||
+      (Array.isArray(student?.installments) && student.installments.length > 0) ||
+      (Array.isArray(student?.installmentDetails) && student.installmentDetails.length > 0),
+  });
+
+  return (
+    <div
+      key={`${student?.id || student?.student_id || student?.name || "student"}-${index}`}
+      style={{
+        display: "grid",
+        gap: "8px",
+        fontSize: "13px",
+        color: "#374151",
+        padding: "8px 10px",
+        borderRadius: "10px",
+        border: "1px solid #e5e7eb",
+        background: "#fff",
+      }}
+    >
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "10px" }}>
+        <span style={{ flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", fontWeight: 600 }}>
+          {student.name || student.StudentName || "Student"}
+        </span>
+        <div style={{ display: "flex", alignItems: "center", gap: "6px", flexShrink: 0 }}>
+          <button
+            type="button"
+            className="btn-solid"
+            title="Edit student amount"
+            aria-label={`Edit amount for ${student.name || student.StudentName || "student"}`}
+            style={{
+              whiteSpace: "nowrap",
+              padding: "3px 4px",
+              width: "30px",
+              minWidth: "30px",
+              height: "30px",
+              background: "#dbeafe",
+              color: "#1d4ed8",
+              display: "inline-flex",
+              alignItems: "center",
+              justifyContent: "center",
+            }}
+            onClick={() => focusIndividualFeeStudentAmount(student)}
+          >
+            <Pencil size={12} />
+          </button>
+          {(activeIndividualFee?.frequency?.toLowerCase() === "term wise" ||
+            (Array.isArray(student?.installments) && student.installments.length > 0) ||
+            (Array.isArray(student?.installmentDetails) && student.installmentDetails.length > 0)) && (
+            <button
+              type="button"
+              className="btn-solid"
+              title="Add installments for this student"
+              aria-label={`Add installments for ${student.name || student.StudentName || "student"}`}
+              style={{
+                height: "28px",
+                minWidth: "86px",
+                padding: "3px 8px",
+                background: Array.isArray(student?.installments) && student.installments.length ? "#dcfce7" : "#fef3c7",
+                color: Array.isArray(student?.installments) && student.installments.length ? "#166534" : "#92400e",
+                display: "inline-flex",
+                alignItems: "center",
+                justifyContent: "center",
+                fontSize: "11px",
+                whiteSpace: "nowrap",
+              }}
+              onClick={() => {
+                console.log("[INSTALLMENTS BUTTON CLICKED] Student:", student.name || student.StudentName || "Unknown");
+                openIndividualStudentInstallments(student);
+              }}
+            >
+              Installments
+            </button>
+          )}
+        </div>
+      </div>
+      <input
+        ref={(node) => {
+          const lookupKey = getStudentLookupKey(student);
+          if (lookupKey) individualFeeAmountInputRefs.current[lookupKey] = node;
+        }}
+        type="number"
+        min="0"
+        value={student?.assignedAmount ?? individualFeeDraftAmount ?? ""}
+        onChange={(e) => updateIndividualFeeStudentAmount(student, e.target.value)}
+        onWheel={(e) => e.target.blur()}
+        className="btn-dropdown-FeesManagement"
+        style={{ width: "160px" }}
+        placeholder="Amount"
+      />
+    </div>
+  );
+})}
                 <div style={{ display: "flex", justifyContent: "space-between", fontWeight: 700, color: "#111827", marginTop: "4px" }}>
                   <span>Total</span>
                   <span>

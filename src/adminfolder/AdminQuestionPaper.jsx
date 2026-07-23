@@ -8,6 +8,7 @@ import CompactTextTabs from "../shared/CompactTextTabs.jsx";
 import "./AdminEventsAndMeetings.css";
 import "./AdminQuestionPaper.css";
 import { resolveInstituteDisplayName } from "../shared/instituteNameUtils";
+import { getUserDisplayName } from "../shared/userDisplayName";
 
 import dashboardIcon from "../assets/Dashboard.png";
 import academicsIcon from "../assets/Staff Assign.png";
@@ -97,7 +98,7 @@ const AdminQuestionPaper = () => {
       <div className="admin-question-paper-shell admin-events-content">
         <div className="admin-events-top admin-question-paper-top">
           <div className="accountant-welcome-block admin-question-paper-hero">
-            <h2>Hi, Vinay!</h2>
+            <h2>Hi, {getUserDisplayName()}!</h2>
             <p>Create question papers faster,</p>
             <p>Review scan and invigilator assignments</p>
             <p>Assign students and roles from one place</p>

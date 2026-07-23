@@ -4,6 +4,8 @@ import './index.css';
 import App from './App.jsx';
 import GuideProvider from './components/Guide/GuideProvider';
 
+
+
 ReactDOM.render(
   <StrictMode>
     <GuideProvider>
@@ -12,3 +14,5 @@ ReactDOM.render(
   </StrictMode>,
   document.getElementById('root')
 );
+
+

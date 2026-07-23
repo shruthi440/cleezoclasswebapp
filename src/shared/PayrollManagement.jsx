@@ -1,15 +1,15 @@
-import { CheckCircle, HeartOff, Star } from "lucide-react";
+import React, { useState, useRef, useEffect } from 'react';
 import { useNavigate } from "react-router-dom";
-import React, { useState, useRef, useContext, useEffect } from 'react';
 import jsPDF from 'jspdf';
-import ReactDOM from 'react-dom';
-import { Download, Share, ArrowLeft, ChevronRight, Calendar, Circle } from 'lucide-react';
 import html2canvas from 'html2canvas';
-import { Link } from 'react-router-dom';
-import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
-import { faUser } from '@fortawesome/free-solid-svg-icons';
-import { Filter, FileText, Printer } from 'lucide-react';
+import { Download, Printer } from 'lucide-react';
 import axios from 'axios';
+
+// Helper function to handle fallback and relative images for the logo
+const normalizeInstituteLogo = (logoUrl) => {
+  if (!logoUrl) return "/default-logo.png";
+  return logoUrl.startsWith('http') ? logoUrl : `https://cleezoclass.com:4000/${logoUrl}`;
+};
 
 const TeacherSalaryTable1 = () => {
   // State declarations
@@ -37,6 +37,53 @@ const TeacherSalaryTable1 = () => {
   const [baseSalary, setBaseSalary] = useState('');
   const [totalSalary, setTotalSalary] = useState(null);
   const [salaryDate, setSalaryDate] = useState("");
+  const [schoolName, setSchoolName] = useState("Loading...");
+  const [currentDbName, setCurrentDbName] = useState(localStorage.getItem("schoolCode") || "");
+  const [instituteAddress, setInstituteAddress] = useState("");
+  const [instituteAuthorizedPerson, setInstituteAuthorizedPerson] = useState("");
+    
+  useEffect(() => {
+    if (!currentDbName) {
+      console.log("[Header] No currentDbName found in localStorage");
+      return;
+    }
+  
+    console.log("[Header] Fetching institute info for dbName:", currentDbName);
+  
+    fetch(`https://cleezoclass.com:4000/api/institute?dbName=${currentDbName}`)
+      .then(res => {
+        console.log("[Header] Institute response status:", res.status);
+        return res.json();
+      })
+      .then(data => {
+        console.log("[Header] Institute data received:", data);
+  
+        setSchoolName(String(data.institute_name || "Unknown School").trim());
+        localStorage.setItem("schoolName", String(data.institute_name || "Unknown School").trim());
+  
+        const normalizedLogo = normalizeInstituteLogo(data.logo);
+        setLogo(normalizedLogo || "/default-logo.png");
+        localStorage.setItem("schoolLogo", normalizedLogo || "/default-logo.png");
+  
+        setInstituteAddress(data.address || "Address not available");
+        localStorage.setItem("schoolAddress", String(data.address || "Address not available"));
+  
+        const authorizedPerson = String(data.institute_authorized_person || "").trim();
+        setInstituteAuthorizedPerson(authorizedPerson);
+      })
+      .catch(err => {
+        console.error("[Header] Error fetching institute info:", err);
+  
+        setSchoolName("Unknown School");
+        setLogo("/default-logo.png");
+        setInstituteAddress("Address not available");
+        setInstituteAuthorizedPerson("");
+        localStorage.setItem("schoolName", "Unknown School");
+        localStorage.setItem("schoolLogo", "/default-logo.png");
+        localStorage.setItem("schoolAddress", "Address not available");
+      });
+  }, [currentDbName]);
+
   const schoolCode = localStorage.getItem('schoolCode')?.toLowerCase();
   const [dynamicLogoSrc, setDynamicLogoSrc] = useState('');
   const [dynamicSchoolCode, setDynamicSchoolCode] = useState('');
@@ -99,7 +146,7 @@ const TeacherSalaryTable1 = () => {
       setDynamicSchoolCode(code);
       try {
         const response = await axios.post(
-          'https://nova-a.tagsol.in:4000/api/schoollogodynamic',
+          'https://nova-a.tagsol.in:5000/api/schoollogodynamic',
           { secretecode: code },
           { headers: { 'Content-Type': 'application/json' } }
         );
@@ -137,6 +184,19 @@ const TeacherSalaryTable1 = () => {
       const data = await response.json();
       if (data.error) throw new Error(data.error);
       setBaseSalary(data.salary_amount);
+      
+      // Seed default structural data immediately from basic payload search
+      setMonthlySalaryData({
+        base_salary: parseFloat(data.salary_amount || 0),
+        hra: parseFloat(data.hra || 0),
+        pf: parseFloat(data.pf || 0),
+        professional_tax: parseFloat(data.professional_tax || 0),
+        mediclaim: parseFloat(data.mediclaim || 0),
+        deductions: parseFloat(data.deduction || data.deductions || 0),
+        final_salary: parseFloat(data.salary_amount || 0),
+        status: data.status || 'pending',
+        salary_type: data.salary_type || 'monthly',
+      });
       return data;
     } catch (error) {
       console.error("Error fetching base salary:", error);
@@ -189,26 +249,26 @@ const TeacherSalaryTable1 = () => {
         const baseSalaryData = await fetchBaseSalaryById(employeeId, schoolCode);
         const attendanceData = await fetchAttendanceById(employeeId, schoolCode);
         const employeeDetails = await fetchEmployeeDetails(employeeId, schoolCode);
-        const presentCount = attendanceData.filter(d => d.status === 'Present').length;
         const { name: empName, school_name, email: empEmail } = employeeDetails?.data || {};
         setEmployeeInfo({ name: empName || '', school_name: school_name || '', email: empEmail || "" });
+        
         const netSalary = parseFloat(baseSalaryData.salary_amount) - (
-          parseFloat(baseSalaryData.hra) +
-          parseFloat(baseSalaryData.pf) +
-          parseFloat(baseSalaryData.professional_tax) +
-          parseFloat(baseSalaryData.mediclaim) +
-          parseFloat(baseSalaryData.deduction)
+          parseFloat(baseSalaryData.hra || 0) +
+          parseFloat(baseSalaryData.pf || 0) +
+          parseFloat(baseSalaryData.professional_tax || 0) +
+          parseFloat(baseSalaryData.mediclaim || 0) +
+          parseFloat(baseSalaryData.deduction || baseSalaryData.deductions || 0)
         );
         setMonthlySalaryData({
           base_salary: baseSalaryData.salary_amount,
-          hra: baseSalaryData.hra,
-          pf: baseSalaryData.pf,
-          professional_tax: baseSalaryData.professional_tax,
-          mediclaim: baseSalaryData.mediclaim,
-          deductions: baseSalaryData.deduction,
+          hra: baseSalaryData.hra || 0,
+          pf: baseSalaryData.pf || 0,
+          professional_tax: baseSalaryData.professional_tax || 0,
+          mediclaim: baseSalaryData.mediclaim || 0,
+          deductions: baseSalaryData.deduction || baseSalaryData.deductions || 0,
           final_salary: netSalary,
-          status: baseSalaryData.status,
-          salary_type: baseSalaryData.salary_type,
+          status: baseSalaryData.status || 'pending',
+          salary_type: baseSalaryData.salary_type || 'monthly',
         });
         setSalaryMonth(monthName);
         setAutoGeneratePayslip(true);
@@ -241,7 +301,7 @@ const TeacherSalaryTable1 = () => {
   // Handle mail payslip send
   const handleMailPayslipSend = async (formData_new) => {
     try {
-      const res = await fetch("https://nova-a.tagsol.in:4000/api/sendpaySlip", {
+      const res = await fetch("https://nova-a.tagsol.in:5000/api/sendpaySlip", {
         method: "POST",
         body: formData_new,
       });
@@ -279,7 +339,7 @@ const TeacherSalaryTable1 = () => {
     }
   }, [teacherData]);
 
-  // Handle monthly data
+  // Handle monthly data parsing logic correctly
   const handleMonthlyData = async (value) => {
     setSalaryMonth(value);
     if (!allAttendanceData?.length) return;
@@ -293,7 +353,7 @@ const TeacherSalaryTable1 = () => {
     let presentCount = 0, halfDayCount = 0, totalLateMinutes = 0;
     const standardStartTime = new Date("1970-01-01T09:00:00");
     filteredData.forEach((attendance) => {
-      if (attendance.status === "present") {
+      if (attendance.status?.toLowerCase() === "present") {
         presentCount++;
         const timeIn = new Date(`1970-01-01T${attendance.entry_time}`);
         const timeOut = attendance.exit_time ? new Date(`1970-01-01T${attendance.exit_time}`) : null;
@@ -309,8 +369,7 @@ const TeacherSalaryTable1 = () => {
     setPresentDays(presentCount);
     setHalfDays(halfDayCount);
     setLateHoursPerMonth(totalLateMinutes / 60);
-    const totalWorkDays = new Date(currentYear, selectedMonthIndex + 1, 0).getDate();
-    const absentCount = filteredData.filter((attendance) => attendance.status.toLowerCase() === "absent").length;
+    const absentCount = filteredData.filter((attendance) => attendance.status?.toLowerCase() === "absent").length;
     setUnpaidLeaves(absentCount);
     const schoolCode = localStorage.getItem("schoolCode");
     try {
@@ -323,23 +382,26 @@ const TeacherSalaryTable1 = () => {
       const data = await res.json();
       if (data.success && data.data?.latestSalary) {
         const latest = data.data.latestSalary;
-        const netSalary = parseFloat(data.data.baseSalary) - (
-          parseFloat(latest.hra) +
-          parseFloat(latest.pf) +
-          parseFloat(latest.professional_tax) +
-          parseFloat(latest.mediclaim) +
-          parseFloat(latest.deduction)
-        );
+        
+        const parsedBase = parseFloat(data.data.baseSalary || latest.salary_amount || 0);
+        const parsedHra = parseFloat(latest.hra || 0);
+        const parsedPf = parseFloat(latest.pf || 0);
+        const parsedTax = parseFloat(latest.professional_tax || 0);
+        const parsedMediclaim = parseFloat(latest.mediclaim || 0);
+        const parsedDeduction = parseFloat(latest.deduction || latest.deductions || 0);
+        
+        const netSalary = parsedBase - (parsedPf + parsedTax + parsedDeduction);
+        
         setMonthlySalaryData({
-          base_salary: data.data.baseSalary || 0,
-          hra: latest.hra || 0,
-          pf: latest.pf || 0,
-          professional_tax: latest.professional_tax || 0,
-          mediclaim: latest.mediclaim || 0,
-          deductions: latest.deduction || 0,
+          base_salary: parsedBase,
+          hra: parsedHra,
+          pf: parsedPf,
+          professional_tax: parsedTax,
+          mediclaim: parsedMediclaim,
+          deductions: parsedDeduction,
           final_salary: netSalary,
-          status: latest.status,
-          salary_type: latest.salary_type,
+          status: latest.status || 'pending',
+          salary_type: latest.salary_type || 'monthly',
         });
       }
     } catch (err) {
@@ -453,7 +515,7 @@ const TeacherSalaryTable1 = () => {
         let presentCount = 0, halfDayCount = 0, totalLateMinutes = 0;
         const standardStartTime = new Date('1970-01-01T09:00:00');
         data.forEach((attendance) => {
-          if (attendance.status === 'present') {
+          if (attendance.status?.toLowerCase() === 'present') {
             presentCount++;
             const timeIn = new Date(`1970-01-01T${attendance.entry_time}`);
             const timeOut = attendance.exit_time ? new Date(`1970-01-01T${attendance.exit_time}`) : null;
@@ -540,12 +602,6 @@ const TeacherSalaryTable1 = () => {
     }
   };
 
-  // Handle change
-  const handleChange = (e) => {
-    const { name, value } = e.target;
-    setFormData((prevData) => ({ ...prevData, [name]: value }));
-  };
-
   // Handle download
   const handleDownloadNew = async () => {
     if (!slipRef.current) return;
@@ -582,7 +638,7 @@ const TeacherSalaryTable1 = () => {
   const handlePrintCopies = (copies) => {
     const copiesPerPage = 2;
     const totalPages = Math.ceil(copies / copiesPerPage);
-    const printWindow = window.open('', 'PRINT', 'heigh=820,width=595');
+    const printWindow = window.open('', 'PRINT', 'height=820,width=595');
     let htmlContent = `<html><head><title>Print Payslips</title><style>
       @media print { body { -webkit-print-color-adjust: exact; print-color-adjust: exact; margin: 0; }
       #printable { width: 100%; max-width: 794px; margin: auto; overflow: hidden; zoom: 0.85; }
@@ -604,14 +660,11 @@ const TeacherSalaryTable1 = () => {
     printWindow.document.close();
   };
 
-  // Render UI
   return (
     <>
-
       <div className="outer-container">
         <div className="main-content">
           <div ref={dashboardRef}>
-      
             <div style={{ maxWidth: '1200px', margin: '0 auto', padding: '30px', marginTop: "20px", backgroundColor: '#f9f9f9', borderRadius: '10px', boxShadow: '0 4px 12px rgba(0,0,0,0.1)', fontFamily: 'Arial, sans-serif' }}>
               <h1 style={{ textAlign: 'center', marginBottom: '20px' }}>Attendance Details</h1>
               <div style={{ display: 'flex', gap: '15px', marginBottom: '15px' }}>
@@ -656,9 +709,9 @@ const TeacherSalaryTable1 = () => {
                           </thead>
                           <tbody>
                             {attendanceData.map((attendance, index) => (
-                              <tr key={attendance.id} style={{ textAlign: 'center', backgroundColor: index % 2 === 0 ? '#ffffff' : '#f2f2f2' }}>
-                                <td style={{ padding: '10px', border: '1px solid #ccc' }}>{attendance.id}</td>
-                                <td style={{ padding: '10px', border: '1px solid #ccc' }}>{attendance.username}</td>
+                              <tr key={attendance.id || index} style={{ textAlign: 'center', backgroundColor: index % 2 === 0 ? '#ffffff' : '#f2f2f2' }}>
+                                <td style={{ padding: '10px', border: '1px solid #ccc' }}>{attendance.id || index + 1}</td>
+                                <td style={{ padding: '10px', border: '1px solid #ccc' }}>{attendance.username || formData.name}</td>
                                 <td style={{ padding: '10px', border: '1px solid #ccc' }}>{new Date(attendance.date).toLocaleDateString()}</td>
                                 <td style={{ padding: '10px', border: '1px solid #ccc' }}>{attendance.status}</td>
                                 <td style={{ padding: '10px', border: '1px solid #ccc' }}>{attendance.entry_time || '-'}</td>
@@ -756,16 +809,15 @@ const TeacherSalaryTable1 = () => {
               <div style={{ padding: '20px', fontFamily: 'Arial, sans-serif' }}>
                 <div ref={slipRef} id="printable" style={{ width: '700px', margin: 'auto', padding: '20px', border: '1px solid black', backgroundColor: '#fff', color: '#000' }}>
                   <div style={{ textAlign: 'center', marginBottom: '20px' }}>
-                    <div style={{ display: "flex", justifyContent: "space-between", width: "75%" }}><img src="/" alt="schoolImage" /><h2 style={{ margin: 0 }}>{schoolCode?.toUpperCase()}</h2></div>
+                    <div style={{ fontSize: '20px', fontWeight: 'bold' }}>{schoolName}</div>
                     <hr style={{ height: '3px', backgroundColor: 'black', border: 'none' }} />
                     <h4 style={{ margin: 0 }}>Salary Receipt</h4>
-                    <p style={{ marginTop: "7px" }}>Month: {salaryMonth} 2025</p>
+                    <p style={{ marginTop: "7px" }}>Month: {salaryMonth} 2026</p>
                   </div>
                   <table style={{ width: '100%', marginBottom: '20px' }}>
                     <tbody>
-                      <tr><td><strong>Receipt No:</strong>451</td><td><strong>Date: </strong>{getTodayFormatted()}</td></tr>
-                      <tr><td><strong>Teacher Name:</strong>{formData.name}</td><td><strong>Department:</strong> High School</td></tr>
-                      <tr><td><strong>Status:</strong> {salaryData.status}</td><td><strong>Salary Type:</strong> {salaryData.salary_type}</td></tr>
+                      <tr><td><strong>Receipt No:</strong> 451</td><td><strong>Date: </strong>{getTodayFormatted()}</td></tr>
+                      <tr><td><strong>Teacher Name:</strong> {formData.name}</td><td><strong>Salary Type:</strong> {monthlySalaryData.salary_type}</td></tr>
                     </tbody>
                   </table>
                   <table style={{ width: '100%', borderCollapse: 'collapse', marginBottom: '20px', fontFamily: 'Arial, sans-serif', fontSize: '14px' }}>
@@ -781,7 +833,7 @@ const TeacherSalaryTable1 = () => {
                       <tr><td style={{ border: '1px solid black', padding: '8px' }}>Basic Pay</td><td style={{ border: '1px solid black', padding: '8px', textAlign: 'right' }}>{monthlySalaryData.base_salary || 0}</td><td style={{ border: '1px solid black', padding: '8px' }}>GPF / NPS (Pension Contribution)</td><td style={{ border: '1px solid black', padding: '8px', textAlign: 'right' }}>{monthlySalaryData.pf || 0}</td></tr>
                       <tr><td style={{ border: '1px solid black', padding: '8px' }}>HRA</td><td style={{ border: '1px solid black', padding: '8px', textAlign: 'right' }}>{monthlySalaryData.hra || 0}</td><td style={{ border: '1px solid black', padding: '8px' }}>Professional Tax</td><td style={{ border: '1px solid black', padding: '8px', textAlign: 'right' }}>{monthlySalaryData.professional_tax || 0}</td></tr>
                       <tr><td style={{ border: '1px solid black', padding: '8px' }}>Bonus</td><td style={{ border: '1px solid black', padding: '8px', textAlign: 'right' }}>{monthlySalaryData.mediclaim || 0}</td><td style={{ border: '1px solid black', padding: '8px' }}>Income Tax (TDS)</td><td style={{ border: '1px solid black', padding: '8px', textAlign: 'right' }}>0</td></tr>
-                      <tr><td style={{ border: '1px solid black', padding: '8px' }}>Other Allowances</td><td style={{ border: '1px solid black', padding: '8px', textAlign: 'right' }}>0.00</td><td style={{ border: '1px solid black', padding: '8px' }}>Other Deductions (Loan, Society, etc., if any)</td><td style={{ border: '1px solid black', padding: '8px', textAlign: 'right' }}>{monthlySalaryData.deductions || 0}</td></tr>
+                      <tr><td style={{ border: '1px solid black', padding: '8px' }}>Other Allowances</td><td style={{ border: '1px solid black', padding: '8px', textAlign: 'right' }}>0.00</td><td style={{ border: '1px solid black', padding: '8px' }}>Other Deductions (Loan, etc.)</td><td style={{ border: '1px solid black', padding: '8px', textAlign: 'right' }}>{monthlySalaryData.deductions || 0}</td></tr>
                       <tr>
                         <td style={{ border: '1px solid black', padding: '8px', fontWeight: 'bold' }}>Total Addition</td>
                         <td style={{ border: '1px solid black', padding: '8px', textAlign: 'right', fontWeight: 'bold' }}>₹ {(parseFloat(monthlySalaryData.base_salary || 0) + parseFloat(monthlySalaryData.hra || 0) + parseFloat(monthlySalaryData.mediclaim || 0)).toFixed(2)}</td>

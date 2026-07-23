@@ -14,10 +14,10 @@ import ErrorPopup from "../shared/ErrorPopup";
 
 // --- Configuration ---
 const API_BASE_URL = 'https://cleezoclass.com:4000/api';
-// Assuming the backend for 'AssignSubstitute.jsx' uses http://localhost:4000
-// const ABSENT_TEACHERS_API = 'http://localhost:4000/api/absent-teachers'; 
+// Assuming the backend for 'AssignSubstitute.jsx' uses http://localhost:5000
+// const ABSENT_TEACHERS_API = 'http://localhost:5000/api/absent-teachers'; 
 // For production consistency, we'll try to use the configured base URL path.
-const ABSENT_TEACHERS_API = `${API_BASE_URL.replace(':4000/api', ':4000')}/api/chief/absent-teachers`;
+const ABSENT_TEACHERS_API = `${API_BASE_URL.replace(':5000/api', ':5000')}/api/chief/absent-teachers`;
 
 const mockDropdowns = {
   classes: [

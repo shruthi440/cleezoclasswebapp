@@ -13,7 +13,65 @@
 .track-container-mobile {
     flex: 1 1 100%;
 }
+.Discount-editButton {
+  background-color: #27ae60;
+  color: white;
+  border: none;
+  padding: 6px 12px;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 12px;
+  margin-right: 8px;
+}
 
+.Discount-editButton:hover {
+  background-color: #219653;
+}
+.Discount-saveButton {
+  background-color: #3498db;
+  color: white;
+  border: none;
+  padding: 6px 12px;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 12px;
+  margin-right: 8px;
+}
+
+.Discount-saveButton:hover {
+  background-color: #2980b9;
+}
+
+/* Edit Button */
+.Discount-editButton {
+  background-color: #27ae60;
+  color: white;
+  border: none;
+  padding: 6px 12px;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 12px;
+  margin-right: 8px;
+}
+
+.Discount-editButton:hover {
+  background-color: #219653;
+}
+
+/* Remove Button */
+.Discount-removeButton {
+  background-color: #e74c3c;
+  color: white;
+  border: none;
+  padding: 6px 12px;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 12px;
+}
+
+.Discount-removeButton:hover {
+  background-color: #c0392b;
+}
 /* Card */
 .track-card {
     padding: 20px;
@@ -1502,8 +1560,9 @@ max-width: 1024px; }
   margin-left: auto;
   position: relative;
   display: flex;
-  flex-direction: column;
+  flex-direction: row;
   align-items: flex-end;
+  gap: 4px;
 }
 
 .FeesManagement-labelInputFlex {
@@ -1606,9 +1665,10 @@ max-width: 1024px; }
 
 .FeesManagement-bottomBtns {
   display: flex;
-  justify-content: space-between;
-  margin-top: 20px;
-  gap: 20px;
+  justify-content: flex-end;
+  padding: 16px 0;
+  border-top: 1px solid #e5e7eb;
+
 }
 
 /* INSTALLMENT MODAL */
@@ -2484,8 +2544,8 @@ max-width: 1024px; }
   border-radius: 16px;
   background-color: #fff;
   height: 52vh;
-  width: 57vw;
-  max-width: 500px;
+  width: 100%;
+  max-width: 100%;
   border: 1px solid #ccc;
   padding: 15px;
   display: flex;

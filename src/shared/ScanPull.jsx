@@ -8,7 +8,7 @@ const ScanPull = () => {
 
   useEffect(() => {
     setLoading(true);
-    axios.get('http://localhost:4000/api/pending-classes')
+    axios.get('http://localhost:5000/api/pending-classes')
       .then(res => setPendingClasses(res.data))
       .catch(err => setError('Failed to load pending classes'))
       .finally(() => setLoading(false));

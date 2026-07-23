@@ -62,7 +62,7 @@ const ChatOperations = () => {
         setIsLoading(true);
         // SCHOOL CODE INCLUDED HERE
         const schoolCode = localStorage.getItem('schoolCode');
-        // NOTE: The backend URL is hardcoded to cleezoclass.com here, but most others use localhost:4000
+        // NOTE: The backend URL is hardcoded to cleezoclass.com here, but most others use localhost:5000
         const response = await axios.get('https://cleezoclass.com:4000/api/events', {
           params: { schoolCode },
         });

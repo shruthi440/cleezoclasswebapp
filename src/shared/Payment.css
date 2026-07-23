@@ -37,9 +37,9 @@
   padding: 20px;
   border-radius: 10px;
   width: 80vw;
-height:'65vh' ;
+  height: 65vh;
 
- overflow-y: auto;
+  overflow-y: auto;
   text-align: center;
   position: relative;
 }

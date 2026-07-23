@@ -1540,7 +1540,7 @@
 }
 .accountant-progress-ring {
   --size: 2.55rem;
-  --thickness: 4px;
+  /* --thickness: 4px; */
 
   width: var(--size);
   height: var(--size);
@@ -1815,6 +1815,14 @@
   color: #f36b79;
   font-size: 0.58rem;
   font-weight: 700;
+}
+
+.accountant-premium-card {
+  cursor: pointer;
+}
+
+.accountant-premium-card button {
+  cursor: pointer;
 }
 
 .accountant-income-card h3,
@@ -2684,7 +2692,7 @@
 }
 
 /* Academics page override: keep 900px-1200px behaving like desktop */
-@media (min-width: 900px) and (max-width: 1200px) {
+/* @media (min-width: 900px) and (max-width: 1200px) {
   .admin-academics-page.accountant-dashboard-home-page,
   .admin-academics-page.frontdesk-dashboard-page {
     position: relative !important;
@@ -2728,4 +2736,46 @@
     grid-template-columns: inherit !important;
     grid-template-rows: inherit !important;
   }
+} */
+.admin-academics-summary {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 25px;
+    padding: 20px;
+}
+
+.accountant-progress-panel {
+    flex: 0 0 160px;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+}
+
+.admin-academics-summary-stats {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    gap: 8px;
+}
+
+.admin-academics-summary-stats p {
+    display: flex;
+    justify-content: space-between;
+    margin: 0;
+    font-size: 15px;
+}
+
+.admin-academics-summary-right {
+    flex: 0 0 320px;
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    justify-content: center;
+    gap: 15px;
+}
+
+.admin-academics-exam {
+    text-align: right;
 }

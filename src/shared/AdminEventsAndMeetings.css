@@ -16,10 +16,10 @@
   grid-template-columns: 1fr 1fr 1.28fr;
   gap: 1rem;
 }
-
+/* syam */
 .admin-events-bottom {
   display: grid;
-  grid-template-columns: 1.7fr 0.66fr 1.2fr;
+  /* grid-template-columns: 1.7fr 0.66fr 1.2fr; */
   gap: 1rem;
   align-items: start;
 }
@@ -395,8 +395,8 @@
 
 .admin-events-generation-filter-grid {
   display: grid;
-  grid-template-columns: 1.3fr 0.85fr 0.85fr auto;
-  gap: 0.7rem;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.2rem;
   align-items: end;
 }
 
@@ -667,6 +667,7 @@
   margin-top: 0.5rem;
   flex: 1 1 auto;
   min-height: 0;
+  width: 100%;
   overflow-y: auto;
   padding-right: 0.2rem;
 }
@@ -954,7 +955,6 @@
   border-radius: 50%;
   display: grid;
   place-items: center;
-  border: 4px solid #ef6574;
   color: #111;
   font-weight: 800;
   margin-bottom: 0.3rem;

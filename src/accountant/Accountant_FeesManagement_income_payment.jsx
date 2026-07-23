@@ -13,6 +13,51 @@ import ErrorPopup from "../shared/ErrorPopup";
 const API_BASE = 'https://cleezoclass.com:4000/api/admin';
 const API_BASE_URL = "https://cleezoclass.com:4000"; 
 const schoolLogo = ""; // Optional custom logo
+
+const normalizeFeeKey = (value) =>
+  String(value || "")
+    .trim()
+    .toLowerCase()
+    .replace(/\bfees?\b/g, "")
+    .replace(/[^a-z0-9]+/g, "_")
+    .replace(/^_+|_+$/g, "")
+    .replace(/_+/g, "_");
+
+const feeLabelOverdueKeys = {
+  "Admission Fee": ["admission"],
+  "Tuition Fee": ["tuition", "tution"],
+  "Residential Fee": ["residential"],
+  "Bus Fee": ["bus", "transport", "transportation"],
+  "Exam Fee": ["exam"],
+  "Books Fee": ["books", "book"],
+  "Uniform Fee": ["uniform"],
+  "Other Fees": ["other", "others"],
+};
+
+const parseDateOnly = (value) => {
+  if (!value) return null;
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return null;
+  date.setHours(0, 0, 0, 0);
+  return date;
+};
+
+const isPastDeadline = (value) => {
+  const deadline = parseDateOnly(value);
+  if (!deadline) return false;
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  return deadline < today;
+};
+
+const calculateOverdueAmount = (installmentRows = []) =>
+  (Array.isArray(installmentRows) ? installmentRows : []).reduce((sum, installment) => {
+    const amount = Number(installment?.amount || 0);
+    const paid = Number(installment?.paid || 0);
+    if (!isPastDeadline(installment?.deadlineDate) || paid >= amount) return sum;
+    return sum + Math.max(amount - paid, 0);
+  }, 0);
+
 const PayementDemo = ({ className: propClassName, sectionName: propSectionName }) => {
   // CORRECTED: Added useLocation hook call
   const location = useLocation();
@@ -132,6 +177,7 @@ const [transactionId, setTransactionId] = useState("");
   const [hoveredIndex, setHoveredIndex] = useState(null);
   const [students, setStudents] = useState([]);
   const [selectedStudent, setSelectedStudent] = useState(null);
+  const [feeInstallmentBridge, setFeeInstallmentBridge] = useState({});
   const [task, setTask] = useState("");
   const [sending, setSending] = useState(false);
   const [messageStatus, setMessageStatus] = useState(null);
@@ -1057,6 +1103,64 @@ useEffect(() => {
 
 }, [selectedStudentId, className]);
 
+useEffect(() => {
+  const schoolCode = localStorage.getItem("schoolCode");
+  const studentName = String(selectedStudent || studentData?.name || "").trim();
+
+  if (!schoolCode || !className || !section || !studentName) {
+    setFeeInstallmentBridge({});
+    setInstallmentOptions([]);
+    return;
+  }
+
+  let cancelled = false;
+
+  axios
+    .get(`${API_BASE_URL}/api/fees-details-installments`, {
+      params: {
+        schoolCode,
+        className,
+        section,
+        studentName,
+      },
+    })
+    .then((res) => {
+      if (cancelled) return;
+      const bridgeData = res.data && typeof res.data === "object" ? res.data : {};
+      setFeeInstallmentBridge(bridgeData);
+
+      const tuitionRows =
+        bridgeData?.tuition?.classWise ||
+        bridgeData?.tution?.classWise ||
+        [];
+
+      setInstallmentOptions(
+        (Array.isArray(tuitionRows) ? tuitionRows : [])
+          .filter((installment) => Number(installment?.amount || 0) > 0)
+          .map((installment) => ({
+            id: installment.installmentNo,
+            installment: installment.installmentNo,
+            amount: Number(installment.amount || 0),
+            originalAmount: Number(installment.amount || 0),
+            paid: Number(installment.paid || 0),
+            dueDate: installment.deadlineDate || "",
+            deadlineDate: installment.deadlineDate || "",
+            fine: Number(installment.fine || 0),
+          }))
+      );
+    })
+    .catch((error) => {
+      if (cancelled) return;
+      console.error("Failed to fetch fee installments:", error);
+      setFeeInstallmentBridge({});
+      setInstallmentOptions([]);
+    });
+
+  return () => {
+    cancelled = true;
+  };
+}, [selectedStudent, studentData?.name, className, section]);
+
   // Function to handle changes in tuition installment amount
 const handleTuitionInstallmentAmountChange = (index, installmentId, newAmountPaid) => {
   const parsedNewAmount = parseFloat(newAmountPaid);
@@ -1509,6 +1613,14 @@ try {
       paymentDate,
       receiptNumber: usedReceiptNumber,
       paymentMode,
+      transactionId,
+      transaction_id: transactionId,
+      cashAmount: Number(cashAmount || 0),
+      onlineAmount: Number(onlineAmount || 0),
+      paymentSplit: {
+        cash: Number(cashAmount || 0),
+        online: Number(onlineAmount || 0),
+      },
       discountAmount: parseFloat(discountAmount) || 0,
       paidAmount: currentTransactionTotal,
       fees: {
@@ -1919,7 +2031,7 @@ useEffect(() => {
   fetchStudents();
 
   // ⏱ refresh every 3 seconds
-  const interval = setInterval(fetchStudents, 3000);
+  const interval = setInterval(fetchStudents,60000);
 
   // 🧹 cleanup
   return () => clearInterval(interval);
@@ -1989,6 +2101,50 @@ if (installments && typeof installments === "object") {
     }
   });
 }
+
+installmentOptions.forEach((installment) => {
+  const installmentId = Number(installment?.installment || installment?.id);
+  if (!installmentId || paidInstallmentMap[installmentId]) return;
+  paidInstallmentMap[installmentId] = Number(installment?.paid || 0);
+});
+
+const getOverdueForFeeLabel = (label) => {
+  const keys = feeLabelOverdueKeys[label] || [normalizeFeeKey(label)];
+  return keys.reduce((sum, key) => {
+    const rows = feeInstallmentBridge?.[normalizeFeeKey(key)]?.classWise || [];
+    return sum + calculateOverdueAmount(rows);
+  }, 0);
+};
+
+const feeSummaryRows = [
+  { label: "Admission Fee", total: admissionFee, paid: admissionPaid, remaining: admissionRemaining },
+  { label: "Tuition Fee", total: tuitionFee, paid: tuitionPaid, remaining: tuitionRemaining },
+  { label: "Residential Fee", total: residentialFee, paid: residentialPaid, remaining: residentialRemaining },
+  { label: "Bus Fee", total: busFee, paid: busPaid, remaining: busRemaining },
+  { label: "Exam Fee", total: examFee, paid: examPaid, remaining: examRemaining },
+  {
+    label: "Books Fee",
+    total: bookFee === 0 && bookPaid > 0 ? bookPaid : bookFee,
+    paid: bookPaid,
+    remaining: (bookFee === 0 && bookPaid > 0 ? bookPaid : bookFee) - bookPaid,
+  },
+  { label: "Uniform Fee", total: uniformFee, paid: uniformPaid, remaining: uniformRemaining },
+  {
+    label: "Other Fees",
+    total: othersPaid,
+    paid: othersPaid,
+    remaining: 0,
+  },
+].map((fee) => ({
+  ...fee,
+  overdue: getOverdueForFeeLabel(fee.label),
+}));
+
+const totalOverdueAmount = feeSummaryRows.reduce(
+  (sum, fee) => sum + (Number(fee.overdue) || 0),
+  0
+);
+
   const [dropdownLoading, setDropdownLoading] = useState(false);
 
 const filteredStudents = students.filter((student) =>
@@ -2172,7 +2328,6 @@ return (
     }
 
     setInstallmentOptions([]);
-    setPaidInstallmentMap({});
     setFeeError("");
   }}
 >
@@ -2324,40 +2479,19 @@ return (
                             <th>Total Fee</th>
                             <th>Paid</th>
                             <th>Remaining</th>
+                            <th>Overdue</th>
                           </tr>
                         </thead>
                         <tbody>
-                   {[
-  { label: "Admission Fee", total: admissionFee, paid: admissionPaid, remaining: admissionRemaining },
-  { label: "Tuition Fee", total: tuitionFee, paid: tuitionPaid, remaining: tuitionRemaining },
-  { label: "Residential Fee", total: residentialFee, paid: residentialPaid, remaining: residentialRemaining },
-  { label: "Bus Fee", total: busFee, paid: busPaid, remaining: busRemaining },
-  { label: "Exam Fee", total: examFee, paid: examPaid, remaining: examRemaining },
-
-  // ✅ FIXED BOOKS FEE LOGIC
-  {
-    label: "Books Fee",
-    total: bookFee === 0 && bookPaid > 0 ? bookPaid : bookFee,
-    paid: bookPaid,
-    remaining:
-      (bookFee === 0 && bookPaid > 0 ? bookPaid : bookFee) - bookPaid,
-  },
-
-  { label: "Uniform Fee", total: uniformFee, paid: uniformPaid, remaining: uniformRemaining },
-
-  { 
-    label: "Other Fees", 
-    total: othersPaid, 
-    paid: othersPaid, 
-    remaining: 0 
-  },
-
-].map((fee, idx) => (
+                   {feeSummaryRows.map((fee, idx) => (
                             <tr key={idx}>
                               <td>{fee.label}</td>
                               <td>Rs. {fee.total.toFixed(2)}</td>
                               <td>Rs. {fee.paid.toFixed(2)}</td>
                               <td>Rs. {fee.remaining.toFixed(2)}</td>
+                              <td className={fee.overdue > 0 ? "payment-overdue-amount" : ""}>
+                                {fee.overdue > 0 ? `Rs. ${fee.overdue.toFixed(2)}` : "-"}
+                              </td>
                             </tr>
                           ))}
                         </tbody>
@@ -2367,6 +2501,9 @@ return (
                             <td>Rs. {totalAmount.toFixed(2)}</td>
                             <td>Rs. {paidAmount.toFixed(2)}</td>
                             <td>Rs. {remainingAmount.toFixed(2)}</td>
+                            <td className={totalOverdueAmount > 0 ? "payment-overdue-amount" : ""}>
+                              {totalOverdueAmount > 0 ? `Rs. ${totalOverdueAmount.toFixed(2)}` : "-"}
+                            </td>
                           </tr>
                         </tfoot>
                       </table>
@@ -2409,21 +2546,13 @@ return (
                     <th>Fee Type</th>
                     <th>Total</th>
                     <th>Remaining</th>
+                    <th>Overdue</th>
                     <th>Pay Now</th>
                   </tr>
                 </thead>
 
           <tbody>
-            {[
-              { label: "Admission Fee", total: admissionFee, paid: admissionPaid },
-              { label: "Tuition Fee", total: tuitionFee, paid: tuitionPaid },
-              { label: "Residential Fee", total: residentialFee, paid: residentialPaid },
-              { label: "Bus Fee", total: busFee, paid: busPaid },
-              { label: "Exam Fee", total: examFee, paid: examPaid },
-              { label: "Books Fee", total: bookFee, paid: bookPaid },
-              { label: "Uniform Fee", total: uniformFee, paid: uniformPaid },
-              { label: "Other Fees", total: othersFee, paid: othersPaid },
-            ].map((fee, idx) => {
+            {feeSummaryRows.map((fee, idx) => {
               const remaining = fee.total - fee.paid;
 
               return (
@@ -2457,7 +2586,7 @@ return (
        <ul style={{ paddingLeft: 0, marginTop: 8, listStyle: "none" }}>
   {installmentOptions.map((inst) => {
     const original = Number(inst.amount);
-    const paid = Number(installments[`installment${inst.installment}`] || 0);
+    const paid = Number(installments[`installment${inst.installment}`] || inst.paid || 0);
     const remainingAmt = original - paid;
     const isPaid = remainingAmt <= 0;
 
@@ -2521,6 +2650,13 @@ return (
 
   <td style={{ border: "1px solid #ccc", padding: "5px", textAlign: "right" }}>
     Rs. {(fee.total - fee.paid).toFixed(2)}
+  </td>
+
+  <td
+    className={fee.overdue > 0 ? "payment-overdue-amount" : ""}
+    style={{ border: "1px solid #ccc", padding: "5px", textAlign: "right" }}
+  >
+    {fee.overdue > 0 ? `Rs. ${fee.overdue.toFixed(2)}` : "-"}
   </td>
 
 <td style={{ border: "1px solid #ccc", padding: "5px", textAlign: "right" }}>
@@ -2678,9 +2814,9 @@ return (
   selectedStudentId={selectedStudentId}
   paymentDate={paymentDate}
   receiptNumber={paidPageData?.receiptNumber || receiptNumber}
-  paymentMode={paymentMode}
+  paymentMode={paidPageData?.paymentMode || paymentMode}
   discountAmount={discountAmount}
-  transactionId={transactionId}   // ✅ ADD THIS
+  transactionId={paidPageData?.transactionId || transactionId}
 />
 
           </div>

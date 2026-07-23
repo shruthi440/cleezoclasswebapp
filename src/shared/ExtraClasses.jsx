@@ -54,7 +54,7 @@ const ExtraSpecialClassCard = () => {
         const fetchOptions = async () => {
             try {
                 // Calls GET /api/metadata/class-staff-options
-                const response = await fetch('http://localhost:4000/api/metadata/class-staff-options'); 
+                const response = await fetch('http://localhost:5000/api/metadata/class-staff-options'); 
                 const data = await response.json();
                 
                 if (response.ok) {
@@ -80,7 +80,7 @@ const ExtraSpecialClassCard = () => {
     const handleRequestSubmission = useCallback(async (payload) => {
         try {
             // Calls POST /api/request-class
-            const response = await fetch('http://localhost:4000/api/request-class', { 
+            const response = await fetch('http://localhost:5000/api/request-class', { 
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(payload)

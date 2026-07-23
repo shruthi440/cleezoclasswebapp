@@ -41,7 +41,11 @@ const normalizeTaskResponse = (payload: any): Task[] => {
   return list.map(normalizeTask);
 };
 
-const TaskOfTheDay: React.FC = () => {
+type TaskOfTheDayProps = {
+  showSeparatedControls?: boolean;
+};
+
+const TaskOfTheDay: React.FC<TaskOfTheDayProps> = ({ showSeparatedControls = false }) => {
   const today = new Date().toISOString().split("T")[0];
   const [selectedDate, setSelectedDate] = useState<string>(today);
   const [tasks, setTasks] = useState<Task[]>([]);
@@ -129,16 +133,38 @@ const TaskOfTheDay: React.FC = () => {
           <div className="Heading">Task Of The Day</div>
           <div className="normalText">Select a date and add tasks</div>
         </div>
-        <button
-          className="tod-plus"
-          onClick={() => {
-            setShowPicker(true);
-            setShowInput(false);
-          }}
-          title="Add Task"
-        >
-          +
-        </button>
+        {showSeparatedControls ? (
+          <div className="tod-header-actions">
+            <input
+              type="date"
+              className="tod-date tod-date-filter"
+              value={selectedDate}
+              onChange={(e) => setSelectedDate(e.target.value)}
+              aria-label="Select task date"
+            />
+            <button
+              className="tod-add-button"
+              onClick={() => {
+                setShowInput(true);
+                setShowPicker(false);
+              }}
+              title="Add Task"
+            >
+              Add Task
+            </button>
+          </div>
+        ) : (
+          <button
+            className="tod-plus"
+            onClick={() => {
+              setShowPicker(true);
+              setShowInput(false);
+            }}
+            title="Add Task"
+          >
+            +
+          </button>
+        )}
       </div>
 
       {(showPicker || showInput) && (

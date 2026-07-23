@@ -9314,7 +9314,7 @@ body::-webkit-scrollbar {
   .dashboard-page.frontdesk-dashboard-page.accountant-dashboard-home-page .accountant-bottom-right,
 .frontdesk-dashboard-page .accountant-bottom-right {
     grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
-    grid-template-rows: minmax(0, 0.86fr) auto !important;
+    grid-template-rows: minmax(0, 2.86fr) auto !important;
     gap: 0.34rem !important;
     height: 100% !important;
     overflow: hidden !important;

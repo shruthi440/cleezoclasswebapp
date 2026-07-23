@@ -183,10 +183,10 @@
   
 .main-content {
   flex: 1;
-  background-color: white;
+  /* background-color: white; */
   margin-left: 15px;
   border-radius: 15px;
-  padding: 20px 30px;
+  padding: 5px 5px;
   display: flex;
   flex-direction: column;
   height: 720px;

@@ -4,6 +4,7 @@ import "./dashboardGlobal.css";
 
 
 
+
 const joinClasses = (...classes) => classes.filter(Boolean).join(" ");
 
 const renderAction = (item, className, children) => {
@@ -93,7 +94,7 @@ lockViewport = false,
       className={joinClasses("dashboard-page", pageClassName)}
 
     >
-      <div className="dashboard-shell accountant-dashboard-shell" style={{ position: "relative" }}>
+      <div className="dashboard-shell accountant-dashboard-shell" style={{ position: "relative"}}>
         {sidebarTopAction ? (
           <div
             style={{
@@ -101,6 +102,7 @@ lockViewport = false,
               top: "calc(50% - 15.5rem - 1.1rem - 3px)",
               left: "0.65rem",
               zIndex: 2,
+              overflow:"visible",
             }}
           >
             <button
@@ -207,12 +209,12 @@ lockViewport = false,
       </div>
 
       {footerLogoSrc ? (
-        <div className="dashboard-footer-brand accountant-footer-brand">
+        <div className="accountant-footer-brand">
           <span>{footerText}</span>
           <img
             src={footerLogoSrc}
             alt={footerLogoAlt}
-            className="dashboard-footer-logo accountant-footer-logo"
+            className="accountant-footer-logo"
           />
         </div>
       ) : null}

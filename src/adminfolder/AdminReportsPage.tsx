@@ -1,21 +1,26 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import axios from "axios";
-import { FaArrowDown, FaArrowUp, FaBook, FaClock, FaFileAlt, FaTrophy, FaUser, FaUserClock, FaCheckCircle } from "react-icons/fa";
+import { FaArrowDown, FaArrowUp, FaBook, FaClock, FaFileAlt, FaTrophy, FaUser, FaUserClock, FaCheckCircle, FaUserSlash, FaUserGraduate } from "react-icons/fa";
 import "./AdminReportsPage.css";
 import "./AdminDashboardNew.css";
 import "../frontdeskdahboard/FrontDesk.css";
 import EditableProfileMenu from "../shared/EditableProfileMenu.jsx";
 import InstituteBrand from "../shared/InstituteBrand.jsx";
 import { resolveInstituteDisplayName } from "../shared/instituteNameUtils";
-
+import * as XLSX from 'xlsx';
+import html2canvas from 'html2canvas';
 import dashboardIcon from "../assets/Dashboard.png";
 import academicsIcon from "../assets/Staff Assign.png";
 import leadProfileIcon from "../assets/Lead Profile.png";
 import enrollmentIcon from "../assets/Enrollment.png";
 import reportsIcon from "../assets/Reports .png";
 import communicationIcon from "../assets/Communication Assign.png";
-
+import { Download } from "lucide-react";
+import { jsPDF } from 'jspdf';
+import autoTable from 'jspdf-autotable';
+import { FiHelpCircle } from "react-icons/fi";
+import HelpCenter from "../shared/HelpCenter.jsx";
 const API_BASE = "https://cleezoclass.com:4000/api";
 
 type ReportType = "attendance" | "marks" | "topper" | "low" | "high";
@@ -37,7 +42,7 @@ type MarksRow = {
   section: string;
   subject: string;
   test_type: string;
-  marks: number;
+  marks_obtained: number;
   created_at: string;
 };
 
@@ -73,7 +78,28 @@ type UnarrivedTeacherRow = {
   absent_days: number | string;
 };
 
-type DetailView = "teacherAttendance" | "leaveRequests" | "latecomers" | null;
+// New structures for the specific absentee collections
+type TeacherAbsenteeRow = {
+  id: string | number;
+  name: string;
+  username: string;
+  date: string;
+  time: string;
+  status: string;
+};
+
+type StudentAbsenteeRow = {
+  id: string | number;
+  name: string;
+  class: string;
+  section: string;
+  status: string;
+  date: string;
+  username: string;
+  submission_time: string;
+};
+
+type DetailView = "teacherAttendance" | "leaveRequests" | "latecomers" | "teacherAbsentees" | "studentAbsentees" | null;
 
 const sidebarItems = [
   { key: "dashboard", label: "Dashboard", icon: dashboardIcon, route: "/AdminDashboard" },
@@ -162,11 +188,21 @@ const AdminReportsPage: React.FC = () => {
   const [attendanceRows, setAttendanceRows] = useState<AttendanceRow[]>([]);
   const [marksRows, setMarksRows] = useState<MarksRow[]>([]);
   const [hrLoading, setHrLoading] = useState(false);
+  
+  // Existing HR state
   const [latecomers, setLatecomers] = useState<LatecomerRow[]>([]);
   const [leaveRequests, setLeaveRequests] = useState<LeaveRequestRow[]>([]);
   const [unarrivedTeachers, setUnarrivedTeachers] = useState<UnarrivedTeacherRow[]>([]);
   const [teacherAbsentCount, setTeacherAbsentCount] = useState(0);
+  
+  // New State arrays for requested profiles
+  const [teacherAbsentees, setTeacherAbsentees] = useState<TeacherAbsenteeRow[]>([]);
+  const [studentAbsentees, setStudentAbsentees] = useState<StudentAbsenteeRow[]>([]);
+
   const [activeDetailView, setActiveDetailView] = useState<DetailView>(null);
+  const [openHelpSection, setOpenHelpSection] = useState(null);
+  const [isHelpOpen, setIsHelpOpen] = useState(false)
+  const userRole = localStorage.getItem("userRole")
 
   useEffect(() => {
     const schoolCode = localStorage.getItem("schoolCode");
@@ -324,10 +360,12 @@ const AdminReportsPage: React.FC = () => {
       setHrLoading(true);
       try {
         const today = new Date().toISOString().split("T")[0];
-        const [latecomersRes, leaveRequestsRes, unarrivedRes] = await Promise.all([
+        const [latecomersRes, leaveRequestsRes, unarrivedRes, teacherAbsenteesRes, studentAbsenteesRes] = await Promise.all([
           axios.get(`${API_BASE}/latecomers/today`, { params: { schoolCode } }).catch(() => ({ data: [] })),
           axios.get(`${API_BASE}/leave-requests/all`, { params: { schoolCode } }).catch(() => ({ data: [] })),
           axios.get(`${API_BASE}/teachers_attendance/unarrived`, { params: { date: today, schoolCode } }).catch(() => ({ data: [] })),
+          axios.get(`${API_BASE}/absentees/teachers`, { params: { schoolCode } }).catch(() => ({ data: [] })),
+          axios.get(`${API_BASE}/absentees/students`, { params: { schoolCode } }).catch(() => ({ data: [] }))
         ]);
 
         const latecomerRows = Array.isArray(latecomersRes.data)
@@ -366,11 +404,43 @@ const AdminReportsPage: React.FC = () => {
             : []
         );
         setTeacherAbsentCount(Array.isArray(unarrivedRes.data) ? unarrivedRes.data.length : 0);
+        
+        // Save new payloads to component state
+        setTeacherAbsentees(
+          Array.isArray(teacherAbsenteesRes.data)
+            ? teacherAbsenteesRes.data.map((t) => ({
+                id: t.id ?? Math.random(),
+                name: t.name || "-",
+                username: t.username || "-",
+                date: formatDate(t.date),
+                time: t.time || "-",
+                status: t.status || "absent"
+              }))
+            : []
+        );
+
+        setStudentAbsentees(
+          Array.isArray(studentAbsenteesRes.data)
+            ? studentAbsenteesRes.data.map((s) => ({
+                id: s.ID || Math.random(),
+                name: s.name || "-",
+                class: s.class || "-",
+                section: s.section || "-",
+                status: s.status || "-",
+                date: formatDate(s.date),
+                username: s.username || "-",
+                submission_time: s.submission_time || "-"
+              }))
+            : []
+        );
+
       } catch (hrError) {
         if (cancelled) return;
         setLatecomers([]);
         setLeaveRequests([]);
         setUnarrivedTeachers([]);
+        setTeacherAbsentees([]);
+        setStudentAbsentees([]);
         setTeacherAbsentCount(0);
       } finally {
         if (!cancelled) {
@@ -407,15 +477,15 @@ const AdminReportsPage: React.FC = () => {
     [attendanceRows, search]
   );
 
-  const filteredMarksRows = useMemo(
-    () =>
-      marksRows.filter((row) =>
-        [row.name, row.class_name, row.section, row.subject, row.test_type, String(row.marks)].some((value) =>
-          matchesSearch(value, search)
-        )
-      ),
-    [marksRows, search]
-  );
+const filteredMarksRows = useMemo(
+  () =>
+    marksRows.filter((row) =>
+      [row.name, row.class_name, row.section, row.subject, row.test_type, String(row.marks_obtained)].some((value) =>
+        matchesSearch(value, search)
+      )
+    ),
+  [marksRows, search]
+);
 
   const topperRows = useMemo<TopperRow[]>(() => {
     const studentMap = new Map<
@@ -443,7 +513,7 @@ const AdminReportsPage: React.FC = () => {
         bestMarks: -1,
       };
 
-      const marks = Number(row.marks) || 0;
+      const marks = Number(row.marks_obtained) || 0;
       existing.totalMarks += marks;
       existing.totalTests += 1;
       if (marks >= existing.bestMarks) {
@@ -478,22 +548,21 @@ const AdminReportsPage: React.FC = () => {
     );
   }, [filteredMarksRows]);
 
-  const lowRows = useMemo(
-    () =>
-      [...filteredMarksRows]
-        .sort((a, b) => Number(a.marks) - Number(b.marks) || a.name.localeCompare(b.name))
-        .slice(0, 10),
-    [filteredMarksRows]
-  );
+const lowRows = useMemo(
+  () =>
+    [...filteredMarksRows]
+      .sort((a, b) => Number(a.marks_obtained) - Number(b.marks_obtained) || a.name.localeCompare(b.name))
+      .slice(0, 10),
+  [filteredMarksRows]
+);
 
-  const highRows = useMemo(
-    () =>
-      [...filteredMarksRows]
-        .sort((a, b) => Number(b.marks) - Number(a.marks) || a.name.localeCompare(b.name))
-        .slice(0, 10),
-    [filteredMarksRows]
-  );
-
+const highRows = useMemo(
+  () =>
+    [...filteredMarksRows]
+      .sort((a, b) => Number(b.marks_obtained) - Number(a.marks_obtained) || a.name.localeCompare(b.name))
+      .slice(0, 10),
+  [filteredMarksRows]
+);
   const visibleRows = useMemo(() => {
     if (activeDetailView) return [];
     switch (activeReport) {
@@ -510,16 +579,6 @@ const AdminReportsPage: React.FC = () => {
         return filteredAttendanceRows;
     }
   }, [activeDetailView, activeReport, filteredAttendanceRows, filteredMarksRows, highRows, lowRows, topperRows]);
-
-  const attendanceAverage = useMemo(() => {
-    if (!filteredAttendanceRows.length) return 0;
-    return filteredAttendanceRows.reduce((sum, row) => sum + Number(row.attendance_percentage || 0), 0) / filteredAttendanceRows.length;
-  }, [filteredAttendanceRows]);
-
-  const marksAverage = useMemo(() => {
-    if (!filteredMarksRows.length) return 0;
-    return filteredMarksRows.reduce((sum, row) => sum + Number(row.marks || 0), 0) / filteredMarksRows.length;
-  }, [filteredMarksRows]);
 
   const leaveRequestCounts = useMemo(() => {
     const normalizedStatus = (value: string) => value.trim().toLowerCase();
@@ -547,14 +606,14 @@ const AdminReportsPage: React.FC = () => {
     if (activeDetailView === "teacherAttendance") return "Teacher Attendance List";
     if (activeDetailView === "leaveRequests") return "Leave Requests";
     if (activeDetailView === "latecomers") return "Late Comers";
+    if (activeDetailView === "teacherAbsentees") return "Teacher Absentees Report";
+    if (activeDetailView === "studentAbsentees") return "Student Absentees (Leave Tracker)";
     if (activeReport === "attendance") return "Attendance List";
     if (activeReport === "marks") return "Academic Marks List";
     if (activeReport === "topper") return "Topper List";
     if (activeReport === "low") return "Low Performance Top 10";
     return "High Performance Top 10";
   }, [activeDetailView, activeReport]);
-
-
 
   const handleSidebarClick = (key: string) => {
     setActiveSidebar(key);
@@ -664,9 +723,85 @@ const AdminReportsPage: React.FC = () => {
               ))
             ) : (
               <tr>
-                <td colSpan={5} className="admin-reports-empty-cell">
+                <td colSpan={6} className="admin-reports-empty-cell">
                   No late comers found today.
                 </td>
+              </tr>
+            )}
+          </tbody>
+        </table>
+      );
+    }
+
+    // New render tables handling custom absent tracking lists
+    if (activeDetailView === "teacherAbsentees") {
+      return (
+        <table className="admin-reports-table">
+          <thead>
+            <tr>
+              <th>Teacher ID</th>
+              <th>Teacher Name</th>
+              <th>Date</th>
+              <th>Status</th>
+            </tr>
+          </thead>
+          <tbody>
+            {teacherAbsentees.length > 0 ? (
+              teacherAbsentees.map((teacher) => (
+                <tr key={String(teacher.id)}>
+                  <td>{teacher.id}</td>
+                  <td>{teacher.name}</td>
+                  <td>{teacher.date}</td>
+                  <td><span className="absent-badge" style={{color: '#e74c3c', fontWeight: 'bold'}}>{teacher.status}</span></td>
+                </tr>
+              ))
+            ) : (
+              <tr>
+                <td colSpan={6} className="admin-reports-empty-cell">No absent teachers tracked today.</td>
+              </tr>
+            )}
+          </tbody>
+        </table>
+      );
+    }
+
+    if (activeDetailView === "studentAbsentees") {
+      return (
+        <table className="admin-reports-table">
+          <thead>
+            <tr>
+              <th>ID</th>
+              <th>Student Name</th>
+              <th>Class</th>
+              <th>Section</th>
+              <th>Leave Status</th>
+              <th>Date</th>
+          
+            </tr>
+          </thead>
+          <tbody>
+            {studentAbsentees.length > 0 ? (
+              studentAbsentees.map((student) => (
+                <tr key={String(student.id)}>
+                  <td>{student.id}</td>
+                  <td>{student.name}</td>
+                  <td>{student.class}</td>
+                  <td>{student.section}</td>
+                  <td>
+                    <span style={{ 
+                      fontWeight: 'bold', 
+                      color: student.status === 'Informed' ? '#2ecc71' : '#f39c12' 
+                    }}>
+                      {student.status}
+                    </span>
+                  </td>
+                  <td>{student.date}</td>
+               
+                </tr>
+              ))
+            ) : (
+              <tr>
+                <td colSpan={8} className="admin-reports-empty-cell">No student leave parameters found matching metrics.</td>
               </tr>
             )}
           </tbody>
@@ -712,7 +847,7 @@ const AdminReportsPage: React.FC = () => {
       );
     }
 
-    if (activeReport === "marks") {
+  if (activeReport === "marks" || activeReport === "low" || activeReport === "high") {
       const rows = visibleRows as MarksRow[];
       return (
         <table className="admin-reports-table">
@@ -723,7 +858,7 @@ const AdminReportsPage: React.FC = () => {
               <th>Section</th>
               <th>Subject</th>
               <th>Test Type</th>
-              <th>Marks</th>
+              <th>Marks Obtained</th>
               <th>Created On</th>
             </tr>
           </thead>
@@ -735,7 +870,7 @@ const AdminReportsPage: React.FC = () => {
                 <td>{row.section}</td>
                 <td>{row.subject}</td>
                 <td>{row.test_type}</td>
-                <td>{formatNumber(row.marks)}</td>
+                <td>{formatNumber(row.marks_obtained)}</td>
                 <td>{formatDate(row.created_at)}</td>
               </tr>
             ))}
@@ -803,6 +938,245 @@ const AdminReportsPage: React.FC = () => {
     );
   };
 
+  const handleDownloadExcel = () => {
+    let data = [];
+    let fileName = "report";
+
+    if (activeDetailView === "teacherAttendance") {
+      data = unarrivedTeachers.map((t) => ({
+        ID: t.id,
+        "Teacher Name": t.name,
+        "Absences This Month": t.absent_days,
+      }));
+      fileName = "teacher_attendance";
+    } else if (activeDetailView === "leaveRequests") {
+      data = leaveRequests.map((r) => ({
+        ID: r.id,
+        Name: r.name,
+        Dates: r.dates,
+        Reason: r.reason,
+        Status: r.status,
+      }));
+      fileName = "leave_requests";
+    } else if (activeDetailView === "latecomers") {
+      data = latecomers.map((p) => ({
+        ID: p.id,
+        Name: p.name,
+        Date: p.date,
+        Time: p.time,
+        "Login Time": p.loginTime,
+        Status: p.status,
+      }));
+      fileName = "latecomers";
+    } else if (activeDetailView === "teacherAbsentees") {
+      data = teacherAbsentees.map((t) => ({
+        "Teacher ID": t.id,
+        "Teacher Name": t.name,
+        Username: t.username,
+        Date: t.date,
+        "Time Checked": t.time,
+        Status: t.status,
+      }));
+      fileName = "teacher_absentees_report";
+    } else if (activeDetailView === "studentAbsentees") {
+      data = studentAbsentees.map((s) => ({
+        ID: s.id,
+        "Student Name": s.name,
+        Class: s.class,
+        Section: s.section,
+        "Leave Status": s.status,
+        Date: s.date,
+        Username: s.username,
+        "Submission Time": s.submission_time,
+      }));
+      fileName = "student_absentees_report";
+    } else if (activeReport === "attendance") {
+      data = visibleRows.map((r: any) => ({
+        Student: r.name,
+        Class: r.class_name,
+        Section: r.section,
+        Present: r.present_days,
+        Informed: r.informed_days,
+        Uninformed: r.uninformed_days,
+        "Total Days": r.total_days,
+        "Attendance %": r.attendance_percentage,
+      }));
+      fileName = "student_attendance";
+    } else if (activeReport === "marks") {
+      data = visibleRows.map((r: any) => ({
+        Student: r.name,
+        Class: r.class_name,
+        Section: r.section,
+        Subject: r.subject,
+        "Test Type": r.test_type,
+        Marks: r.marks_obtained,
+        "Created On": r.created_at,
+      }));
+      fileName = "student_marks";
+    } else if (activeReport === "topper") {
+      data = visibleRows.map((r: any) => ({
+        Student: r.name,
+        Class: r.class_name,
+        Section: r.section,
+        "Total Marks": r.total_marks,
+        "Total Tests": r.total_tests,
+      }));
+      fileName = "toppers";
+    }
+
+    if (data.length === 0) {
+      alert("No data available to download.");
+      return;
+    }
+
+    const wb = XLSX.utils.book_new();
+    const ws = XLSX.utils.json_to_sheet(data);
+
+    const colWidths = Object.keys(data[0]).map((key) => ({
+      wch: Math.max(key.length, ...data.map((row: any) => String(row[key]).length)) + 2,
+    }));
+    ws["!cols"] = colWidths;
+
+    XLSX.utils.book_append_sheet(wb, ws, "Report");
+    XLSX.writeFile(wb, `${fileName}_${new Date().toISOString().slice(0, 10)}.xlsx`);
+  };
+
+  const handleDownloadImage = async () => {
+    const tableElement = document.querySelector(".accountant-reports-table-wrap");
+    
+    if (!tableElement) {
+      alert("Table not found.");
+      return;
+    }
+
+    try {
+      const canvas = await html2canvas(tableElement, {
+        scale: 2,
+        backgroundColor: "#ffffff",
+        useCORS: true,
+      });
+
+      const image = canvas.toDataURL("image/png");
+      const link = document.createElement("a");
+      link.href = image;
+      link.download = `${activeDetailView || activeReport || "report"}_${new Date().toISOString().slice(0, 10)}.png`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+    } catch (error) {
+      console.error("Error generating image:", error);
+      alert("Failed to download image.");
+    }
+  };
+
+  const handleDownloadPDF = () => {
+    let data = [];
+    let headers = [];
+    let fileName = "report";
+    let title = "Report";
+
+    if (activeDetailView === "teacherAttendance") {
+      title = "Teacher Attendance Report";
+      fileName = "teacher_attendance";
+      headers = ['ID', 'Teacher Name', 'Absences This Month'];
+      data = unarrivedTeachers.map((t) => [t.id, t.name, t.absent_days]);
+    } 
+    else if (activeDetailView === "leaveRequests") {
+      title = "Leave Requests Report";
+      fileName = "leave_requests";
+      headers = ['ID', 'Name', 'Dates', 'Reason', 'Status'];
+      data = leaveRequests.map((r) => [r.id, r.name, r.dates, r.reason, r.status]);
+    } 
+    else if (activeDetailView === "latecomers") {
+      title = "Latecomers Report";
+      fileName = "latecomers";
+      headers = ['ID', 'Name', 'Date', 'Time', 'Login Time', 'Status'];
+      data = latecomers.map((p) => [p.id, p.name, p.date, p.time, p.loginTime, p.status]);
+    } 
+    else if (activeDetailView === "teacherAbsentees") {
+      title = "Teacher Absentees Tracking Report";
+      fileName = "teacher_absentees";
+      headers = ['Teacher ID', 'Teacher Name', 'Username', 'Date', 'Time Checked', 'Status'];
+      data = teacherAbsentees.map((t) => [t.id, t.name, t.username, t.date, t.time, t.status]);
+    }
+    else if (activeDetailView === "studentAbsentees") {
+      title = "Student Absentees Tracking Report";
+      fileName = "student_absentees";
+      headers = ['ID', 'Student Name', 'Class', 'Section', 'Leave Status', 'Date', 'Username', 'Submission Time'];
+      data = studentAbsentees.map((s) => [s.id, s.name, s.class, s.section, s.status, s.date, s.username, s.submission_time]);
+    }
+    else if (activeReport === "attendance") {
+      title = "Student Attendance Report";
+      fileName = "student_attendance";
+      headers = ['Student', 'Class', 'Section', 'Present', 'Informed', 'Uninformed', 'Total Days', 'Attendance %'];
+      data = visibleRows.map((r: any) => [r.name, r.class_name, r.section, r.present_days, r.informed_days, r.uninformed_days, r.total_days, `${r.attendance_percentage}%`]);
+    } 
+    else if (activeReport === "marks") {
+      title = "Student Marks Report";
+      fileName = "student_marks";
+      headers = ['Student', 'Class', 'Section', 'Subject', 'Test Type', 'Marks', 'Created On'];
+      data = visibleRows.map((r: any) => [r.name, r.class_name, r.section, r.subject, r.test_type, r.marks_obtained, formatDate(r.created_at)]);
+    } 
+    else if (activeReport === "topper") {
+      title = "Toppers Report";
+      fileName = "toppers";
+      headers = ['Student', 'Class', 'Section', 'Total Marks', 'Total Tests'];
+      data = visibleRows.map((r: any) => [r.name, r.class_name, r.section, r.total_marks, r.total_tests]);
+    }
+
+    if (data.length === 0) {
+      alert("No data available to download.");
+      return;
+    }
+
+    const doc = new jsPDF();
+    const pageWidth = doc.internal.pageSize.getWidth();
+
+    doc.setFontSize(18);
+    doc.setFont('helvetica', 'bold');
+    doc.setTextColor(0);
+    doc.text(title, pageWidth / 2, 20, { align: 'center' });
+
+    doc.setFontSize(10);
+    doc.setFont('helvetica', 'normal');
+    doc.setTextColor(100);
+    doc.text(`Generated on: ${new Date().toLocaleString()}`, pageWidth / 2, 28, { align: 'center' });
+
+    autoTable(doc, {
+      startY: 35,
+      head: [headers],
+      body: data,
+      theme: 'grid',
+      headStyles: {
+        fillColor: [52, 73, 94],
+        textColor: 255,
+        fontStyle: 'bold',
+        fontSize: 9,
+        halign: 'center',
+      },
+      bodyStyles: {
+        fontSize: 8,
+        textColor: [30, 30, 30],
+      },
+      margin: { left: 14, right: 14 },
+    });
+
+    const pageCount = doc.internal.getNumberOfPages();
+    for (let i = 1; i <= pageCount; i++) {
+      doc.setPage(i);
+      doc.setFontSize(9);
+      doc.setTextColor(120);
+      doc.text(
+        `Page ${i} of ${pageCount}`,
+        pageWidth / 2,
+        doc.internal.pageSize.getHeight() - 10,
+        { align: 'center' }
+      );
+    }
+
+    doc.save(`${fileName}_${new Date().toISOString().slice(0, 10)}.pdf`);
+  };
+
   return (
     <div className="dashboard-page frontdesk-dashboard-page admin-reports-page">
       <div className="dashboard-shell accountant-dashboard-shell">
@@ -857,13 +1231,15 @@ const AdminReportsPage: React.FC = () => {
 
             <div className="dashboard-topbar-right accountant-topbar-right">
               <div className="header-profile-wrap" ref={userDropdownRef}>
-                <button
-                  className="header-profile-trigger"
-                  type="button"
-                  onClick={() => setUserDropdownOpen((prev) => !prev)}
-                >
-                  <FaUser className="header-profile-trigger-icon" />
-                </button>
+                <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
+                  <button className="accountant-help-icon-btn" onClick={() => setIsHelpOpen(true)} title="Help">
+                    <FiHelpCircle style={{ color: "#e9818c", fontSize: "34px" }} />
+                  </button>
+         
+                  <button className="header-profile-trigger" type="button" onClick={() => setUserDropdownOpen((prev) => !prev)} style={{marginTop:"20px"}} title="Profile">
+                    <FaUser className="header-profile-trigger-icon" />
+                  </button>
+                </div>
                 {userDropdownOpen && (
                   <div className="header-profile-dropdown">
                     <EditableProfileMenu />
@@ -921,8 +1297,6 @@ const AdminReportsPage: React.FC = () => {
               </label>
             </div>
 
-        
-
             <div className="accountant-reports-card-row admin-reports-all-cards-row">
               {[
                 ...quickCards.map((card) => ({
@@ -951,6 +1325,21 @@ const AdminReportsPage: React.FC = () => {
                   title: "Late Comers",
                   subtitle: hrLoading ? "Loading..." : `${latecomers.length} records`,
                   icon: <FaClock />,
+                  kind: "detail" as const,
+                },
+                // Added structural metrics link cards for Absentees 
+                {
+                  key: "teacherAbsentees",
+                  title: "Teacher Absentees",
+                  subtitle: hrLoading ? "Loading..." : `${teacherAbsentees.length} absent`,
+                  icon: <FaUserSlash />,
+                  kind: "detail" as const,
+                },
+                {
+                  key: "studentAbsentees",
+                  title: "Student Absentees",
+                  subtitle: hrLoading ? "Loading..." : `${studentAbsentees.length} records`,
+                  icon: <FaUserGraduate />,
                   kind: "detail" as const,
                 },
               ].map((card) => {
@@ -988,7 +1377,7 @@ const AdminReportsPage: React.FC = () => {
             </div>
 
             <div className="accountant-reports-table-card">
-              <div className="accountant-reports-toolbar">
+              <div className="accountant-reports-toolbar-meta">
                 <div>
                   <strong>{activeTableTitle}</strong>
                   <p>
@@ -997,12 +1386,42 @@ const AdminReportsPage: React.FC = () => {
                       : `${selectedClass === "All" ? "All classes" : selectedClass}${selectedSection !== "All" ? `, Section ${selectedSection}` : ""}${selectedMonth ? `, ${selectedMonth}` : ""}`}
                   </p>
                 </div>
-                <div className="accountant-reports-toolbar-meta">
-                  <span>{activeDetailView === "teacherAttendance" ? unarrivedTeachers.length : activeDetailView === "leaveRequests" ? leaveRequests.length : activeDetailView === "latecomers" ? latecomers.length : visibleRows.length} rows</span>
+                <div className="accountant-reports-download-group">
+                  <button type="button" className="accountant-reports-download-btn accountant-reports-btn-excel" onClick={handleDownloadExcel} title="Download as Excel">
+                    <Download/> Excel
+                  </button>
+                  <button type="button" className="accountant-reports-download-btn accountant-reports-btn-image" onClick={handleDownloadImage} title="Download as Image">
+                    Image
+                  </button>
+                  <button type="button" className="accountant-reports-download-btn accountant-reports-btn-image" onClick={handleDownloadPDF} title="Download as PDF">
+                    Download pdf
+                  </button>
+                  <span>
+                    {activeDetailView === "teacherAttendance"
+                      ? unarrivedTeachers.length
+                      : activeDetailView === "leaveRequests"
+                      ? leaveRequests.length
+                      : activeDetailView === "latecomers"
+                      ? latecomers.length
+                      : activeDetailView === "teacherAbsentees"
+                      ? teacherAbsentees.length
+                      : activeDetailView === "studentAbsentees"
+                      ? studentAbsentees.length
+                      : visibleRows.length}{" "}
+                    rows
+                  </span>
                 </div>
               </div>
 
               {error && <div className="admin-reports-error">{error}</div>}
+              {isHelpOpen && (
+                <HelpCenter
+                  userRole={userRole}
+                  openHelpSection={openHelpSection}
+                  setOpenHelpSection={setOpenHelpSection}
+                  setIsHelpOpen={setIsHelpOpen}
+                />
+              )}
 
               <div className="accountant-reports-table-wrap">{renderTable()}</div>
             </div>

@@ -3,7 +3,7 @@ import React, { useEffect, useMemo, useState } from "react";
 const ENV_API_BASE = (import.meta.env.VITE_API_BASE || "").trim();
 const FALLBACK_BASES = [
   "/api",
-  "http://localhost:4000/api",
+  "http://localhost:5000/api",
   `${window.location.origin}/api`,
   "https://cleezoclass.com:4000/api",
 ];

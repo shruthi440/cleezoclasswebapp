@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 
 // The base URL for your Express server
-const API_BASE_URL = 'https://cleezoclass.com:4000/api'; // Assuming your backend runs on port 4000
+const API_BASE_URL = 'https://cleezoclass.com:4000/api'; // Assuming your backend runs on port 5000
 
 // --- Color Palette and Common Styles ---
 const colors = {

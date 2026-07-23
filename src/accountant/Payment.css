@@ -36,10 +36,10 @@
   background-color: white;
   padding: 20px;
   border-radius: 10px;
-  width: 80vw;
-height:'65vh' ;
+  width: 75vw;
+  height: 65vh;
 
- overflow-y: auto;
+  overflow-y: auto;
   text-align: center;
   position: relative;
 }
@@ -658,6 +658,12 @@ height:'65vh' ;
   background: #f5f5f5;
 }
 
+.payment-fee-table .payment-overdue-amount,
+.payment-overdue-amount {
+  color: #b91c1c;
+  font-weight: 700;
+}
+
 
 .payment-pay-button {
   width: 100px;
@@ -731,7 +737,7 @@ height:'65vh' ;
 }
 
 .payment-submit-button {
-  width: 100%;
+  width: 50%;
   padding: 10px;
   background-color: #5a7488;
   color: white;

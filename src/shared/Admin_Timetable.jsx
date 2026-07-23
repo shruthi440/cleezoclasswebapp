@@ -2,7 +2,7 @@ import React, { useState, useEffect, useCallback } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
 import { faBell } from "@fortawesome/free-solid-svg-icons";
-import { FaPlus, FaUser } from "react-icons/fa";
+import { FaCameraRetro, FaPlus, FaUser } from "react-icons/fa";
 import axios from "axios";
 import ScrollableSection from "./ScrollableSection";
 import "./Admin_Timetable.css";
@@ -26,10 +26,34 @@ import timelineIcon from "../assets/Timeline.png";
 import followupIcon from "../assets/Profile.png";
 import assistantIcon from "../assets/Assistant.png";
 import { resolveInstituteDisplayName } from "./instituteNameUtils";
+import { getUserDisplayName } from "./userDisplayName";
+import * as XLSX from 'xlsx';
+import html2canvas from 'html2canvas'; 
+
+import jsPDF from "jspdf";
+import autoTable from "jspdf-autotable";
+import { FiHelpCircle } from "react-icons/fi";
+import HelpCenter from "./HelpCenter.jsx";
 
 const isLaptop = window.innerWidth > 600 && window.innerWidth <= 1440;
 const MOBILE_BREAKPOINT = 1024;
 const BASE_URL = "https://cleezoclass.com:4000";
+const EXTRA_CLASS_STORAGE_PREFIX = "extraSpecialClassRequests";
+
+const saveExtraClassRequestFallback = (schoolCode, request) => {
+  if (!schoolCode || typeof window === "undefined") return;
+
+  const storageKey = `${EXTRA_CLASS_STORAGE_PREFIX}:${schoolCode}`;
+  const existing = JSON.parse(localStorage.getItem(storageKey) || "[]");
+  const normalizedRequest = {
+    ...request,
+    request_date: request.date,
+    start_time: request.time,
+    saved_at: new Date().toISOString(),
+  };
+
+  localStorage.setItem(storageKey, JSON.stringify([normalizedRequest, ...existing].slice(0, 20)));
+};
 
 const initialTimetableData = {};
 const timetableSidebarItems = [
@@ -244,63 +268,62 @@ const SubstituteAssignmentEmbed = ({ isMobile }) => {
           </table>
         </div>
       )}
-{isModalOpen && (
-  <div className="at-modal-overlay" onClick={closeModal}>
-    <div
-      className="at-modal-content"
-      onClick={(e) => e.stopPropagation()}
-    >
-      <div className="at-modal-header">
-        <button className="at-modal-close-btn" onClick={closeModal}>×</button>
-        <h3>
-          Assign Substitute for:
-          <strong> {selectedTeacher?.teacher_name}</strong> ({selectedTeacher?.subject})
-        </h3>
-        <p>
-          *Covering Period {selectedTeacher?.period || 1} on {selectedTeacher?.day || "Today"}.
-        </p>
-      </div>
-
-      <div className="at-modal-body">
-        {availableSubstitutes.length > 0 ? (
-          <>
-            <h4>
-              Available Teachers for {selectedTeacher?.subject} coverage:
-            </h4>
-
-            <ul className="at-substitutes-list">
-              {availableSubstitutes.map((sub) => (
-                <li className="at-substitute-item" key={sub.teacher_id}>
-                  <span>
-                    {sub.teacher_name} (<em>{sub.designation}</em>)
-                  </span>
-                  <button
-                    className="at-button-success"
-                    onClick={() => handleAssignSubstitute(sub.teacher_id)}
-                  >
-                    Assign
-                  </button>
-                </li>
-              ))}
-            </ul>
-          </>
-        ) : (
-          <p>Searching for available substitutes...</p>
-        )}
-
-        {assignmentMessage && (
-          <p
-            className={`assignment-message ${
-              assignmentMessage.startsWith("❌") ? "error" : "success"
-            }`}
+      {isModalOpen && (
+        <div className="at-modal-overlay" onClick={closeModal}>
+          <div
+            className="at-modal-content"
+            onClick={(e) => e.stopPropagation()}
           >
-            {assignmentMessage}
-          </p>
-        )}
-      </div>
-    </div>
-  </div>
-)}
+            <div className="at-modal-header">
+              <button className="at-modal-close-btn" onClick={closeModal}>×</button>
+              <h3>
+                Assign Substitute for:
+                <strong> {selectedTeacher?.teacher_name}</strong> ({selectedTeacher?.subject})
+              </h3>
+              <p>
+                *Covering Period {selectedTeacher?.period || 1} on {selectedTeacher?.day || "Today"}.
+              </p>
+            </div>
+
+            <div className="at-modal-body">
+              {availableSubstitutes.length > 0 ? (
+                <>
+                  <h4>
+                    Available Teachers for {selectedTeacher?.subject} coverage:
+                  </h4>
+
+                  <ul className="at-substitutes-list">
+                    {availableSubstitutes.map((sub) => (
+                      <li className="at-substitute-item" key={sub.teacher_id}>
+                        <span>
+                          {sub.teacher_name} (<em>{sub.designation}</em>)
+                        </span>
+                        <button
+                          className="at-button-success"
+                          onClick={() => handleAssignSubstitute(sub.teacher_id)}
+                        >
+                          Assign
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                </>
+              ) : (
+                <p>Searching for available substitutes...</p>
+              )}
+
+              {assignmentMessage && (
+                <p
+                  className={`assignment-message ${assignmentMessage.startsWith("❌") ? "error" : "success"
+                    }`}
+                >
+                  {assignmentMessage}
+                </p>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
@@ -308,7 +331,7 @@ const SubstituteAssignmentEmbed = ({ isMobile }) => {
 const TimetableAdmin = ({ academicsStyle = false }) => {
   const [popup, setPopup] = useState({ message: "", type: "" });
   const [activeQuickPanel, setActiveQuickPanel] = useState("livechat");
-  
+
   const navigate = useNavigate();
   const location = useLocation();
   const ADMIN_TITLE = "OPERATIONS — TIMETABLE";
@@ -316,7 +339,9 @@ const TimetableAdmin = ({ academicsStyle = false }) => {
   const [schoolName, setSchoolName] = useState("Loading...");
   const [schoolLogo, setSchoolLogo] = useState("/default-logo.png");
   const [selectedClasses, setSelectedClasses] = useState([]);
+  const [selectedSections, setSelectedSections] = useState(["A"]);
   const [sections, setSections] = useState({});
+  const [availableSections, setAvailableSections] = useState({});
   const [classTeachers, setClassTeachers] = useState({});
   const [timetable, setTimetable] = useState(initialTimetableData);
   const [totalRows, setTotalRows] = useState(0);
@@ -326,10 +351,10 @@ const TimetableAdmin = ({ academicsStyle = false }) => {
   const [morningInterval, setMorningInterval] = useState(false);
   const [afternoonInterval, setAfternoonInterval] = useState(false);
   const [lunchInterval, setLunchInterval] = useState(false);
-  const [morningIntervalAfter, setMorningIntervalAfter] = useState(2);
-  const [morningIntervalDuration, setMorningIntervalDuration] = useState(15);
-  const [afternoonIntervalAfter, setAfternoonIntervalAfter] = useState(6);
-  const [afternoonIntervalDuration, setAfternoonIntervalDuration] = useState(10);
+  const [morningIntervalAfter, setMorningIntervalAfter] = useState(null);
+  const [morningIntervalDuration, setMorningIntervalDuration] = useState(null);
+  const [afternoonIntervalAfter, setAfternoonIntervalAfter] = useState(null);
+  const [afternoonIntervalDuration, setAfternoonIntervalDuration] = useState(null);
   const [lunchIntervalAfter, setLunchIntervalAfter] = useState(4);
   const [lunchIntervalDuration, setLunchIntervalDuration] = useState(45);
   const [customActivities, setCustomActivities] = useState([]);
@@ -340,12 +365,17 @@ const TimetableAdmin = ({ academicsStyle = false }) => {
   const [classOptions, setClassOptions] = useState([]);
   const [staffOptions, setStaffOptions] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
+        const [openHelpSection, setOpenHelpSection] = useState(null);
+      const[isHelpOpen,setIsHelpOpen]=useState(false)
+      const userRole = localStorage.getItem("userRole")
   const [extraClassForm, setExtraClassForm] = useState({
     class: '', date: '', time: '', duration: '', staff: '',
   });
   const [specialClassForm, setSpecialClassForm] = useState({
     class: '', date: '', time: '', duration: '', staff: '',
   });
+  const [isGeneratingTimetable, setIsGeneratingTimetable] = useState(false);
+  const [generationMessage, setGenerationMessage] = useState("");
 
   useEffect(() => {
     const handleResize = () => setIsMobile(window.innerWidth < MOBILE_BREAKPOINT);
@@ -429,39 +459,71 @@ const TimetableAdmin = ({ academicsStyle = false }) => {
 useEffect(() => {
   const fetchOptions = async () => {
     const schoolCode = localStorage.getItem("schoolCode");
-    if (!schoolCode) {
-      setPopup({
-        message: "School code is missing. Please log in again to continue.",
-        type: "error"
-      });
-      return;
-    }
+    if (!schoolCode) return;
 
     try {
-      const response = await fetch(
-        `https://cleezoclass.com:4000/api/admin/api/metadata/class-staff-options?schoolCode=${schoolCode}`
-      );
-      const data = await response.json();
-      if (response.ok) {
-        const sortedClasses = (data.classOptions || []).sort(
-          (a, b) => parseInt(a) - parseInt(b)
-        );
-        setClassOptions(sortedClasses);
-        setStaffOptions(data.staffOptions || []);
-      } else {
-        setPopup({
-          message: `Failed to load options: ${data.message}. Please try again later.`,
-          type: "error"
-        });
-      }
-    } catch (error) {
-      console.error("Network Error:", error);
-      setClassOptions(["1", "2", "3", "4", "5", "6", "7", "8", "9", "10"]);
-      setStaffOptions(["K. Sujatha", "J. Andrew", "V. Sharma", "M. Khan", "S. Rao"]);
-      setPopup({
-        message: "Failed to connect to the server. Showing sample data for now.",
-        type: "error"
+      // 1. Fetch sections and class data from the correct endpoint
+      const sectionResponse = await axios.get(`${BASE_URL}/api/admin/sectionFilter`, {
+        params: { schoolCode },
       });
+
+      const data = sectionResponse.data; // Assuming this returns: [{ class_name: "I", section: "A" }, ...]
+      
+      // 2. Extract unique class names
+      const uniqueClasses = [...new Set(data.map(item => item.class_name))];
+      
+      // 3. Custom Sort function to handle Roman Numerals and Strings correctly
+      const sortOrder = { "LKG/KG1/PP2": 1, "UKG/KG2/PP1": 2, "I": 3, "II": 4, "III": 5, "IV": 6, "V": 7, "VI": 8, "VII": 9, "VIII": 10, "IX": 11, "X": 12 };
+      
+      uniqueClasses.sort((a, b) => (sortOrder[a] || 99) - (sortOrder[b] || 99));
+
+      // 4. Update state
+      setClassOptions(uniqueClasses);
+      
+      // 5. Group sections
+      const groupedSections = {};
+      data.forEach(({ class_name, section }) => {
+        if (!groupedSections[class_name]) groupedSections[class_name] = [];
+        if (!groupedSections[class_name].includes(section)) groupedSections[class_name].push(section);
+      });
+      setAvailableSections(groupedSections);
+
+      const normalizeStaffNames = (payload) => {
+        const source = Array.isArray(payload)
+          ? payload
+          : Array.isArray(payload?.staffOptions)
+            ? payload.staffOptions
+            : Array.isArray(payload?.data)
+              ? payload.data
+              : [];
+
+        return [...new Set(
+          source
+            .map((item) => item?.name || item?.staff_name || item?.teacher_name || item)
+            .filter(Boolean)
+        )];
+      };
+
+      const staffResponses = await Promise.allSettled([
+        axios.get(`${BASE_URL}/api/metadata/class-staff-options`, {
+          params: { schoolCode },
+        }),
+        axios.get(`${BASE_URL}/api/party1`, {
+          params: { schoolCode },
+        }),
+        axios.get(`${BASE_URL}/teachers`, {
+          params: { schoolCode },
+        }),
+      ]);
+
+      const staffNames = staffResponses
+        .map((result) => result.status === "fulfilled" ? normalizeStaffNames(result.value?.data) : [])
+        .find((names) => names.length > 0) || [];
+
+      setStaffOptions(staffNames);
+
+    } catch (error) {
+      console.error("Error fetching class data:", error);
     } finally {
       setIsLoading(false);
     }
@@ -484,64 +546,160 @@ useEffect(() => {
   };
 
   const handleSubmit = async () => {
-    const schoolCode = (localStorage.getItem("schoolCode") || "default_school_code").trim();
+    setIsGeneratingTimetable(true);
+
+    const startTimeStamp = Date.now();
+
+    const messages = [
+      "📚 Loading class data...",
+
+      "🔍 Checking timetable conflicts...",
+      "⚡ Optimizing periods...",
+      "🧠 Applying AI scheduling...",
+      "🎯 Finalizing timetable...",
+
+    ];
+
+    let msgIndex = 0;
+
+    setGenerationMessage(messages[0]);
+
+    const interval = setInterval(() => {
+      msgIndex++;
+
+      if (msgIndex < messages.length) {
+        setGenerationMessage(messages[msgIndex]);
+      }
+    }, 900);
+
+    const schoolCode = (
+      localStorage.getItem("schoolCode") ||
+      "default_school_code"
+    ).trim();
+
     if (!schoolCode) {
-setPopup({
-  message: "School code is missing. Please log in again to ensure everything is set correctly.",
-  type: "error"
-});
+      clearInterval(interval);
+      setIsGeneratingTimetable(false);
+
+      setPopup({
+        message:
+          "School code is missing. Please log in again to ensure everything is set correctly.",
+        type: "error"
+      });
+
       return;
     }
-    const payload = {
+// Calculate interval time (HH:MM format)
+const calculateIntervalTime = (start, duration, afterPeriods) => {
+  const [h, m] = start.split(':').map(Number);
+  const totalMinutes = h * 60 + m + (afterPeriods * duration);
+  const newH = Math.floor(totalMinutes / 60) % 24;
+  const newM = totalMinutes % 60;
+  return `${String(newH).padStart(2, '0')}:${String(newM).padStart(2, '0')}`;
+};
+ const payload = {
       schoolCode,
       classes: selectedClasses.map((name) => ({
-        class_name: String(name).replace(/^Class\s+/i, ''),
-        sections: sections[name] || 1,
+        class_name: String(name).replace(/^Class\s+/i, ""),
+        sections: sections[name] || selectedSections.length,
+        selectedSections,
         teacher: classTeachers[name] || "Not Assigned",
       })),
+      // Pass the calculated times dynamically
+    intervalTimes: {
+      morning: morningInterval ? calculateIntervalTime(startTime, periodDuration, morningIntervalAfter) : null,
+      lunch: lunchInterval ? calculateIntervalTime(startTime, periodDuration, lunchIntervalAfter) : null,
+      afternoon: afternoonInterval ? calculateIntervalTime(startTime, periodDuration, afternoonIntervalAfter) : null,
+    },
       startTime,
       periodDuration,
       numberOfPeriods,
       morningInterval,
-      morningIntervalAfter,
-      morningIntervalDuration,
-      afternoonInterval: dayType === 'full' ? afternoonInterval : false,
-      afternoonIntervalAfter,
-      afternoonIntervalDuration,
-      lunchInterval: dayType === 'full' ? lunchInterval : false,
+      morningIntervalAfter:
+        morningInterval ? morningIntervalAfter : null,
+      morningIntervalDuration:
+        morningInterval ? morningIntervalDuration : null,
+      afternoonInterval:
+        dayType === "full" ? afternoonInterval : false,
+      afternoonIntervalAfter:
+        afternoonInterval ? afternoonIntervalAfter : null,
+      afternoonIntervalDuration:
+        afternoonInterval ? afternoonIntervalDuration:null,
+      lunchInterval:
+        dayType === "full" ? lunchInterval : false,
       lunchIntervalAfter,
       lunchIntervalDuration,
-      customActivities
+      customActivities,
     };
+
     try {
       const { data } = await axios.post(
         `${BASE_URL}/generatetimetable`,
         payload,
-        { headers: { "Content-Type": "application/json" } }
+        {
+          headers: {
+            "Content-Type": "application/json",
+          },
+        }
       );
+
       if (data?.weeklyTimetable) {
-        setTimetable(data.weeklyTimetable);
-setPopup({
-  message: "The timetable has been generated successfully.",
-  type: "success"
-});
-        setShowTimetable(true);
-        setIsTimetableGenerated(true);
+        const elapsed = Date.now() - startTimeStamp;
+
+        // Minimum 6 seconds display for wow factor
+        const remainingDelay = Math.max(
+          6000 - elapsed,
+          0
+        );
+
+        setTimeout(() => {
+          clearInterval(interval);
+
+          setGenerationMessage(
+            "✅ Timetable Generated Successfully!"
+          );
+
+          setTimeout(() => {
+            setTimetable(data.weeklyTimetable);
+
+            setPopup({
+              message:
+                "The timetable has been generated successfully.",
+              type: "success"
+            });
+
+            setShowTimetable(true);
+            setIsTimetableGenerated(true);
+            setIsGeneratingTimetable(false);
+          }, 800);
+        }, remainingDelay);
       } else {
-setPopup({
-  message: "Timetable generation failed. Please check your network connection and try again.",
-  type: "error"
-});
+        clearInterval(interval);
+
+        setIsGeneratingTimetable(false);
+
+        setPopup({
+          message:
+            "Timetable generation failed. Please check your network connection and try again.",
+          type: "error"
+        });
       }
     } catch (err) {
-      console.error("❌ Server error during timetable generation:", err);
-setPopup({
-  message: "A server error occurred. Please try again later or contact support if the issue persists.",
-  type: "error"
-});
+      clearInterval(interval);
+
+      console.error(
+        "❌ Server error during timetable generation:",
+        err
+      );
+
+      setIsGeneratingTimetable(false);
+
+      setPopup({
+        message:
+          "A server error occurred. Please try again later or contact support if the issue persists.",
+        type: "error"
+      });
     }
-    setShowTimetable(true);
-    setIsTimetableGenerated(true);
   };
 
   const handleEditClass = (className) => {
@@ -550,10 +708,10 @@ setPopup({
 
   const handleSaveClass = (className) => {
     setEditingClasses(prev => ({ ...prev, [className]: false }));
-setPopup({
-  message: `✅ Timetable for ${className} has been saved successfully!`,
-  type: "success"
-});
+    setPopup({
+      message: `✅ Timetable for ${className} has been saved successfully!`,
+      type: "success"
+    });
   };
 
   const handleRemoveClass = (className) => {
@@ -570,20 +728,20 @@ setPopup({
         }
         return updatedTimetable;
       });
-setPopup({
-  message: `The class "${className}" has been deleted successfully.`,
-  type: "success"
-});
+      setPopup({
+        message: `The class "${className}" has been deleted successfully.`,
+        type: "success"
+      });
       return;
     }
     let periodNumber = prompt("Enter the period number to remove (1-10):");
     if (periodNumber === null) return;
     periodNumber = Number(periodNumber.trim());
     if (isNaN(periodNumber) || periodNumber < 1 || periodNumber > 10) {
-setPopup({
-  message: "Please enter a valid period number between 1 and 10.",
-  type: "error"
-});
+      setPopup({
+        message: "Please enter a valid period number between 1 and 10.",
+        type: "error"
+      });
       return;
     }
     setTimetable((prev) => {
@@ -605,10 +763,10 @@ setPopup({
       });
       return updatedTimetable;
     });
-setPopup({
-  message: `Period ${periodNumber} on ${day} for class "${className}" has been updated successfully.`,
-  type: "success"
-});
+    setPopup({
+      message: `Period ${periodNumber} on ${day} for class "${className}" has been updated successfully.`,
+      type: "success"
+    });
   };
 
   const handlePeriodCellChange = (className, section, day, index, field, value) => {
@@ -625,10 +783,10 @@ setPopup({
   const handleRequestSubmission = useCallback(async (payload) => {
     const schoolCode = localStorage.getItem("schoolCode");
     if (!schoolCode) {
-setPopup({
-  message: "School code is missing. Please log in again to continue.",
-  type: "error"
-});
+      setPopup({
+        message: "School code is missing. Please log in again to continue.",
+        type: "error"
+      });
       return;
     }
     const finalPayload = {
@@ -646,22 +804,23 @@ setPopup({
       );
       const data = await response.json();
       if (response.ok) {
-setPopup({
-  message: data.message,
-  type: "error"
-});
+        saveExtraClassRequestFallback(schoolCode, finalPayload);
+        setPopup({
+          message: data.message,
+          type: "success"
+        });
       } else {
-setPopup({
-  message: `Request failed: ${data.message}. Please try again.`,
-  type: "error"
-});
+        setPopup({
+          message: `Request failed: ${data.message}. Please try again.`,
+          type: "error"
+        });
       }
     } catch (error) {
       console.error("API call error:", error);
-setPopup({
-  message: "An unexpected error occurred during the request submission. Please try again later.",
-  type: "error"
-});
+      setPopup({
+        message: "An unexpected error occurred during the request submission. Please try again later.",
+        type: "error"
+      });
     }
   }, []);
 
@@ -674,18 +833,18 @@ setPopup({
     e.preventDefault();
     const formData = formType === 'extra' ? extraClassForm : specialClassForm;
     if (!formData.class || !formData.date || !formData.time || !formData.duration || !formData.staff) {
-setPopup({
-  message: "Please fill in all the required fields before submitting the request.",
-  type: "error"
-});
+      setPopup({
+        message: "Please fill in all the required fields before submitting the request.",
+        type: "error"
+      });
       return;
     }
     const durationInMinutes = parseInt(formData.duration, 10);
     if (isNaN(durationInMinutes) || durationInMinutes <= 0) {
-setPopup({
-  message: "Duration must be a valid positive number. Please correct and try again.",
-  type: "error"
-});
+      setPopup({
+        message: "Duration must be a valid positive number. Please correct and try again.",
+        type: "error"
+      });
       return;
     }
     const payload = {
@@ -700,6 +859,9 @@ setPopup({
     const resetter = formType === 'extra' ? setExtraClassForm : setSpecialClassForm;
     resetter({ class: '', date: '', time: '', duration: '', staff: '' });
   };
+
+ console.log("Selected Classes", selectedClasses);
+console.log("Available Sections", availableSections);
 
   const renderActionsSection = () => (
     <div className="at-actions-section">
@@ -747,17 +909,16 @@ setPopup({
       <div className="at-form-grid">
         <div className="at-form-group">
           <label>Class</label>
-          <select
-            className="btn-dropdown"
-            value={formData.class}
-            onChange={(e) => handleFormChange(formType, "class", e.target.value)}
-            disabled={isLoading}
-          >
-            <option value="">Select Class</option>
-            {classOptions.map((cls) => (
-              <option key={cls} value={cls}>{cls}</option>
-            ))}
-          </select>
+         <select
+  className="btn-dropdown"
+  value={formData.class}
+  onChange={(e) => handleFormChange(formType, "class", e.target.value)}
+>
+  <option value="">Select Class</option>
+  {classOptions && classOptions.map((cls) => (
+    <option key={cls} value={cls}>{cls}</option>
+  ))}
+</select>
         </div>
         <div className="at-form-group">
           <label>Date</label>
@@ -801,11 +962,15 @@ setPopup({
           </select>
         </div>
       </div>
-      <div className="at-form-button-row" >
-        <button type="submit" className="btn-solid" style={{marginTop:'-50px'}} disabled={isLoading}>
-          Request
-        </button>
-      </div>
+<div className="at-form-button-row">
+  <button
+    type="submit"
+    className="btn-solid at-request-btn"
+    disabled={isLoading}
+  >
+    Request
+  </button>
+</div>
     </form>
   );
 
@@ -865,6 +1030,66 @@ setPopup({
         </div>
       </div>
       <div className="at-schedule-settings-container">
+       <div className="at-schedule-settings-header">
+  <h3>Sections :</h3>
+
+  {selectedClasses.length === 0 ? (
+    <span>Please select class(es)</span>
+  ) : (
+    [...new Set(
+      selectedClasses.flatMap(
+        (cls) => availableSections[cls] || []
+      )
+    )].map((section) => (
+      <label key={section}>
+        <input
+          type="checkbox"
+          checked={selectedSections.includes(section)}
+          onChange={(e) => {
+            if (e.target.checked) {
+              setSelectedSections((prev) => [...prev, section]);
+            } else {
+              setSelectedSections((prev) =>
+                prev.filter((s) => s !== section)
+              );
+            }
+          }}
+        />
+        {section}
+      </label>
+    ))
+  )}
+
+  {selectedClasses.length > 0 && (
+    <label>
+      <input
+        type="checkbox"
+        checked={
+          [...new Set(
+            selectedClasses.flatMap(
+              (cls) => availableSections[cls] || []
+            )
+          )].length === selectedSections.length
+        }
+        onChange={(e) => {
+          const allSections = [
+            ...new Set(
+              selectedClasses.flatMap(
+                (cls) => availableSections[cls] || []
+              )
+            ),
+          ];
+
+          setSelectedSections(
+            e.target.checked ? allSections : []
+          );
+        }}
+      />
+      All
+    </label>
+  )}
+</div>
+
         <div className="at-schedule-settings-header">
           <h3>Schedule Settings:</h3>
           <label>Day Type:</label>
@@ -961,49 +1186,49 @@ setPopup({
           ]
             .filter((int) => int.visible)
             .map((int) => (
-             <div key={int.label} className="at-interval-box">
-  {/* LEFT SIDE */}
-<div className="at-interval-left">
-  <label className="at-interval-label">
-    {int.label}
-    <input
-      type="checkbox"
-      checked={int.state}
-      onChange={() => int.setter(!int.state)}
-    />
-  </label>
-</div>
+              <div key={int.label} className="at-interval-box">
+                {/* LEFT SIDE */}
+                <div className="at-interval-left">
+                  <label className="at-interval-label">
+                    {int.label}
+                    <input
+                      type="checkbox"
+                      checked={int.state}
+                      onChange={() => int.setter(!int.state)}
+                    />
+                  </label>
+                </div>
 
 
-  {/* RIGHT SIDE (appears inline, not below) */}
-  {int.state && (
-    <div className="at-interval-right">
-      <div className="at-interval-input">
-        <label>After</label>
-        <input
-          type="number"
-          min="1"
-          max={numberOfPeriods}
-          value={int.after || ""}
-          onChange={(e) => int.afterSetter(Number(e.target.value))}
-          className="at-small-input"
-        />
-      </div>
+                {/* RIGHT SIDE (appears inline, not below) */}
+                {int.state && (
+                  <div className="at-interval-right">
+                    <div className="at-interval-input">
+                      <label>After</label>
+                      <input
+                        type="number"
+                        min="1"
+                        max={numberOfPeriods}
+                        value={int.after || ""}
+                        onChange={(e) => int.afterSetter(Number(e.target.value))}
+                        className="at-small-input"
+                      />
+                    </div>
 
-      <div className="at-interval-input">
-        <label>Mins</label>
-        <input
-          type="number"
-          min="5"
-          max={int.maxDur}
-          value={int.duration || ""}
-          onChange={(e) => int.durationSetter(Number(e.target.value))}
-          className="at-small-input"
-        />
-      </div>
-    </div>
-  )}
-</div>
+                    <div className="at-interval-input">
+                      <label>Mins</label>
+                      <input
+                        type="number"
+                        min="5"
+                        max={int.maxDur}
+                        value={int.duration || ""}
+                        onChange={(e) => int.durationSetter(Number(e.target.value))}
+                        className="at-small-input"
+                      />
+                    </div>
+                  </div>
+                )}
+              </div>
 
             ))}
         </div>
@@ -1025,6 +1250,10 @@ setPopup({
               <h2>
                 Class {className}
                 <button
+                  className={`tt-class-action-btn ${editingClasses[className]
+                    ? "tt-save-btn"
+                    : "tt-edit-btn"
+                    }`}
                   onClick={() =>
                     editingClasses[className]
                       ? handleSaveClass(className)
@@ -1033,7 +1262,9 @@ setPopup({
                 >
                   {editingClasses[className] ? "Save" : "Edit"}
                 </button>
+
                 <button
+                  className="tt-class-action-btn tt-remove-btn"
                   onClick={() => handleRemoveClass(className)}
                 >
                   Remove
@@ -1157,6 +1388,154 @@ setPopup({
     "PO121 - Staff planner books",
   ];
 
+const downloadTimetableImage = async () => {
+
+  const timetableElement = document.querySelector('.timetable-container'); 
+  
+  if (!timetableElement) {
+    alert('Timetable not found!');
+    return;
+  }
+
+  try {
+    const canvas = await html2canvas(timetableElement, {
+      scale: 2,
+      useCORS: true, 
+      backgroundColor: '#ffffff',
+    });
+
+    const imageData = canvas.toDataURL('image/png');
+
+    const link = document.createElement('a');
+    link.href = imageData;
+    link.download = `Timetable_${new Date().toLocaleDateString().replace(/\//g, '-')}.png`;
+    
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    
+  } catch (error) {
+    console.error('Error downloading image:', error);
+    alert('Failed to download image. Please try again.');
+  }
+};
+const downloadTimetableExcel = () => {
+  const wb = XLSX.utils.book_new();
+
+  Object.keys(timetable).forEach((className) => {
+    Object.keys(timetable[className]).forEach((section) => {
+      const sectionData = timetable[className][section];
+      const days = Object.keys(sectionData);
+
+      if (!days.length) return;
+
+      const firstDayPeriods = sectionData[days[0]];
+      
+      const headers = [
+        "Day",
+        ...firstDayPeriods.map((period) =>
+          period.interval ? period.interval : `P${period.period}`
+        ),
+      ];
+
+      const rows = days.map((day) => [
+        day,
+        ...sectionData[day].map((period) => {
+          if (period?.interval) {
+            return period.interval;
+          }
+          return `${period.subject} | ${period.teacher} | ${period.from_time.substring(0, 5)} - ${period.to_time.substring(0, 5)}`;
+        }),
+      ]);
+
+      const wsData = [headers, ...rows];
+      const ws = XLSX.utils.aoa_to_sheet(wsData);
+
+      ws['!cols'] = headers.map((_, index) => ({ wch: index === 0 ? 12 : 25 }));
+
+      let sheetName = `Class ${className} - Sec ${section}`;
+      if (sheetName.length > 31) sheetName = sheetName.substring(0, 31);
+      
+      XLSX.utils.book_append_sheet(wb, ws, sheetName);
+    });
+  });
+
+  XLSX.writeFile(wb, "School-Timetable.xlsx");
+};
+  const downloadTimetablePDF = () => {
+    const pdf = new jsPDF("landscape", "mm", "a4");
+
+    Object.keys(timetable).forEach((className, classIndex) => {
+      Object.keys(timetable[className]).forEach((section, sectionIndex) => {
+        const sectionData = timetable[className][section];
+        const days = Object.keys(sectionData);
+
+        if (!days.length) return;
+
+        const firstDayPeriods = sectionData[days[0]];
+
+        const head = [
+          [
+            "Day",
+            ...firstDayPeriods.map((period) =>
+              period.interval
+                ? period.interval
+                : `P${period.period}`
+            ),
+          ],
+        ];
+
+        const body = days.map((day) => [
+          day,
+          ...sectionData[day].map((period) => {
+            if (period?.interval) {
+              return period.interval;
+            }
+
+            return `${period.subject}\n${period.teacher}\n${period.from_time.substring(
+              0,
+              5
+            )} - ${period.to_time.substring(0, 5)}`;
+          }),
+        ]);
+
+        if (classIndex > 0 || sectionIndex > 0) {
+          pdf.addPage();
+        }
+
+        pdf.setFontSize(18);
+        pdf.text(
+          `Class ${className} - Section ${section}`,
+          14,
+          15
+        );
+
+        autoTable(pdf, {
+          startY: 22,
+          head,
+          body,
+          styles: {
+            fontSize: 8,
+            cellPadding: 2,
+            overflow: "linebreak",
+            valign: "middle",
+          },
+          headStyles: {
+            fillColor: [90, 116, 136],
+            textColor: 255,
+            fontStyle: "bold",
+          },
+          alternateRowStyles: {
+            fillColor: [245, 245, 245],
+          },
+          theme: "grid",
+        });
+      });
+    });
+
+    pdf.save("School-Timetable.pdf");
+  };
+
   if (academicsStyle) {
     return (
       <div className="dashboard-page dashboard-home-page frontdesk-dashboard-page accountant-dashboard-page accountant-dashboard-home-page tt-academics-page">
@@ -1208,18 +1587,29 @@ setPopup({
                 />
               </div>
 
-            <div className="dashboard-topbar-right accountant-topbar-right">
-              <button className="accountant-branch-btn" type="button" onClick={() => navigate("/HrDashboard")}>
-                Switch to HR <span className="accountant-branch-caret">▼</span>
-              </button>
-              <EditableProfileMenu showHrSwitch />
+              <div className="dashboard-topbar-right accountant-topbar-right">
+                <button className="accountant-branch-btn" type="button" onClick={() => navigate("/HrDashboard")}>
+                  Switch to HR <span className="accountant-branch-caret">▼</span>
+                </button>
+                      <button
+                   className="accountant-help-icon-btn"
+                   onClick={() => setIsHelpOpen(true)}
+                 >
+                 <FiHelpCircle
+                 style={{
+                   color: "#e9818c",
+                   fontSize: "34px"
+                 }}
+               />
+                 </button>
+                <EditableProfileMenu showHrSwitch />
+              </div>
             </div>
-          </div>
 
             <div className="tt-academics-content admin-events-content">
               <div className="tt-academics-top admin-events-top">
                 <div className="admin-events-welcome accountant-welcome-block">
-                  <h2>Hi, Vinay!</h2>
+                  <h2>Hi, {getUserDisplayName()}!</h2>
                   <p>Check Store Inventory,</p>
                   <p>Report Track to Class Teacher</p>
                   <p>Submit Building maintenance</p>
@@ -1232,27 +1622,13 @@ setPopup({
                     ]}
                   />
                 </div>
-                <div className="admin-events-task accountant-card">
-                  <div className="admin-events-task-header">
-                    <h3>Task of the Day</h3>
-                    <button
-                      type="button"
-                      className="admin-events-plus-btn"
-                      onClick={() => setPopup({ message: "Open task editor from the timetable page.", type: "info" })}
-                    >
-                      <FaPlus />
-                    </button>
-                  </div>
-                  <div className="admin-events-task-list">
-                    {timetableReminderItems.map((item) => (
-                      <label key={item} className="admin-events-reminder">
-                        <input type="radio" name="timetable-reminder" />
-                        <span>{item}</span>
-                      </label>
-                    ))}
-                  </div>
-                </div>
-
+         {/* OLD STATIC CARD */}
+{/* NEW DYNAMIC CARD */}
+<div className="admin-events-task accountant-card">
+  <div className="taskCardContent">
+    <TaskOfTheDay />
+  </div>
+</div>
                 <div className="accountant-mini-cards admin-events-mini-cards">
                   {timetableQuickCards.map((card) => (
                     <div
@@ -1273,20 +1649,61 @@ setPopup({
               <div className="tt-academics-main">
                 <div className="tt-academics-performance accountant-card">
                   <div className="tt-academics-performance-header">
-                    <div><h3>Time Table Generation</h3></div>
-                    {!showTimetable && (
-                      <button
-                        type="button"
-                        className="tt-academics-generate-btn"
-                        onClick={handleSubmit}
-                      >
-                        Generate Timetable
-                      </button>
-                    )}
+                    <div>
+                      <h3>Time Table Generation</h3>
+                    </div>
+
+                   <div
+  style={{
+    display: "flex",
+    alignItems: "center",
+    gap: "10px",
+  }}
+>
+  {showTimetable && (
+    <>
+      <button
+        type="button"
+        className="tt-academics-download-btn"
+        onClick={downloadTimetablePDF}
+      >
+        Download PDF
+      </button>
+
+      <button
+        type="button"
+        className="tt-academics-download-btn"
+        onClick={downloadTimetableExcel}
+        // style={{ backgroundColor: "#10b981" }} 
+      >
+        Download Excel
+      </button>
+      {/* <button
+        type="button"
+        className="tt-academics-download-btn"
+        onClick={downloadTimetableImage}
+        // style={{ backgroundColor: '#10b981' }} 
+      >
+        Download Image
+      </button> */}
+     
+    </>
+  )}
+
+  {!showTimetable && (
+    <button
+      type="button"
+      className="tt-academics-generate-btn"
+      onClick={handleSubmit}
+    >
+      Generate Timetable
+    </button>
+  )}
+</div>
                   </div>
                   {showTimetable ? (
                     <div className="tt-academics-generation-main">
-                      <div className="tt-academics-inner-scroll">
+                     <div className="tt-academics-inner-scroll timetable-container">
                         {renderTimetableDisplay()}
                       </div>
                     </div>
@@ -1326,21 +1743,21 @@ setPopup({
                     <div className="tt-academics-po-list">
                       {activeQuickPanel === "assistant"
                         ? assistantPanelItems.map((item) => (
-                            <div key={item} className="tt-academics-assistant-item">
-                              <strong>Assistant</strong>
-                              <span>{item}</span>
-                            </div>
-                          ))
+                          <div key={item} className="tt-academics-assistant-item">
+                            <strong>Assistant</strong>
+                            <span>{item}</span>
+                          </div>
+                        ))
                         : activeQuickPanel === "storepo"
                           ? storePanelItems.map((item) => (
-                              <div key={item} className="tt-academics-po-item">
-                                <span>{item}</span>
-                                <div className="tt-academics-po-actions">
-                                  <button type="button">▷</button>
-                                  <button type="button">✕</button>
-                                </div>
+                            <div key={item} className="tt-academics-po-item">
+                              <span>{item}</span>
+                              <div className="tt-academics-po-actions">
+                                <button type="button">▷</button>
+                                <button type="button">✕</button>
                               </div>
-                            ))
+                            </div>
+                          ))
                           : (
                             <>
                               <div className="tt-academics-side-subgroup-label">Requests</div>
@@ -1396,54 +1813,83 @@ setPopup({
           type={popup.type}
           onClose={() => setPopup({ message: "", type: "" })}
         />
+        {isGeneratingTimetable && (
+          <div className="tt-ai-generator-overlay">
+            <div className="tt-ai-generator-box">
+              {/* <div className="tt-ai-generator-icon">🧠</div> */}
+
+              <h2>AI Timetable Generator</h2>
+
+              <div className="tt-ai-generator-message">
+                {generationMessage}
+              </div>
+
+              <div className="tt-ai-progress">
+                <div className="tt-ai-progress-bar"></div>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     );
   }
 
   return (
-        <div className="event-container">
+    <div className="event-container">
       <h1 className="footprintsinner">Operations - Timetable </h1>
-    <ScrollableSection
-      height={isMobile ? "50vh" : isLaptop ? "95vh" : "65vh"}
-    >
-      
-      {{
-        firstSection: (
-          
-        
-            <div className="at-container" style={{paddingBottom:'100px'}}>
+      <ScrollableSection
+        height={isMobile ? "50vh" : isLaptop ? "95vh" : "65vh"}
+      >
+
+        {{
+          firstSection: (
+
+
+            <div className="at-container" style={{ paddingBottom: '100px' }}>
               <div className="at-main-grid">
                 <div className="at-left-column">
                   {renderTimetableGeneration()}
                 </div>
-                
+
                 <div className="at-right-column">
                   {showTimetable ? renderTimetableDisplay() : renderActionsSection()}
                 </div>
               </div>
             </div>
-        ),
-        secondSection: (
-          <div className="at-outer-container" >
-            <div className="at-container">
-              <div className="at-main-grid">
-                <div className="at-left-column">
-                  <SubstituteAssignmentEmbed isMobile={isMobile} />
-                </div>
-                <div className="at-right-column">
-                  {renderExtraSpecialClassCard()}
+          ),
+          secondSection: (
+            <div className="at-outer-container" >
+              <div className="at-container">
+                <div className="at-main-grid">
+                  <div className="at-left-column">
+                    <SubstituteAssignmentEmbed isMobile={isMobile} />
+                  </div>
+                  <div className="at-right-column">
+                    {renderExtraSpecialClassCard()}
+                  </div>
                 </div>
               </div>
             </div>
-          </div>
-        ),
-      }}
-    </ScrollableSection>
-    <ErrorPopup
-  message={popup.message}
-  type={popup.type}
-  onClose={() => setPopup({ message: "", type: "" })}
-/>
+          ),
+        }}
+      </ScrollableSection>
+         {
+              isHelpOpen && (
+                <>
+                <HelpCenter
+                userRole={userRole}
+                openHelpSection={openHelpSection}
+                    setOpenHelpSection={setOpenHelpSection}
+                setIsHelpOpen={setIsHelpOpen}
+                />
+                </>
+              )
+            }
+      <ErrorPopup
+        message={popup.message}
+        type={popup.type}
+        onClose={() => setPopup({ message: "", type: "" })}
+      />
 
     </div>
   );

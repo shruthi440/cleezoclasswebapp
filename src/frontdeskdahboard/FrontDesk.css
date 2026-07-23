@@ -206,7 +206,7 @@
 
 .header-profile-dropdown {
   position: absolute;
-  top: 50px;
+  top: 10px;
   right: 0;
   width: 15vw;
   min-width: 17rem;
@@ -1123,144 +1123,6 @@
   color: #777;
 }
 
-.communication-digital-panel {
-  padding-bottom: 0.8rem;
-}
-
-.communication-digital-header {
-  gap: 0.35rem;
-}
-
-.communication-digital-title {
-  font-size: 1rem;
-  font-weight: 700;
-  color: #1f2937;
-}
-
-.communication-digital-summary {
-  width: 100%;
-  display: flex;
-  justify-content: space-between;
-  align-items: flex-start;
-  gap: 0.65rem;
-}
-
-.communication-digital-count {
-  display: inline-flex;
-  flex-wrap: wrap;
-  align-items: baseline;
-  gap: 0.35rem;
-  margin-top: 0.1rem;
-  color: #1f2937;
-}
-
-.communication-digital-count .campaign-assign-total-value {
-  font-size: 1.35rem;
-  font-weight: 700;
-  line-height: 1;
-  color: #e45566;
-}
-
-.communication-digital-count .leadsLabel {
-  font-size: 0.82rem;
-  font-weight: 700;
-  color: #1f2937;
-}
-
-.communication-digital-remaining {
-  margin-left: 0.2rem;
-}
-
-.communication-digital-range {
-  flex-shrink: 0;
-  text-align: right;
-  font-size: 0.72rem;
-  color: #6b7280;
-  line-height: 1.25;
-  padding-top: 0.15rem;
-}
-
-.communication-digital-recent-list {
-  display: grid;
-  gap: 0.55rem;
-  margin-top: 0.95rem;
-  padding-top: 0.15rem;
-}
-
-.communication-digital-row {
-  display: grid;
-  grid-template-columns: 4.5rem 1.9rem minmax(0, 1fr);
-  align-items: center;
-  gap: 0.6rem;
-  min-width: 0;
-}
-
-.communication-digital-date-block {
-  min-width: 0;
-  text-align: left;
-  color: #6b7280;
-  font-size: 0.68rem;
-  line-height: 1.1;
-}
-
-.communication-digital-date {
-  white-space: nowrap;
-}
-
-.communication-digital-time {
-  margin-top: 0.18rem;
-  white-space: nowrap;
-}
-
-.communication-digital-channel {
-  width: 1.7rem;
-  height: 1.7rem;
-  border-radius: 999px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  margin: 0 auto;
-  font-size: 0.72rem;
-  font-weight: 700;
-  color: #6b7280;
-  border: 2px solid #d1d5db;
-  background: #fff;
-  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.08);
-}
-
-.communication-digital-channel.is-whatsapp {
-  color: #4f9d50;
-  border-color: #cfd8d0;
-}
-
-.communication-digital-channel.is-mail {
-  color: #4a6fb3;
-  border-color: #d3dded;
-}
-
-.communication-digital-body {
-  min-width: 0;
-  display: flex;
-  align-items: baseline;
-  gap: 0.35rem;
-  font-size: 0.76rem;
-  line-height: 1.25;
-  color: #334155;
-  overflow: hidden;
-}
-
-.communication-digital-name {
-  flex-shrink: 0;
-  font-weight: 500;
-  color: #1f2937;
-}
-
-.communication-digital-message {
-  min-width: 0;
-  color: #475569;
-  overflow-wrap: anywhere;
-}
-
 .co-digital-list {
   margin-top: 8px;
   max-height: 230px;
@@ -1283,23 +1145,6 @@
   max-height: 100% !important;
   overflow-y: auto !important;
   overflow-x: hidden !important;
-}
-
-.frontdesk-dashboard-page .communication-digital-panel .campaignstatusHeader {
-  background: transparent;
-  position: relative;
-  top: auto;
-  z-index: 1;
-}
-
-.frontdesk-dashboard-page .communication-digital-panel .communication-digital-recent-list {
-  max-height: 8.4rem;
-  overflow-y: auto;
-  padding-right: 0.2rem;
-}
-
-.frontdesk-dashboard-page .communication-digital-panel .co-digital-list {
-  margin-top: 0.8rem;
 }
 
 .frontdesk-campaigning-screen .mainGridcard.admissions-card .co-digital-list,
@@ -1940,7 +1785,197 @@
     min-height: 100px;
   }
 }
+@media (min-width: 900px) and (max-width: 1200px) {
 
+  .admin-academics-page.accountant-dashboard-home-page,
+  .admin-academics-page.frontdesk-dashboard-page {
+    min-height: 100vh;
+    overflow-x: hidden;
+    overflow-y: auto;
+  }
+
+  .admin-academics-page .accountant-dashboard-shell {
+    display: grid;
+    grid-template-columns: 4.5rem 1fr;
+    min-height: 100vh;
+    width: 100%;
+  }
+
+  .admin-academics-page .accountant-main-area {
+    width: 100%;
+    padding: 0.75rem;
+    overflow: visible;
+  }
+
+  .admin-academics-page .admin-academics-content {
+    width: 100%;
+    overflow-x: hidden;
+    overflow-y: auto;
+  }
+
+  /* =========================
+     GRID
+  ========================= */
+
+  .admin-academics-page .accountant-grid {
+    display: flex;
+    flex-direction: column;
+    gap: 0.8rem;
+    width: 100%;
+  }
+
+  /* =========================
+     TOP ROW
+  ========================= */
+
+  .admin-academics-page .accountant-row-top {
+    display: grid;
+    grid-template-columns: 1fr 1fr 1fr;
+    gap: 0.8rem;
+    width: 100%;
+    align-items: stretch;
+  }
+
+  /* =========================
+     MIDDLE ROW
+  ========================= */
+
+  .admin-academics-page .accountant-row-middle {
+    display: grid;
+    grid-template-columns: 1fr 1.15fr 1fr;
+    gap: 0.8rem;
+    width: 100%;
+    align-items: stretch;
+  }
+
+  /* =========================
+     BOTTOM ROW
+  ========================= */
+
+  .admin-academics-page .accountant-row-bottom {
+    display: grid;
+    grid-template-columns: 1fr 1fr 1fr;
+    gap: 0.8rem;
+    width: 100%;
+    align-items: stretch;
+  }
+
+  /* =========================
+     MINI CARDS
+  ========================= */
+
+  .admin-academics-page .accountant-mini-cards {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 0.6rem;
+    width: 100%;
+    height: 100%;
+  }
+
+  .admin-academics-page .accountant-quick-card {
+    min-height: 130px;
+    padding: 0.8rem;
+    justify-content: center;
+  }
+
+  .admin-academics-page .accountant-quick-card img {
+    width: 48px;
+    height: 48px;
+    object-fit: contain;
+  }
+
+  .admin-academics-page .accountant-quick-card h4 {
+    font-size: 0.85rem;
+    margin-top: 0.4rem;
+  }
+
+  .admin-academics-page .accountant-quick-card p {
+    font-size: 0.72rem;
+  }
+
+  /* =========================
+     CARDS
+  ========================= */
+
+  .admin-academics-page .accountant-card,
+  .admin-academics-page .accountant-ticket-card,
+  .admin-academics-page .accountant-premium-card,
+  .admin-academics-page .accountant-collect-card,
+  .admin-academics-page .accountant-feetype-card {
+    min-height: 280px;
+    padding: 0.9rem;
+    width: 100%;
+  }
+
+  /* =========================
+     BOTTOM RIGHT
+  ========================= */
+
+  .admin-academics-page .accountant-bottom-right {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 0.7rem;
+    width: 100%;
+  }
+
+  .admin-academics-page .accountant-income-card,
+  .admin-academics-page .accountant-prevdue-card,
+  .admin-academics-page .accountant-total-strip {
+    min-height: 90px;
+  }
+
+  /* =========================
+     TEXT
+  ========================= */
+
+  .admin-academics-page h2 {
+    font-size: 1.2rem;
+  }
+
+  .admin-academics-page h3 {
+    font-size: 1rem;
+  }
+
+  .admin-academics-page h4 {
+    font-size: 0.9rem;
+  }
+
+  .admin-academics-page p,
+  .admin-academics-page span {
+    font-size: 0.78rem;
+  }
+
+  /* =========================
+     CALENDAR
+  ========================= */
+
+  .admin-academics-page .admin-events-calendar-grid {
+    gap: 0.2rem;
+  }
+
+  .admin-academics-page .admin-events-day {
+    min-height: 32px;
+    font-size: 0.72rem;
+  }
+
+  /* =========================
+     LIVE CHAT
+  ========================= */
+
+  .admin-academics-page .chat-list {
+    max-height: 280px;
+    overflow-y: auto;
+  }
+
+  /* =========================
+     PREMIUM CARD
+  ========================= */
+
+  .admin-academics-page .accountant-premium-icon {
+    width: 52px;
+    height: 52px;
+  }
+}
 /* new css */
 .admissions-card {
   justify-content: flex-start;
@@ -9012,28 +9047,6 @@ body::-webkit-scrollbar {
   box-shadow: 0 2px 8px rgba(15, 23, 42, 0.04);
 }
 
-.frontdesk-campaigning-screen .campaign-bulk-summary-row {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  width: 100%;
-}
-
-.frontdesk-campaigning-screen .campaign-bulk-summary-row .campaign-bulk-summary {
-  flex: 1 1 auto;
-  width: auto;
-}
-
-.frontdesk-campaigning-screen .campaign-bulk-summary-delete-btn {
-  flex: 0 0 auto;
-  width: 34px;
-  min-width: 34px;
-  height: 34px;
-  margin-top: 0;
-  border-radius: 10px;
-  padding: 0;
-}
-
 .frontdesk-campaigning-screen .campaign-bulk-summary:hover {
   background: #fff;
   border-color: #fff;
@@ -9549,9 +9562,9 @@ body::-webkit-scrollbar {
     overscroll-behavior: contain !important;
     padding-right: 0.6rem !important;
     padding-bottom: 0.5rem !important;
-    grid-template-rows: max-content minmax(14rem, 1fr) minmax(14rem, max-content) !important;
+    /* grid-template-rows: max-content minmax(14rem, 1fr) minmax(14rem, max-content) !important; */
   }
-
+/* syam */
   .dashboard-page.frontdesk-dashboard-page.dashboard-home-page .dashboard-sidebar,
   .dashboard-page.frontdesk-dashboard-page.accountant-dashboard-page .dashboard-sidebar,
   .dashboard-page.frontdesk-dashboard-page.accountant-dashboard-home-page .dashboard-sidebar,
@@ -9598,7 +9611,7 @@ body::-webkit-scrollbar {
   .dashboard-page.frontdesk-dashboard-page.accountant-dashboard-home-page .accountant-bottom-right,
 .frontdesk-dashboard-page .accountant-bottom-right {
     grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
-    grid-template-rows: minmax(0, 0.86fr) auto !important;
+    grid-template-rows: minmax(0, 2.86fr) auto !important;
     gap: 0.34rem !important;
     height: 100% !important;
     overflow: hidden !important;

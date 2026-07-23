@@ -1,7 +1,6 @@
 import { ArrowLeft, Download, Share, User } from 'lucide-react';
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import axios from 'axios';
-import { useNavigate } from "react-router-dom";
 import ErrorPopup from '../shared/ErrorPopup';
 
 const normalizeFeeColumnBase = (feeName) => {
@@ -16,16 +15,6 @@ const normalizeFeeColumnBase = (feeName) => {
   if (!normalized) return "";
   return /^[0-9]/.test(normalized) ? `fee_${normalized}` : normalized;
 };
-
-const STATIC_FEE_OPTIONS = [
-  { label: "Tuition Fee", value: "Tuition Fee" },
-  { label: "Admission Fee", value: "Admission Fee" },
-  { label: "Books Fee", value: "Books Fee" },
-  { label: "Bus Fee", value: "Bus Fee" },
-  { label: "Uniform Fee", value: "Uniform Fee" },
-  { label: "Exam Fee", value: "Exam Fee" },
-  { label: "Other Fees", value: "Other Fees" },
-];
 
 const CLASS_PRIORITY = {
   prekg: -4,
@@ -51,18 +40,9 @@ const getClassSortValue = (value) => {
   }
 
   const romanMap = {
-    i: 1,
-    ii: 2,
-    iii: 3,
-    iv: 4,
-    v: 5,
-    vi: 6,
-    vii: 7,
-    viii: 8,
-    ix: 9,
-    x: 10,
-    xi: 11,
-    xii: 12,
+    i: 1, ii: 2, iii: 3, iv: 4, v: 5,
+    vi: 6, vii: 7, viii: 8, ix: 9, x: 10,
+    xi: 11, xii: 12,
   };
 
   const romanValue = romanMap[normalized.replace(/[^ivx]/g, "")];
@@ -73,9 +53,7 @@ const sortClassLabels = (items) =>
   [...items].sort((a, b) => {
     const sortA = getClassSortValue(a);
     const sortB = getClassSortValue(b);
-
     if (sortA !== sortB) return sortA - sortB;
-
     return String(a).localeCompare(String(b), undefined, {
       numeric: true,
       sensitivity: "base",
@@ -99,7 +77,7 @@ const ToastNotification = ({ message, type, onClose }) => {
   return (
     <div style={{
       position: 'fixed', top: '50%', left: '50%', transform: 'translate(-50%, -50%)',
-      backgroundColor: backgroundColor, color: 'white', padding: '15px 25px',
+      backgroundColor, color: 'white', padding: '15px 25px',
       borderRadius: '8px', boxShadow: '0 4px 12px rgba(0,0,0,0.2)', zIndex: 10000,
       fontSize: '16px', fontWeight: 'bold', minWidth: '250px', textAlign: 'center'
     }}>
@@ -108,8 +86,8 @@ const ToastNotification = ({ message, type, onClose }) => {
   );
 };
 
-const IncomeForm5 = ({ dynamicFeeTypes: externalDynamicFeeTypes = [] }) => {
-  const [viewMode, setViewMode] = useState('grid'); // 'grid' or 'discount'
+const IncomeForm5 = () => {
+  const [viewMode, setViewMode] = useState('grid');
   const [students, setStudents] = useState([]);
   const [className, setClassName] = useState('');
   const [section, setSection] = useState('');
@@ -124,13 +102,15 @@ const IncomeForm5 = ({ dynamicFeeTypes: externalDynamicFeeTypes = [] }) => {
   const [showModal, setShowModal] = useState(false);
   const [modalFeeEntries, setModalFeeEntries] = useState([{ feeType: '', reason: '', discount: '' }]);
   const [toast, setToast] = useState({ show: false, message: '', type: '' });
-  const [localDynamicFeeTypes, setLocalDynamicFeeTypes] = useState([]);
-  
+  const [activeStudentFees, setActiveStudentFees] = useState([]);
+  const [popupMsg, setPopupMsg] = useState("");
+  const [isEditing, setIsEditing] = useState(false);
+
+  // States for granular inline table row editing
+  const [editingStudentId, setEditingStudentId] = useState(null);
+  const [inlineDiscountsState, setInlineDiscountsState] = useState([]);
+
   const schoolCode = localStorage.getItem('schoolCode') || "TAGSOLNOVALLP";
-  const resolvedDynamicFeeTypes =
-    Array.isArray(externalDynamicFeeTypes) && externalDynamicFeeTypes.length
-      ? externalDynamicFeeTypes
-      : localDynamicFeeTypes;
 
   const formatClassLabel = (value) => {
     const str = String(value || '').trim();
@@ -172,44 +152,6 @@ const IncomeForm5 = ({ dynamicFeeTypes: externalDynamicFeeTypes = [] }) => {
   }, [schoolCode]);
 
   useEffect(() => {
-    if (Array.isArray(externalDynamicFeeTypes) && externalDynamicFeeTypes.length) return;
-
-    const fetchDynamicFeeTypes = async () => {
-      try {
-        const schoolCode = localStorage.getItem('schoolCode');
-        if (!schoolCode) return;
-
-        const response = await axios.get('https://cleezoclass.com:4000/api/fee-types', {
-          params: { schoolCode },
-        });
-
-        const rows = Array.isArray(response.data?.data) ? response.data.data : [];
-        const normalized = rows
-          .map((item) => {
-            const columnBase = normalizeFeeColumnBase(item?.feeName);
-            if (!columnBase) return null;
-            return {
-              id: item?.id,
-              feeName: item?.feeName || columnBase,
-              feesType: item?.feesType || 'Custom Fee',
-              scope: item?.scope || 'All',
-              frequency: item?.frequency || 'One time',
-              installments: item?.installments || 1,
-              columnBase,
-            };
-          })
-          .filter(Boolean);
-
-        setLocalDynamicFeeTypes(normalized);
-      } catch (error) {
-        console.error("Failed to fetch dynamic fee types:", error);
-      }
-    };
-
-    fetchDynamicFeeTypes();
-  }, [externalDynamicFeeTypes]);
-
-  useEffect(() => {
     if (!className) {
       setFilteredSections([]);
       setSection('');
@@ -229,13 +171,9 @@ const IncomeForm5 = ({ dynamicFeeTypes: externalDynamicFeeTypes = [] }) => {
     }
   }, [className, sectionMap, section]);
 
-  const displayToast = (message, type) => {
-    setToast({ show: true, message, type });
-  };
-
   const handleLoadStudents = () => {
     if (!className || !section) {
-setPopupMsg("Kindly select both Class and Section to proceed.");
+      setPopupMsg("Kindly select both Class and Section to proceed.");
       return;
     }
     setViewMode('grid');
@@ -246,7 +184,7 @@ setPopupMsg("Kindly select both Class and Section to proceed.");
 
   const handleViewDiscount = async () => {
     if (!className || !section) {
-setPopupMsg("Kindly select both Class and Section to view discounts.");
+      setPopupMsg("Kindly select both Class and Section to view discounts.");
       return;
     }
     setViewMode('discount');
@@ -269,11 +207,11 @@ setPopupMsg("Kindly select both Class and Section to view discounts.");
           setStudents(data.students || []);
         } else {
           setStudents([]);
-setPopupMsg("No student records were found for the selected class and section.");
+          setPopupMsg("No student records were found for the selected class and section.");
         }
       }
     } catch (error) {
-setPopupMsg("Unable to load student data. Please try again.");
+      setPopupMsg("Unable to load student data. Please try again.");
       setStudents([]);
     }
   };
@@ -285,89 +223,126 @@ setPopupMsg("Unable to load student data. Please try again.");
         await loadStudents('discount');
         setPopupMsg("Discount removed successfully.");
       } catch (error) {
-setPopupMsg("Unable to remove the discount. Kindly try again.");
+        setPopupMsg("Unable to remove the discount. Kindly try again.");
       }
     }
   };
-const [fees, setFees] = useState({ 
-  tuition: 0, 
-  exam: 0, 
-   bus: 0, 
-  uniform: 0, 
-  books: 0, 
-  admission: 0, // Added admission fee
-  other: 0 
-});
-  // This filter works for both view modes
+
+  const handleStudentSelect = async (student) => {
+    setSelectedStudent(student);
+    setPopupMsg("");
+    setActiveStudentFees([]);
+    setIsEditing(false);
+
+    try {
+      const response = await axios.get(`https://cleezoclass.com:4000/api/payment/${student.id}`, {
+        params: { schoolCode }
+      });
+
+      if (response.data?.payments?.dynamicFeeBreakdown) {
+        const assignedFees = response.data.payments.dynamicFeeBreakdown.filter(fee => (fee.total || 0) > 0);
+        setActiveStudentFees(assignedFees);
+      }
+      setShowModal(true);
+    } catch (error) {
+      console.error("Failed to fetch accurate payment records:", error);
+      setPopupMsg("⚠️ Could not retrieve fee type structures unique to this student.");
+    }
+  };
+
+  // Maps individual item lists to states dynamically for inline item modification
+  const handleStartInlineEdit = (student) => {
+    const sId = student.id || student.studentId || student._id;
+    setEditingStudentId(sId);
+    
+    const appliedDiscounts = getIndividualDiscountsList(student);
+    setInlineDiscountsState(appliedDiscounts.map(d => ({
+      id: d.id,
+      label: d.label,
+      amount: d.amount.toString()
+    })));
+  };
+
+  const handleInlineAmountChange = (index, value) => {
+    const updated = [...inlineDiscountsState];
+    updated[index].amount = value;
+    setInlineDiscountsState(updated);
+  };
+
+  const handleSaveInlineDiscount = async (student) => {
+  const sId = student.id || student.studentId || student._id;
+  const apiClassName = className.replace("Class ", "");
+
+  try {
+    // Step 1: Fetch baseline limits safely
+    const paymentRes = await axios.get(`https://cleezoclass.com:4000/api/payment/${sId}`, {
+      params: { schoolCode }
+    });
+
+    // DO NOT filter out fees where total || amount is 0. Pull all assigned structural fee keys.
+    const breakdown = paymentRes.data?.payments?.dynamicFeeBreakdown || paymentRes.data?.dynamicFeeBreakdown;
+    const backendFees = Array.isArray(breakdown) 
+      ? breakdown.filter(fee => fee && (fee.label || fee.key || fee.feeType))
+      : [];
+
+    const feeEntries = [];
+    const discountsPayload = {};
+
+    // Step 2: Validate and prepare each modified discount row
+    for (const entry of inlineDiscountsState) {
+      const enteredAmount = parseFloat(entry.amount) || 0;
+      const normalizedTarget = normalizeFeeColumnBase(entry.label);
+
+      // Find the fee matching by its label or key structure
+      const matchedFee = backendFees.find(f => 
+        normalizeFeeColumnBase(f.label || f.key || f.feeType) === normalizedTarget
+      );
+
+      // Fallback limit configuration so it doesn't break if total is 0 or undefined
+      const maxLimit = matchedFee ? (parseFloat(matchedFee.total) || parseFloat(matchedFee.amount) || 0) : 999999;
+
+      // Safe guard validation (only block if max limit is configured positive and exceeded)
+      if (maxLimit > 0 && enteredAmount > maxLimit) {
+        setPopupMsg(`❗ Amount for ${entry.label} cannot exceed the configured max limit of ₹${maxLimit.toFixed(2)}.`);
+        return;
+      }
+
+      feeEntries.push({
+        feeType: matchedFee?.label || matchedFee?.key || entry.label,
+        amount: maxLimit,
+        discount: enteredAmount,
+        reason: student.discount_reason || 'Updated inline Concession',
+        date: new Date().toISOString()
+      });
+
+      discountsPayload[entry.id] = enteredAmount;
+    }
+
+    const payload = {
+      studentName: student.name || student.StudentName,
+      studentId: sId,
+      className: apiClassName,
+      sectionName: section,
+      schoolCode,
+      feeEntries,
+      discounts: discountsPayload,
+      reason: student.discount_reason || 'Updated inline Concession' // Send to the backend
+    };
+
+    await axios.put(`https://cleezoclass.com:4000/api/update-discount/${sId}`, payload);
+    
+    setPopupMsg("✅ Discounts updated successfully inline!");
+    setEditingStudentId(null);
+    await loadStudents('discount');
+  } catch (error) {
+    console.error("Failed inline submission updates:", error);
+    setPopupMsg(`❌ Inline save failed: ${error.response?.data?.message || error.message}`);
+  }
+};
   const filteredStudents = students.filter(s => {
     const name = s.name || s.StudentName || "";
     return name.toLowerCase().includes(searchTerm.toLowerCase());
   });
-  const [defaultFees, setDefaultFees] = useState({
-    admission: 0,
-    tuition: 0,
-    exam: 0,
-    uniform: 0,
-    books: 0,
-    other: 0,
-  });
-  const [feeStructure, setFeeStructure] = useState({});
-  
-// Place this hook in your IncomeForm5 component, removing the old ones.
-useEffect(() => {
-  const fetchFeeStructure = async () => {
-    if (!className || !section) return;
- 
-    try {
-      const schoolCode = localStorage.getItem('schoolCode') || "TAGSOLNOVALLP";
-      const response = await axios.get(
-        `https://cleezoclass.com:4000/feeStructure/${className}`,
-        { params: { schoolCode, section } }
-      );
- 
-      if (!response.data?.feeStructure) {
-setPopupMsg(`No fee structure found for ${className}. Kindly configure it first.`);
-        return;
-      }
- 
-      const backendData = response.data.feeStructure;
-      
-      // Get all fees directly from the response
-      const fees = {
-        admission: parseFloat(backendData.Admission_Fee) || 0,
-        book: parseFloat(backendData.Book_Fee) || 0,
-        uniform: parseFloat(backendData.Uniform_Fee) || 0,
-        exam: parseFloat(backendData.Exam_Fee) || 0,
-        other: parseFloat(backendData.Other_Fee) || 0,
-        bus: parseFloat(backendData.Bus_Fee) || 0,
-        // Get tuition fee directly if available, otherwise calculate
-        tuition: parseFloat(backendData.Tuition_Fee) || 
-                (parseFloat(backendData.CompleteFee) || 0) - 
-                (parseFloat(backendData.Book_Fee) + 
-                 parseFloat(backendData.Uniform_Fee) + 
-                 parseFloat(backendData.Exam_Fee) + 
-                 parseFloat(backendData.Other_Fee) + 
-                 parseFloat(backendData.Admission_Fee) + 
-                 parseFloat(backendData.Bus_Fee))
-      };
- 
-      setDefaultFees(fees);
-      setFees(fees);
-      
-      setFeeStructure({
-        ...backendData,
-        ...fees,
-        complete_fee: parseFloat(backendData.CompleteFee) || 0
-      });
- 
-    } catch (error) {
-      console.error("Failed to fetch fee structure:", error);
-setPopupMsg("Failed to load fee structure. Please try again.");
-    }
-  };
- 
-  fetchFeeStructure();
-}, [className, section]);
 
   const renderStudentPhoto = (student) => {
     const isPhotoValid = student.photo && student.photo.trim() !== "";
@@ -388,509 +363,455 @@ setPopupMsg("Failed to load fee structure. Please try again.");
       </div>
     );
   };
-const [popupMsg, setPopupMsg] = useState("");
 
+  const submitModalFeeEntries = async (e) => {
+    e.preventDefault();
+    const schoolCode = localStorage.getItem('schoolCode') || "TAGSOLNOVALLP";
 
-const submitModalFeeEntries = async (e) => {
-  e.preventDefault();
-  const schoolCode = localStorage.getItem('schoolCode') || "TAGSOLNOVALLP";
-
-  if (!selectedStudent) {
-    setPopupMsg("❗ Please select a student before submitting.");
-    return;
-  }
-
-  const filteredModalEntries = modalFeeEntries.filter(entry => 
-    entry.feeType && entry.feeType.trim() !== ''
-  );
-
-  if (filteredModalEntries.length === 0) {
-    setPopupMsg("❗ Please select at least one fee type for discount.");
-    return;
-  }
-
-  const getBaseAmountForFeeType = (feeType) => {
-    if (!feeType) return 0;
-    const lower = feeType.toLowerCase();
-    if (lower.includes("tuition")) {
-      console.log("[Discounts] base amount resolved", { feeType, source: "static:tuition", amount: fees.tuition || 0 });
-      return fees.tuition || 0;
-    }
-    if (lower.includes("admission")) {
-      console.log("[Discounts] base amount resolved", { feeType, source: "static:admission", amount: fees.admission || 0 });
-      return fees.admission || 0;
-    }
-    if (lower.includes("book")) {
-      console.log("[Discounts] base amount resolved", { feeType, source: "static:book", amount: fees.book || 0 });
-      return fees.book || 0;
-    }
-    if (lower.includes("uniform")) {
-      console.log("[Discounts] base amount resolved", { feeType, source: "static:uniform", amount: fees.uniform || 0 });
-      return fees.uniform || 0;
-    }
-    if (lower.includes("exam")) {
-      console.log("[Discounts] base amount resolved", { feeType, source: "static:exam", amount: fees.exam || 0 });
-      return fees.exam || 0;
-    }
-    if (lower.includes("other")) {
-      console.log("[Discounts] base amount resolved", { feeType, source: "static:other", amount: fees.other || 0 });
-      return fees.other || 0;
-    }
-    if (lower.includes("bus")) {
-      console.log("[Discounts] base amount resolved", { feeType, source: "static:bus", amount: fees.bus || 0 });
-      return fees.bus || 0;
+    if (!selectedStudent) {
+      setPopupMsg("❗ Please select a student before submitting.");
+      return;
     }
 
-    const selectedBase = normalizeFeeColumnBase(feeType);
-    const matchingDynamicFee = resolvedDynamicFeeTypes.find((fee) => {
-      const feeNameBase = normalizeFeeColumnBase(fee?.feeName);
-      const feeColumnBase = normalizeFeeColumnBase(fee?.columnBase);
-      const exactName = String(fee?.feeName || "").trim().toLowerCase();
-      return (
-        lower === exactName ||
-        selectedBase === feeNameBase ||
-        selectedBase === feeColumnBase ||
-        lower.includes(exactName)
-      );
-    });
+    const filteredModalEntries = modalFeeEntries.filter(entry =>
+      entry.feeType && entry.feeType.trim() !== ''
+    );
 
-    if (matchingDynamicFee) {
-      const candidateKeys = [
-        matchingDynamicFee.columnBase,
-        normalizeFeeColumnBase(matchingDynamicFee.feeName),
-        matchingDynamicFee.feeName,
-        matchingDynamicFee.id,
-      ].filter(Boolean);
-
-      for (const key of candidateKeys) {
-        const value = feeStructure?.[key];
-        const parsed = Number(String(value ?? "").replace(/,/g, ""));
-        if (Number.isFinite(parsed) && parsed >= 0) {
-          console.log("[Discounts] base amount resolved", {
-            feeType,
-            source: "dynamic",
-            matchedFee: matchingDynamicFee,
-            key,
-            amount: parsed,
-          });
-          return parsed;
-        }
-      }
+    if (filteredModalEntries.length === 0) {
+      setPopupMsg("❗ Please select at least one fee type for discount.");
+      return;
     }
 
-    console.log("[Discounts] base amount resolved", {
-      feeType,
-      source: "not-found",
-      amount: 0,
-      feeStructureKeys: Object.keys(feeStructure || {}),
-    });
-    return 0;
-  };
+    const getBaseAmountForFeeType = (feeTypeKey) => {
+      if (!feeTypeKey) return 0;
+      const targetBase = normalizeFeeColumnBase(feeTypeKey);
 
-  for (const entry of filteredModalEntries) {
-    const feeTypeLower = entry.feeType.toLowerCase();
-    if (feeTypeLower.includes('tuition')) {
-      const actualTuitionFee = getBaseAmountForFeeType(entry.feeType);
+      const matchedRecord = activeStudentFees.find((fee) => {
+        const rowKeyBase = normalizeFeeColumnBase(fee?.key);
+        const rowLabelBase = normalizeFeeColumnBase(fee?.label);
+        return targetBase === rowKeyBase || targetBase === rowLabelBase;
+      });
+
+      return matchedRecord ? matchedRecord.total : 0;
+    };
+
+    for (const entry of filteredModalEntries) {
+      const realBaseMaxFee = getBaseAmountForFeeType(entry.feeType);
       const enteredDiscount = parseFloat(entry.discount) || 0;
 
-      if (enteredDiscount > actualTuitionFee) {
+      if (enteredDiscount > realBaseMaxFee) {
         setPopupMsg(
-          `❗ Tuition discount ₹${enteredDiscount} cannot exceed actual tuition fee ₹${actualTuitionFee}.`
+          `❗ Discount amount ₹${enteredDiscount.toFixed(2)} cannot exceed the maximum configured amount of ₹${realBaseMaxFee.toFixed(2)} for ${entry.feeType}.`
         );
         return;
       }
     }
-  }
 
-  const feeTypeToColumnMap = {
-    'bus fee': 'bus_discount',
-    'tuition fee': 'tuition_discount',
-    'fee': 'fee_discount'
-  };
-
-  try {
-    const apiClassName = className.replace("Class ", "");
-
-    const payload = {
-      studentName: selectedStudent.name,
-      studentId: selectedStudent.id,
-      className: apiClassName,
-      sectionName: section,
-      schoolCode,
-      feeEntries: filteredModalEntries.map(entry => ({
-        feeType: entry.feeType,
-        amount: getBaseAmountForFeeType(entry.feeType),
-        discount: parseFloat(entry.discount) || 0,
-        reason: entry.reason,
-        date: new Date().toISOString()
-      })),
-      discounts: filteredModalEntries.reduce((acc, entry) => {
-        const feeTypeLower = entry.feeType.toLowerCase();
-        const columnName = Object.keys(feeTypeToColumnMap).find(key => 
-          feeTypeLower.includes(key)
-        ) || 'fee_discount';
-        acc[feeTypeToColumnMap[columnName]] = parseFloat(entry.discount) || 0;
-        return acc;
-      }, {})
+    const feeTypeToColumnMap = {
+      'bus fee': 'bus_discount',
+      'tuition fee': 'tuition_discount',
+      'fee': 'fee_discount'
     };
 
-    const response = await axios.post(
-      'https://cleezoclass.com:4000/pay-fee-details',
-      payload
-    );
+    try {
+      const apiClassName = className.replace("Class ", "");
+      const sId = selectedStudent.id || selectedStudent.studentId || selectedStudent._id;
 
-    console.log("Backend response:", response.data);
-    setPopupMsg("✅ Discounts submitted successfully!");
+      const payload = {
+        studentName: selectedStudent.name || selectedStudent.StudentName,
+        studentId: sId,
+        className: apiClassName,
+        sectionName: section,
+        schoolCode,
+        feeEntries: filteredModalEntries.map(entry => ({
+          feeType: entry.feeType,
+          amount: getBaseAmountForFeeType(entry.feeType),
+          discount: parseFloat(entry.discount) || 0,
+          reason: entry.reason,
+          date: new Date().toISOString()
+        })),
+        discounts: filteredModalEntries.reduce((acc, entry) => {
+          const feeTypeLower = entry.feeType.toLowerCase();
+          const columnName = Object.keys(feeTypeToColumnMap).find(key =>
+            feeTypeLower.includes(key)
+          ) || 'fee_discount';
+          acc[feeTypeToColumnMap[columnName]] = parseFloat(entry.discount) || 0;
+          return acc;
+        }, {})
+      };
 
-    setModalFeeEntries([{ feeType: '', reason: '', discount: '' }]);
-    setShowModal(false);
+      const url = 'https://cleezoclass.com:4000/pay-fee-details';
+      await axios.post(url, payload);
 
-  } catch (error) {
-    console.error("❌ Failed to submit discounts:", error);
-    setPopupMsg(
-      `❌ Submission failed: ${error.response?.data?.message || error.message}`
-    );
-  }
-};
-
-  const modalOverlayStyle = {
-    position: 'fixed',
-    top: '0',
-    left: '0',
-    right: '0',
-    bottom: '0',
-    backgroundColor: 'rgba(0,0,0,0.5)',
-    display: 'flex',
-    justifyContent: 'center',
-    alignItems: 'center',
-    zIndex: 9999,
-    padding: '15px',
-    boxSizing: 'border-box'
-  };
- 
-  const modalContentStyle = {
-    backgroundColor: 'white',
-    padding: '20px',
-    borderRadius: '10px',
-    width: '100%',
-    maxWidth: '500px',
-    height: '40vh',
-    overflowY: 'auto',
-    textAlign: 'center',
-    position: 'relative',
-    '@media (max-width: 768px)': {
-      padding: '15px',
-      maxWidth: '95%'
+      setPopupMsg(`✅ Discounts submitted successfully!`);
+      setModalFeeEntries([{ feeType: '', reason: '', discount: '' }]);
+      setShowModal(false);
+      setIsEditing(false);
+      setActiveStudentFees([]);
+      await loadStudents('discount');
+    } catch (error) {
+      console.error("❌ Failed to submit discounts:", error);
+      setPopupMsg(`❌ Submission failed: ${error.response?.data?.message || error.message}`);
     }
   };
-   const closeButtonStyle = {
-    position: 'absolute',
-    top: '10px',
-    right: '10px',
-    cursor: 'pointer',
-    fontSize: '20px',
-    backgroundColor: '#5a7488',
-    color: 'white',
-    borderRadius: '50%',
-    width: '28px',
-    height: '28px',
-    lineHeight: '26px',
-    display: 'inline-block',
-    marginLeft: '10px',
-    '@media (max-width: 768px)': {
-      width: '24px',
-      height: '24px',
-      lineHeight: '22px',
-      fontSize: '18px'
-    }
-  };
-   
 
- 
-
-
- 
-
-
-    // Handles changes for fee entries within the Special Privileges modal
   const handleModalFeeEntryChanges = (index, field, value) => {
     const updatedEntries = [...modalFeeEntries];
     updatedEntries[index][field] = value;
     setModalFeeEntries(updatedEntries);
-    console.log("[Discounts] modal fee entry changed", {
-      index,
-      field,
-      value,
-      currentEntry: updatedEntries[index],
-      allEntries: updatedEntries,
-    });
   };
- 
- const [studentDiscount, setStudentDiscount] = useState(null);
-   // Adds a new empty row for dynamic fee entry in the modal
+
   const addModalFeeEntryRow = () => {
     setModalFeeEntries([...modalFeeEntries, { feeType: '', reason: '', discount: '' }]);
   };
- 
-  // Removes a dynamic fee entry row from the modal
+
   const removeModalFeeEntryRow = (index) => {
     setModalFeeEntries(modalFeeEntries.filter((_, i) => i !== index));
   };
+
   const formatAmount = (value) => {
-  if (!value) return "";
-
-  const number = Number(value);
-  if (isNaN(number)) return "";
-
-  return number.toLocaleString("en-IN", {
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2
+    if (!value) return "0.00";
+    const number = Number(value);
+    if (isNaN(number)) return "0.00";
+    return number.toLocaleString("en-IN", {
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2
     });
   };
 
-  const dynamicFeeTypeOptions = [
-    ...new Map(
-      resolvedDynamicFeeTypes
-        .map((fee) => {
-          const value = String(fee?.columnBase || fee?.feeName || fee?.feesType || "").trim();
-          if (!value) return null;
-          return [
-            value.toLowerCase(),
-            {
-              label: fee?.feeName || fee?.feesType || value,
-              value,
-            },
-          ];
-        })
-        .filter(Boolean)
-    ).values(),
-  ].sort((a, b) => String(a.label).localeCompare(String(b.label), undefined, { numeric: true, sensitivity: "base" }));
+  const getIndividualDiscountsList = (studentRow) => {
+    if (!studentRow) return [];
+    return Object.keys(studentRow)
+      .filter(key => key.toLowerCase().endsWith('_discount') && key.toLowerCase() !== 'discount')
+      .map(key => {
+        const rawAmount = parseFloat(studentRow[key]) || 0;
+        if (rawAmount <= 0) return null;
 
-  console.log("[Discounts] dynamic fee options loaded", {
-    schoolCode,
-    resolvedDynamicFeeTypes,
-    dynamicFeeTypeOptions,
-  });
+        const cleanName = key
+          .replace(/_discount/i, '')
+          .replace(/_/g, ' ')
+          .trim();
 
-return (
-  <>
-    {toast.show && (
-      <ToastNotification
-        message={toast.message}
-        type={toast.type}
-        onClose={() => setToast({ show: false, message: '', type: '' })}
-      />
-    )}
+        const formattedLabel = cleanName
+          .split(' ')
+          .map(word => word.charAt(0).toUpperCase() + word.slice(1))
+          .join(' ');
 
-    <div className="Discount-mainContainer">
-      {/* Side Container */}
-      <div className="Discount-sideContainer">
-        <h2 className="Discount-header">Discounts</h2>
+        return {
+          id: key,
+          label: formattedLabel,
+          amount: rawAmount
+        };
+      })
+      .filter(Boolean);
+  };
 
-        {/* Controls Row */}
-        <div className="Discount-controlsRow">
-          <select className="Discount-select" value={className} onChange={(e) => setClassName(e.target.value)}>
-            <option value="">Class</option>
-            {dropdownLoading ? (
-              <option value="" disabled>Loading...</option>
-            ) : (
-              classList.map((cls) => (
-                <option key={cls} value={cls}>
-                  {formatClassLabel(cls)}
-                </option>
-              ))
-            )}
-          </select>
-
-          <select
-            className="Discount-select"
-            value={section}
-            onChange={(e) => setSection(e.target.value)}
-            disabled={!className || dropdownLoading}
-          >
-            <option value="">Sec</option>
-            {filteredSections.map((sec) => (
-              <option key={sec} value={sec}>{sec}</option>
-            ))}
-          </select>
-
-          <button onClick={handleLoadStudents}  style={{ marginTop:'-1%'}} className="Discount-button">Load Students</button>
-          <button onClick={handleViewDiscount}  style={{ marginTop:'-1%'}} className="Discount-button">Discounts</button>
-
-          <input 
-            type="text"
-            placeholder="Search by student name..."
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-            className="Discount-search"
-          />
-        </div>
-
-        {/* Student List */}
-        <div style={{ flexGrow: 1, overflowY: 'auto', borderTop: '1px solid #eee', paddingTop: '10px' }}>
-          {!loadStudentsValue ? (
-            <p style={{ textAlign: 'center', color: '#888' }}>Select class/section and click Load</p>
-          ) : filteredStudents.length === 0 ? (
-            <p style={{ textAlign: 'center', color: '#888' }}>No records found</p>
-          ) : viewMode === 'grid' ? (
-            <div className="Discount-studentGrid">
-              {filteredStudents.map((student) => (
-                <div key={student.id} className="Discount-studentCard" onClick={() => { 
-  setSelectedStudent(student); 
-  setPopupMsg("");          // 👈 clear old messages
-  setShowModal(true); 
-}}
->
-                  {renderStudentPhoto(student)}
-                  <span className="Discount-studentName">{student.name || student.StudentName}</span>
-                </div>
-              ))}
-            </div>
-          ) : (
-            <div className="Discount-tableContainer">
-              <table className="Discount-table">
-                <thead>
-                  <tr>
-                    <th>Name</th>
-                    <th>Discount</th>
-                    <th>Details</th>
-                    <th>Action</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {filteredStudents.map(student => (
-                    <tr key={student.id}>
-                      <td>{student.StudentName}</td>
-                      <td className="Discount-discountAmount">₹{student.Discount}</td>
-                      <td>
-                        {student.tuition_discount>0 && <span style={{color:'#3498db'}}>Tuition: ₹{student.tuition_discount}</span>}
-                        {student.fee_discount>0 && <span style={{color:'#27ae60'}}>Book: ₹{student.fee_discount}</span>}
-                        {student.bus_discount>0 && <span style={{color:'#f39c12'}}>Bus: ₹{student.bus_discount}</span>}
-                      </td>
-                      <td>
-                        <button className="Discount-removeButton" onClick={()=>handleRemoveDiscount(student.id)}>Remove</button>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
-        </div>
-      </div>
-
-      {/* Discount Modal */}
-      {showModal && (
-        <div className="Discount-modalOverlay">
-          <div className="Discount-modalContent">
-            <span className="Discount-closeButton" onClick={() => { 
-  setShowModal(false); 
-  setModalFeeEntries([{ feeType:'', reason:'', discount:'' }]);
-  setPopupMsg("");          // 👈 clear message
-}}
->×</span>
-
-            <h3 className="Discount-modalHeader">
-              <span>Discount</span>
-              <span className="Discount-modalStudentName">{selectedStudent?.name}</span>
-            </h3>
-
-            <p style={{ fontSize:'10px', marginBottom:'5px' }}>Date: {new Date().toLocaleDateString()}</p>
-            <p style={{ fontSize:'10px', marginBottom:'15px' }}>Please enter the payment amount and select the fee type.</p>
-
-            {studentDiscount && (
-              <div className="Discount-totalBox">
-                <div className="Discount-totalRow">
-                  <div>
-                    <strong>Tuition Discount:</strong> ₹{studentDiscount.tuition_discount}
-                  </div>
-                  <div>
-                    <strong>Fee Discount:</strong> ₹{studentDiscount.fee_discount}
-                  </div>
-                </div>
-                <div>Total Discount: ₹{parseFloat(studentDiscount.tuition_discount||0)+parseFloat(studentDiscount.fee_discount||0)}</div>
-              </div>
-            )}
-
-            {/* Fee Entries Form */}
-            <form onSubmit={submitModalFeeEntries}>
-              <div style={{display:'grid', gap:'20px', marginBottom:'20px'}}>
-                {modalFeeEntries.map((entry,index) => (
-                  <div key={index} className="Discount-modalFeeEntry">
-                    {modalFeeEntries.length>1 && <button type="button" className="Discount-removeRowButton" onClick={()=>removeModalFeeEntryRow(index)}>×</button>}
-                                                   <div className="expense-input-field">
-
-                    <select className="btn-dropdown-FeesManagement" value={entry.feeType} onChange={e=>handleModalFeeEntryChanges(index,'feeType',e.target.value)} required>
-                      <option value="">Fee Type</option>
-                      {dynamicFeeTypeOptions.length > 0 && (
-                        <optgroup label="Dynamic Fee Types">
-                          {dynamicFeeTypeOptions.map((option) => (
-                            <option key={option.value} value={option.value}>
-                              {option.label}
-                            </option>
-                          ))}
-                        </optgroup>
-                      )}
-                    </select></div>
-                    {entry.feeType && (entry.reason==='Other' ? 
-
-                      <input type="text" placeholder="Custom Reason" value={entry.customReason||''} className="Discount-modalInput" onChange={e=>handleModalFeeEntryChanges(index,'customReason',e.target.value)} autoFocus/> :
-                                                                          <div className="expense-input-field">
-
-                      
-                      <select className="btn-dropdown-FeesManagement" value={entry.reason} onChange={e=>handleModalFeeEntryChanges(index,'reason',e.target.value)}>
-                        <option value="">Reason</option>
-                        <option value="Staff Concession">Staff</option>
-                        <option value="VIP Concession">VIP</option>
-                        <option value="caste/Religion">caste/Religion</option>
-                       <option value="Parent Concession">Parent</option>
-
-                        <option value="Sibling Concession">Sibling</option>
-                        <option value="Other">Other</option>
-                      </select></div>
-                    )}
-{entry.feeType && (
-                                                      <div className="expense-input-field">
-
-  <input
-    type="text"
-    value={entry.discount}
-    onChange={(e) => {
-      const rawValue = e.target.value.replace(/,/g, "");
-      if (/^\d*$/.test(rawValue)) {
-        handleModalFeeEntryChanges(index, "discount", rawValue);
-      }
-    }}
-    onBlur={(e) => {
-      const formatted = formatAmount(e.target.value);
-      handleModalFeeEntryChanges(index, "discount", formatted.replace(/,/g, ""));
-    }}
-    placeholder="Discount"
-    className="btn-dropdown-FeesManagement"
-    style={{ width: '120px', textAlign: 'right' }}
-  /></div>
-)}
-                 </div>
-                ))}
-              </div>
-
-              <div className="Discount-modalActions">
-                <button type="button" className="Discount-button" onClick={addModalFeeEntryRow}>Add Another Fee</button>
-                <button type="submit" className="Discount-button">Submit Payment</button>
-              </div>
-            </form>
-
-
-          </div>
-        </div>
+  return (
+    <>
+      {toast.show && (
+        <ToastNotification
+          message={toast.message}
+          type={toast.type}
+          onClose={() => setToast({ show: false, message: '', type: '' })}
+        />
       )}
 
-    </div>
-    <ErrorPopup message={popupMsg} onClose={() => setPopupMsg("")} />
+      <div className="Discount-mainContainer">
+        <div className="Discount-sideContainer">
+          <h2 className="Discount-header">Discounts</h2>
 
-  </>
-);
+          <div className="Discount-controlsRow">
+            <select className="Discount-select" value={className} onChange={(e) => setClassName(e.target.value)}>
+              <option value="">Class</option>
+              {dropdownLoading ? (
+                <option value="" disabled>Loading...</option>
+              ) : (
+                classList.map((cls) => (
+                  <option key={cls} value={cls}>
+                    {formatClassLabel(cls)}
+                  </option>
+                ))
+              )}
+            </select>
 
+            <select
+              className="Discount-select"
+              value={section}
+              onChange={(e) => setSection(e.target.value)}
+              disabled={!className || dropdownLoading}
+            >
+              <option value="">Sec</option>
+              {filteredSections.map((sec) => (
+                <option key={sec} value={sec}>{sec}</option>
+              ))}
+            </select>
+
+            <button onClick={handleLoadStudents} style={{ marginTop: '-1%' }} className="Discount-button">Load Students</button>
+            <button onClick={handleViewDiscount} style={{ marginTop: '-1%' }} className="Discount-button">Discounts</button>
+
+            <input
+              type="text"
+              placeholder="Search by student name..."
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              className="Discount-search"
+            />
+          </div>
+
+          <div style={{ flexGrow: 1, overflowY: 'auto', borderTop: '1px solid #eee', paddingTop: '10px' }}>
+            {!loadStudentsValue ? (
+              <p style={{ textAlign: 'center', color: '#888' }}>Select class/section and click Load</p>
+            ) : filteredStudents.length === 0 ? (
+              <p style={{ textAlign: 'center', color: '#888' }}>No records found</p>
+            ) : viewMode === 'grid' ? (
+              <div className="Discount-studentGrid">
+                {filteredStudents.map((student) => (
+                  <div key={student.id || student.studentId || student._id} className="Discount-studentCard" onClick={() => handleStudentSelect(student)}>
+                    {renderStudentPhoto(student)}
+                    <span className="Discount-studentName">{student.name || student.StudentName}</span>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div className="Discount-tableContainer">
+                <table className="Discount-table">
+                  <thead>
+                    <tr>
+                      <th>Name</th>
+                      <th>Total Discount</th>
+                      <th>Details & Applied Types</th>
+                      <th>Action</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {filteredStudents.map(student => {
+                      const currentStudentId = student.id || student.studentId || student._id;
+                      const isRowEditing = editingStudentId === currentStudentId;
+                      const appliedDiscounts = getIndividualDiscountsList(student);
+
+                      // Calculate live rolling total if editing, else show database value
+                      const totalDiscountToShow = isRowEditing 
+                        ? inlineDiscountsState.reduce((sum, item) => sum + (parseFloat(item.amount) || 0), 0)
+                        : (student.Discount || 0);
+
+                      return (
+                        <tr key={currentStudentId}>
+                          <td>{student.StudentName || student.name}</td>
+                          <td className="Discount-discountAmount" style={{ fontWeight: 'bold', color: '#27ae60' }}>
+                            {`₹${formatAmount(totalDiscountToShow)}`}
+                          </td>
+                          <td>
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                              {isRowEditing ? (
+                                // Render row items as distinct editable blocks paired visually with titles
+                                inlineDiscountsState.map((item, idx) => (
+                                  <div key={item.id} style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                                    <span style={{ fontSize: '13px', fontWeight: '500', minWidth: '80px' }}>• {item.label}:</span>
+                                    <input
+                                      type="number"
+                                      value={item.amount}
+                                      onChange={(e) => handleInlineAmountChange(idx, e.target.value)}
+                                      style={{
+                                        width: '100px',
+                                        padding: '4px 8px',
+                                        border: '1px solid #3498db',
+                                        borderRadius: '4px',
+                                        textAlign: 'right'
+                                      }}
+                                    />
+                                  </div>
+                                ))
+                              ) : (
+                                appliedDiscounts.length > 0 ? (
+                                  appliedDiscounts.map((item) => (
+                                    <div
+                                      key={item.id}
+                                      style={{
+                                        fontSize: '13px',
+                                        fontWeight: '500',
+                                        color: item.label.toLowerCase().includes('tuition') ? '#3498db' :
+                                               item.label.toLowerCase().includes('bus') ? '#f39c12' : '#27ae60'
+                                      }}
+                                    >
+                                      • {item.label}: ₹{formatAmount(item.amount)}
+                                    </div>
+                                  ))
+                                ) : (
+                                  <span style={{ color: '#aaa', fontSize: '12px' }}>General Concession</span>
+                                )
+                              )}
+                            </div>
+                          </td>
+                          <td>
+                            {isRowEditing ? (
+                              <>
+                                <button
+                                  className="Discount-editButton"
+                                  onClick={() => handleSaveInlineDiscount(student)}
+                                  style={{ marginRight: '8px', backgroundColor: '#2ecc71', color: '#fff' }}
+                                >
+                                  Save
+                                </button>
+                                <button
+                                  className="Discount-removeButton"
+                                  onClick={() => setEditingStudentId(null)}
+                                  style={{ backgroundColor: '#7f8c8d' }}
+                                >
+                                  Cancel
+                                </button>
+                              </>
+                            ) : (
+                              <>
+                                <button
+                                  className="Discount-editButton"
+                                  onClick={() => handleStartInlineEdit(student)}
+                                  style={{ marginRight: '8px' }}
+                                >
+                                  Edit Amounts
+                                </button>
+                                <button
+                                  className="Discount-removeButton"
+                                  onClick={() => handleRemoveDiscount(currentStudentId)}
+                                >
+                                  Remove
+                                </button>
+                              </>
+                            )}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* Modal remains explicitly for applying fresh new entries */}
+        {showModal && (
+          <div className="Discount-modalOverlay">
+            <div className="Discount-modalContent">
+              <span
+                className="Discount-closeButton"
+                onClick={() => {
+                  setShowModal(false);
+                  setModalFeeEntries([{ feeType: '', reason: '', discount: '' }]);
+                  setPopupMsg("");
+                  setIsEditing(false);
+                  setActiveStudentFees([]);
+                }}
+              >
+                ×
+              </span>
+
+              <h3 className="Discount-modalHeader">
+                <span>Add Discount</span>
+                <span className="Discount-modalStudentName">{selectedStudent?.name || selectedStudent?.StudentName}</span>
+              </h3>
+
+              <p style={{ fontSize: '10px', marginBottom: '5px' }}>Date: {new Date().toLocaleDateString()}</p>
+              <p style={{ fontSize: '10px', marginBottom: '15px' }}>Please enter the discount amount and select the fee type.</p>
+
+              <form onSubmit={submitModalFeeEntries}>
+                <div style={{ display: 'grid', gap: '20px', marginBottom: '20px' }}>
+                  {modalFeeEntries.map((entry, index) => (
+                    <div key={index} className="Discount-modalFeeEntry">
+                      {modalFeeEntries.length > 1 && (
+                        <button type="button" className="Discount-removeRowButton" onClick={() => removeModalFeeEntryRow(index)}>
+                          ×
+                        </button>
+                      )}
+                      <div className="expense-input-field">
+                        <select
+                          className="btn-dropdown-FeesManagement"
+                          value={entry.feeType}
+                          onChange={(e) => handleModalFeeEntryChanges(index, 'feeType', e.target.value)}
+                          required
+                        >
+                          <option value="">Fee Type</option>
+                          {activeStudentFees.length > 0 ? (
+                            <optgroup label="Assigned Student Fee Types">
+                              {activeStudentFees.map((fee) => (
+                                <option key={fee.key || fee.label} value={fee.label}>
+                                  {fee.label} (Max: ₹{formatAmount(fee.total)})
+                                </option>
+                              ))}
+                            </optgroup>
+                          ) : (
+                            <option value="" disabled>No applicable fee types found</option>
+                          )}
+                        </select>
+                      </div>
+                      {entry.feeType && (
+                        entry.reason === 'Other' ? (
+                          <input
+                            type="text"
+                            placeholder="Custom Reason"
+                            value={entry.customReason || ''}
+                            className="Discount-modalInput"
+                            onChange={(e) => handleModalFeeEntryChanges(index, 'customReason', e.target.value)}
+                            autoFocus
+                          />
+                        ) : (
+                          <div className="expense-input-field">
+                            <select
+                              className="btn-dropdown-FeesManagement"
+                              value={entry.reason}
+                              onChange={(e) => handleModalFeeEntryChanges(index, 'reason', e.target.value)}
+                            >
+                              <option value="">Reason</option>
+                              <option value="Staff Concession">Staff</option>
+                              <option value="VIP Concession">VIP</option>
+                              <option value="caste/Religion">Caste/Religion</option>
+                              <option value="Parent Concession">Parent</option>
+                              <option value="Sibling Concession">Sibling</option>
+                              <option value="Other">Other</option>
+                            </select>
+                          </div>
+                        )
+                      )}
+                      {entry.feeType && (
+                        <div className="expense-input-field">
+                          <input
+                            type="text"
+                            value={entry.discount}
+                            onChange={(e) => {
+                              const rawValue = e.target.value.replace(/,/g, "");
+                              if (/^\d*$/.test(rawValue)) {
+                                handleModalFeeEntryChanges(index, "discount", rawValue);
+                              }
+                            }}
+                            onBlur={(e) => {
+                              const formatted = formatAmount(e.target.value);
+                              handleModalFeeEntryChanges(index, "discount", formatted.replace(/,/g, ""));
+                            }}
+                            placeholder="Discount"
+                            className="btn-dropdown-FeesManagement"
+                            style={{ width: '120px', textAlign: 'right' }}
+                          />
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+
+                <div className="Discount-modalActions">
+                  <button type="button" className="Discount-button" onClick={addModalFeeEntryRow}>
+                    Add Another Fee
+                  </button>
+                  <button type="submit" className="Discount-button">
+                    Submit Discount
+                  </button>
+                </div>
+              </form>
+            </div>
+          </div>
+        )}
+      </div>
+      <ErrorPopup message={popupMsg} onClose={() => setPopupMsg("")} />
+    </>
+  );
 };
 
 export default IncomeForm5;

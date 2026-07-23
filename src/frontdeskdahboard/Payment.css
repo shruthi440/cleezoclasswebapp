@@ -37,9 +37,9 @@
   padding: 20px;
   border-radius: 10px;
   width: 80vw;
-height:'65vh' ;
+  height: 65vh;
 
- overflow-y: auto;
+  overflow-y: auto;
   text-align: center;
   position: relative;
 }
@@ -667,17 +667,27 @@ height:'65vh' ;
 }
 
 .payment-submit-button {
-  width: 100%;
+  width: 50%;
   padding: 10px;
-  background-color: #5a7488;
-  color: white;
-  border: none;
-  border-radius: 5px;
-  font-weight: bold;
-  cursor: pointer;
+    border: none;
+    border-radius: 999px;
+    padding: 0.42rem 0.8rem;
+    background: linear-gradient(135deg, #ff6c80 0%, #ff8a96 100%);
+    color: #ffffff;
+    font-size: 0.68rem;
+    font-weight: 700;
+    cursor: pointer;
+    box-shadow: 0 6px 14px rgba(255, 108, 128, 0.18);
+    white-space: nowrap;
   margin-top: 10px;
-}
 
+  display: flex;
+  justify-content: center;
+  align-items: center;
+
+  margin-left: auto;
+  margin-right: auto;
+}
 /* Success/Error Popups */
 .payment-success-popup,
 .payment-error-popup {

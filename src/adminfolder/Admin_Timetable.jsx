@@ -23,6 +23,7 @@ import followupIcon from "../assets/Profile.png";
 import assistantIcon from "../assets/Assistant.png";
 import logoab from "../assets/logoab.png";
 import { resolveInstituteDisplayName } from "../shared/instituteNameUtils";
+import { getUserDisplayName } from "../shared/userDisplayName";
 
 const isLaptop = window.innerWidth > 600 && window.innerWidth <= 1440;
 const MOBILE_BREAKPOINT = 1024;
@@ -114,7 +115,6 @@ const SubstituteAssignmentEmbed = ({ isMobile }) => {
   const [error, setError] = useState(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const schoolCode = localStorage.getItem('schoolCode');
-
   useEffect(() => {
     const fetchAbsentTeachers = async () => {
       try {
@@ -329,6 +329,8 @@ const TimetableAdmin = ({ academicsStyle = false }) => {
   const [dayType, setDayType] = useState('full');
   const [isTimetableGenerated, setIsTimetableGenerated] = useState(false);
   const [classOptions, setClassOptions] = useState([]);
+const [isGeneratingTimetable, setIsGeneratingTimetable] = useState(false);
+const [generationMessage, setGenerationMessage] = useState("");
   const [staffOptions, setStaffOptions] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
   const [extraClassForm, setExtraClassForm] = useState({
@@ -430,15 +432,19 @@ useEffect(() => {
 
     try {
       const response = await fetch(
-        `https://cleezoclass.com:4000/api/admin/api/metadata/class-staff-options?schoolCode=${schoolCode}`
+        `https://cleezoclass.com:4000/api/metadata/class-staff-options?schoolCode=${encodeURIComponent(schoolCode)}`
       );
       const data = await response.json();
       if (response.ok) {
-        const sortedClasses = (data.classOptions || []).sort(
-          (a, b) => parseInt(a) - parseInt(b)
-        );
+        const sortedClasses = (data.classOptions || [])
+          .map((item) => item?.class_name || item?.className || item?.class || item?.name || item)
+          .filter(Boolean)
+          .sort((a, b) => parseInt(a, 10) - parseInt(b, 10));
+        const staffNames = (data.staffOptions || [])
+          .map((item) => item?.name || item?.staff_name || item?.teacher_name || item)
+          .filter(Boolean);
         setClassOptions(sortedClasses);
-        setStaffOptions(data.staffOptions || []);
+        setStaffOptions(staffNames);
       } else {
         setPopup({
           message: `Failed to load options: ${data.message}. Please try again later.`,
@@ -474,66 +480,151 @@ useEffect(() => {
     setSections(updatedSections);
   };
 
-  const handleSubmit = async () => {
-    const schoolCode = (localStorage.getItem("schoolCode") || "default_school_code").trim();
-    if (!schoolCode) {
-setPopup({
-  message: "School code is missing. Please log in again to ensure everything is set correctly.",
-  type: "error"
-});
-      return;
+const handleSubmit = async () => {
+  setIsGeneratingTimetable(true);
+
+  const startTimeStamp = Date.now();
+
+const messages = [
+  "📚 Loading class data...",
+  "👨‍🏫 Mapping teachers...",
+  "🔍 Checking timetable conflicts...",
+  "⚡ Optimizing periods...",
+  "🧠 Applying AI scheduling...",
+  "🎯 Finalizing timetable...",
+  "✨ Almost ready..."
+];
+  let msgIndex = 10;
+
+  setGenerationMessage(messages[0]);
+
+  const interval = setInterval(() => {
+    msgIndex++;
+
+    if (msgIndex < messages.length) {
+      setGenerationMessage(messages[msgIndex]);
     }
-    const payload = {
-      schoolCode,
-      classes: selectedClasses.map((name) => ({
-        class_name: String(name).replace(/^Class\s+/i, ''),
-        sections: sections[name] || 1,
-        teacher: classTeachers[name] || "Not Assigned",
-      })),
-      startTime,
-      periodDuration,
-      numberOfPeriods,
-      morningInterval,
-      morningIntervalAfter,
-      morningIntervalDuration,
-      afternoonInterval: dayType === 'full' ? afternoonInterval : false,
-      afternoonIntervalAfter,
-      afternoonIntervalDuration,
-      lunchInterval: dayType === 'full' ? lunchInterval : false,
-      lunchIntervalAfter,
-      lunchIntervalDuration,
-      customActivities
-    };
-    try {
-      const { data } = await axios.post(
-        `${BASE_URL}/generatetimetable`,
-        payload,
-        { headers: { "Content-Type": "application/json" } }
-      );
-      if (data?.weeklyTimetable) {
-        setTimetable(data.weeklyTimetable);
-setPopup({
-  message: "The timetable has been generated successfully.",
-  type: "success"
-});
-        setShowTimetable(true);
-        setIsTimetableGenerated(true);
-      } else {
-setPopup({
-  message: "Timetable generation failed. Please check your network connection and try again.",
-  type: "error"
-});
-      }
-    } catch (err) {
-      console.error("❌ Server error during timetable generation:", err);
-setPopup({
-  message: "A server error occurred. Please try again later or contact support if the issue persists.",
-  type: "error"
-});
-    }
-    setShowTimetable(true);
-    setIsTimetableGenerated(true);
+  }, 900);
+
+  const schoolCode = (
+    localStorage.getItem("schoolCode") ||
+    "default_school_code"
+  ).trim();
+
+  if (!schoolCode) {
+    clearInterval(interval);
+
+    setIsGeneratingTimetable(false);
+
+    setPopup({
+      message:
+        "School code is missing. Please log in again to ensure everything is set correctly.",
+      type: "error",
+    });
+
+    return;
+  }
+
+  const payload = {
+    schoolCode,
+
+    classes: selectedClasses.map((name) => ({
+      class_name: String(name).replace(/^Class\s+/i, ""),
+      sections: sections[name] || 1,
+      teacher: classTeachers[name] || "Not Assigned",
+    })),
+
+    startTime,
+    periodDuration,
+    numberOfPeriods,
+
+    morningInterval,
+    morningIntervalAfter,
+    morningIntervalDuration,
+
+    afternoonInterval:
+      dayType === "full" ? afternoonInterval : false,
+    afternoonIntervalAfter,
+    afternoonIntervalDuration,
+
+    lunchInterval:
+      dayType === "full" ? lunchInterval : false,
+    lunchIntervalAfter,
+    lunchIntervalDuration,
+
+    customActivities,
   };
+
+  try {
+    const { data } = await axios.post(
+      `${BASE_URL}/generatetimetable`,
+      payload,
+      {
+        headers: {
+          "Content-Type": "application/json",
+        },
+      }
+    );
+
+    if (data?.weeklyTimetable) {
+      const elapsed = Date.now() - startTimeStamp;
+
+      // Minimum 4 seconds for wow factor
+      const remainingDelay = Math.max(
+        6000 - elapsed,
+        0
+      );
+
+      setTimeout(() => {
+        clearInterval(interval);
+
+        setGenerationMessage(
+          "Timetable Generated Successfully!"
+        );
+
+        setTimeout(() => {
+          setTimetable(data.weeklyTimetable);
+
+          setPopup({
+            message:
+              "The timetable has been generated successfully.",
+            type: "success",
+          });
+
+          setShowTimetable(true);
+          setIsTimetableGenerated(true);
+
+          setIsGeneratingTimetable(false);
+        }, 800);
+      }, remainingDelay);
+    } else {
+      clearInterval(interval);
+
+      setIsGeneratingTimetable(false);
+
+      setPopup({
+        message:
+          "Timetable generation failed. Please check your network connection and try again.",
+        type: "error",
+      });
+    }
+  } catch (err) {
+    clearInterval(interval);
+
+    console.error(
+      "❌ Server error during timetable generation:",
+      err
+    );
+
+    setIsGeneratingTimetable(false);
+
+    setPopup({
+      message:
+        "A server error occurred. Please try again later or contact support if the issue persists.",
+      type: "error",
+    });
+  }
+};
 
   const handleEditClass = (className) => {
     setEditingClasses(prev => ({ ...prev, [className]: true }));
@@ -693,6 +784,7 @@ setPopup({
   };
 
   const renderActionsSection = () => (
+    
     <div className="at-actions-section">
       {isTimetableGenerated && (
         <div className="at-timetable-status-card">
@@ -1211,7 +1303,7 @@ setPopup({
             <div className="tt-academics-content">
               <div className="tt-academics-top">
                      <div className="accountant-welcome-block">
-                <h2>Hi, Vinay!</h2>
+                <h2>Hi, {getUserDisplayName()}!</h2>
                 <p>Check Store Inventory,</p>
                 <p>Report Track to Class Teacher</p>
                 <p>Submit Building maintenance</p>
@@ -1374,13 +1466,13 @@ setPopup({
         <div className="accountant-footer-brand">
           <span>Powered By:</span>
           <img src={logoab} alt="Cleezo Class" className="accountant-footer-logo" />
-        </div>
-
+</div>
         <ErrorPopup
           message={popup.message}
           type={popup.type}
           onClose={() => setPopup({ message: "", type: "" })}
         />
+
       </div>
     );
   }
@@ -1430,6 +1522,23 @@ setPopup({
   onClose={() => setPopup({ message: "", type: "" })}
 />
 
+    {isGeneratingTimetable && (
+  <div className="tt-ai-generator-overlay">
+    <div className="tt-ai-generator-box">
+      <div className="tt-ai-generator-icon">⚡</div>
+
+      <h2>AI Timetable Generator</h2>
+
+      <div className="tt-ai-generator-message">
+        {generationMessage}
+      </div>
+
+      <div className="tt-ai-progress">
+        <div className="tt-ai-progress-bar"></div>
+      </div>
+    </div>
+  </div>
+)}
     </div>
   );
 };

@@ -1,9 +1,13 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import axios from 'axios';
 import * as XLSX from 'xlsx';
+import { jsPDF } from 'jspdf';
+import autoTable from 'jspdf-autotable';
 import { useNavigate } from 'react-router-dom';
-import { Pencil, Trash2 } from 'lucide-react';
+import { Pencil, Trash2, Ban, Unlock } from 'lucide-react';
 import StudentEditingPopup from './StudentEditingPopup.jsx';
+import { IoClose } from "react-icons/io5";
+import applicationIcon from "../assets/application.png";
 
 type UploadAsset = File | string | null;
 type TabName = 'Details' | 'Management' | 'Staff' | 'Student' | 'Uploads';
@@ -18,6 +22,7 @@ type FileFieldKey =
     | 'front_office'
     | 'other_photo';
 type FormFieldKey = Exclude<keyof FormDataState, FileFieldKey>;
+type DetailsFormErrors = Partial<Record<keyof FormDataState, string>>;
 
 interface FormDataState {
     school_name: string;
@@ -41,10 +46,9 @@ interface FormDataState {
     radius: string;
     use_radius: string;
     institute_authorized_person: string;
-email: string;
-email_app_key: string;
-
-
+    email: string;
+    email_app_key: string;
+    institute_contact_number: string;
 }
 
 interface SchoolApiResponse {
@@ -72,6 +76,7 @@ interface SchoolApiResponse {
     institute_authorized_person?: string;
     email?: string;
     email_app_key?: string;
+    institute_contact_number?: string;
 }
 
 interface UploadedRecord extends Record<string, unknown> {
@@ -85,6 +90,21 @@ interface UploadResponse {
     duplicates: UploadedRecord[];
     replacedRecords?: UploadedRecord[];
     skippedRows?: number;
+    message?: string;
+    rowErrors?: Array<{
+        rowNumber: number;
+        name?: string;
+        designation?: string;
+        message?: string;
+    }>;
+}
+
+interface ExcelValidationError {
+    rowNumber: number;
+    columnNumber?: number;
+    cellAddress?: string;
+    field: string;
+    message: string;
 }
 
 interface TrackingStats {
@@ -185,6 +205,57 @@ const managementDesignationOptions = [
     { label: 'Campaigning', value: 'marketing' },
     { label: 'Accountant', value: 'accountant' },
     { label: 'HR', value: 'hr' },
+    { label: 'Bus Manager', value: 'Bus Manager' },
+    { label: 'Bus Driver', value: 'Bus Driver' },
+] as const;
+
+const managementDesignationLabels = managementDesignationOptions.map((option) => option.label);
+
+const staffTemplateSampleRows = [
+    {
+        name: 'RAVI KUMAR',
+        gender: 'Male',
+        dob: '1990-05-15',
+        phone_no: '9876543210',
+        aadhar_no: '123456789012',
+        father_name: 'SURESH KUMAR',
+        address: 'Hyderabad',
+        designation: 'Mathematics',
+        teaches_to_1: 'Class 6',
+        teaches_to_2: 'Class 7',
+        teaches_to_3: 'Class 8',
+        teaches_to_4: '',
+        teaches_to_5: '',
+        teaches_to_6: '',
+        teaches_to_7: '',
+        teaches_to_8: '',
+        teaches_to_9: '',
+        teaches_to_10: '',
+        teaches_to_11: '',
+        teaches_to_12: '',
+    },
+    {
+        name: 'ANITA SHARMA',
+        gender: 'Female',
+        dob: '1988-11-20',
+        phone_no: '9123456789',
+        aadhar_no: '234567890123',
+        father_name: 'MOHAN SHARMA',
+        address: 'Vijayawada',
+        designation: 'Science',
+        teaches_to_1: 'Class 9',
+        teaches_to_2: 'Class 10',
+        teaches_to_3: '',
+        teaches_to_4: '',
+        teaches_to_5: '',
+        teaches_to_6: '',
+        teaches_to_7: '',
+        teaches_to_8: '',
+        teaches_to_9: '',
+        teaches_to_10: '',
+        teaches_to_11: '',
+        teaches_to_12: '',
+    },
 ] as const;
 
 const initialFormData: FormDataState = {
@@ -209,25 +280,62 @@ const initialFormData: FormDataState = {
     radius: '',
     use_radius: '',
     institute_authorized_person: '',
-email: '',
-email_app_key: '',
+    email: '',
+    email_app_key: '',
+    institute_contact_number: '',
+};
 
+const gmailRegex = /^[A-Z0-9._%+-]+@gmail\.com$/i;
+const textRegex = /^[A-Za-z\s.'-]+$/;
+const alphaNumericRegex = /^[A-Za-z0-9\s./#-]+$/;
+
+const detailFieldLabels: Record<keyof FormDataState, string> = {
+    school_name: 'School Name',
+    curriculum: 'Curriculum',
+    address: 'Address',
+    city: 'City',
+    state: 'State',
+    pincode: 'Pincode',
+    school_code: 'School Code',
+    school_strength: 'No. of Students',
+    staff_strength: 'No. of Staff',
+    tagline: 'Branches',
+    registration_no: 'School Reg. No.',
+    authorized_logo: 'School Logo',
+    school_photo: 'School Photo',
+    correspondent: 'Correspondent',
+    front_office: 'Header',
+    other_photo: 'Footer',
+    latitude: 'Latitude',
+    longitude: 'Longitude',
+    radius: 'Radius',
+    use_radius: 'Use Radius',
+    institute_authorized_person: 'Authorized Person',
+    email: 'Email',
+    email_app_key: 'Email App Key',
+    institute_contact_number: 'Institute Contact Number',
+};
+
+const detailSanitizers: Partial<Record<FormFieldKey, (value: string) => string>> = {
+    institute_authorized_person: (value) => value.replace(/[^A-Za-z\s.'-]/g, ''),
+    city: (value) => value.replace(/[^A-Za-z\s.'-]/g, ''),
+    pincode: (value) => value.replace(/\D/g, '').slice(0, 6),
+    school_strength: (value) => value.replace(/\D/g, ''),
+    staff_strength: (value) => value.replace(/\D/g, ''),
+    registration_no: (value) => value.replace(/[^A-Za-z0-9\s./#-]/g, ''),
 };
 
 const photoFields: Array<{ key: FileFieldKey; label: string }> = [
     { key: 'school_photo', label: 'School Photo *' },
     { key: 'correspondent', label: 'Correspondent' },
-    { key: 'front_office', label: 'Front Office' },
-    { key: 'other_photo', label: 'Other' },
+    { key: 'front_office', label: ' Header' },
+    { key: 'other_photo', label: 'Footer' },
 ];
 
 const cameraIcon = `data:image/svg+xml;utf8,${encodeURIComponent(
     '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64"><rect x="10" y="18" width="44" height="30" rx="6" fill="#d9d9d9" stroke="#888" stroke-width="3"/><path d="M22 18l4-6h12l4 6" fill="#d9d9d9" stroke="#888" stroke-width="3"/><circle cx="32" cy="33" r="9" fill="#fff" stroke="#888" stroke-width="3"/></svg>'
 )}`;
 
-const applicationIcon = `data:image/svg+xml;utf8,${encodeURIComponent(
-    '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64"><rect x="12" y="12" width="40" height="40" rx="8" fill="#2b6cb0"/><path d="M24 32h16M32 24l8 8-8 8" stroke="#fff" stroke-width="4" stroke-linecap="round" stroke-linejoin="round" fill="none"/></svg>'
-)}`;
 
 const clickHiddenInput = (id: string) => {
     document.getElementById(id)?.click();
@@ -235,9 +343,7 @@ const clickHiddenInput = (id: string) => {
 
 const normalizePhotoUrl = (rawPhoto: any) => {
     if (!rawPhoto) return '';
-
     let photoPath = rawPhoto;
-
     if (typeof photoPath === 'object' && photoPath.type === 'Buffer' && Array.isArray(photoPath.data)) {
         try {
             photoPath = new TextDecoder().decode(new Uint8Array(photoPath.data));
@@ -245,15 +351,12 @@ const normalizePhotoUrl = (rawPhoto: any) => {
             return '';
         }
     }
-
     if (typeof photoPath !== 'string') return '';
     photoPath = photoPath.trim();
     if (!photoPath) return '';
-
     if (photoPath.startsWith('data:image') || photoPath.startsWith('http')) {
         return photoPath;
     }
-
     if (photoPath.startsWith('0x')) {
         try {
             const hex = photoPath.slice(2);
@@ -266,19 +369,15 @@ const normalizePhotoUrl = (rawPhoto: any) => {
             return '';
         }
     }
-
     if (photoPath.startsWith('/public/uploads/')) {
         photoPath = photoPath.replace('/public', '');
     }
-
     if (photoPath.startsWith('uploads/')) {
         photoPath = `/${photoPath}`;
     }
-
     if (!photoPath.startsWith('/uploads/')) {
         photoPath = `/uploads/${photoPath.replace(/^\/+/, '')}`;
     }
-
     return `https://cleezoclass.com:4000${photoPath}`;
 };
 
@@ -340,10 +439,13 @@ const CentralizationDashboard: React.FC = () => {
     const navigate = useNavigate();
     const [activeTab, setActiveTab] = useState<TabName>('Details');
     const [formData, setFormData] = useState<FormDataState>(initialFormData);
+    const [detailsErrors, setDetailsErrors] = useState<DetailsFormErrors>({});
     const [uploading, setUploading] = useState(false);
     const [excelFile, setExcelFile] = useState<File | null>(null);
     const [uploadedData, setUploadedData] = useState<UploadedRecord[]>([]);
     const [previewData, setPreviewData] = useState<any[]>([]);
+    const [excelValidationErrors, setExcelValidationErrors] = useState<ExcelValidationError[]>([]);
+    const [showExcelSampleRows, setShowExcelSampleRows] = useState(false);
     const [isExcelPreviewOpen, setIsExcelPreviewOpen] = useState(false);
     const [previewCategory, setPreviewCategory] = useState<UploadPreviewCategory>('Student');
     const [trackingStats, setTrackingStats] = useState<TrackingStats>({
@@ -351,8 +453,18 @@ const CentralizationDashboard: React.FC = () => {
         student: 0,
         management: 0,
     });
+    useEffect(() => {
+        setExcelFile(null);
+        setUploadedData([]);
+        setPreviewData([]);
+        setExcelValidationErrors([]);
+        setShowExcelSampleRows(false);
+
+        setCurrentPage(1); // Reset page selection on tab change
+    }, [activeTab]);
     const [roleUsers, setRoleUsers] = useState<any[]>([]);
     const [roleLoading, setRoleLoading] = useState(false);
+    const [actionUser, setActionUser] = useState<any | null>(null);
     const [studentClassFilter, setStudentClassFilter] = useState('');
     const [studentSectionFilter, setStudentSectionFilter] = useState('');
     const [studentNameFilter, setStudentNameFilter] = useState('');
@@ -367,6 +479,12 @@ const CentralizationDashboard: React.FC = () => {
     const [addUserForm, setAddUserForm] = useState<AddUserFormState>(
         createAddUserForm('student')
     );
+    const [currentPage, setCurrentPage] = useState(1);
+    const [totalPages, setTotalPages] = useState(1);
+    const [pageSize, setPageSize] = useState(15); // Adjust this limit (e.g., 10, 15, or 20)
+    const [totalRecords, setTotalRecords] = useState(0);
+    const [allClasses, setAllClasses] = useState<string[]>([]);
+    const [allSections, setAllSections] = useState<any[]>([]); // To map class to sections accurately
 
     useEffect(() => {
         const loadSchoolDetails = async () => {
@@ -443,6 +561,7 @@ const CentralizationDashboard: React.FC = () => {
                     institute_authorized_person: data.institute_authorized_person || '',
                     email: data.email || '',
                     email_app_key: data.email_app_key || '',
+                    institute_contact_number: data.institute_contact_number || '',
                 });
             } catch (err) {
                 console.error('Fetch error:', err);
@@ -457,6 +576,27 @@ const CentralizationDashboard: React.FC = () => {
             ? activeTab
             : null;
 
+    const applyRoleUsersResponse = useCallback((data: any) => {
+        const users = Array.isArray(data?.users)
+            ? data.users
+            : Array.isArray(data?.data)
+                ? data.data
+                : Array.isArray(data)
+                    ? data
+                    : [];
+        const pagination = data?.pagination || {};
+        const resolvedTotalRecords = Number(pagination.totalRecords || pagination.total || users.length || 0);
+        const resolvedTotalPages = Number(
+            pagination.totalPages ||
+            pagination.pages ||
+            Math.max(1, Math.ceil(resolvedTotalRecords / pageSize))
+        );
+
+        setRoleUsers(users);
+        setTotalPages(Math.max(1, resolvedTotalPages || 1));
+        setTotalRecords(resolvedTotalRecords);
+    }, [pageSize]);
+
     useEffect(() => {
         const loadRoleUsers = async () => {
             if (!activeRoleTab) return;
@@ -466,33 +606,158 @@ const CentralizationDashboard: React.FC = () => {
 
             try {
                 setRoleLoading(true);
-                const response = await axios.post('https://cleezoclass.com:4000/api/users', {
+                const response = await axios.post('https://cleezoclass.com:4000/api/users-centralization', {
                     schoolCode,
                     user_type: roleTabConfig[activeRoleTab].userType,
+                    page: currentPage,
+                    limit: pageSize,
+                    // Sends filters to backend so pagination matches selected class
+                    class_name: studentClassFilter,
+                    section: studentSectionFilter,
+                    name: studentNameFilter
                 });
-                setRoleUsers(Array.isArray(response.data) ? response.data : []);
+
+                const data = response.data;
+                applyRoleUsersResponse(data);
             } catch (error) {
                 console.error(`Failed to fetch ${activeRoleTab.toLowerCase()} users:`, error);
                 setRoleUsers([]);
+                setTotalPages(1);
+                setTotalRecords(0);
             } finally {
                 setRoleLoading(false);
             }
         };
 
         loadRoleUsers();
-    }, [activeRoleTab, formData.school_code]);
+    // Re-run fetch whenever a filter is changed
+    }, [activeRoleTab, applyRoleUsersResponse, formData.school_code, currentPage, pageSize, studentClassFilter, studentSectionFilter, studentNameFilter]);
 
-    
+    useEffect(() => {
+        const loadAllClassesAndSections = async () => {
+            const schoolCode = formData.school_code || localStorage.getItem('schoolCode');
+            if (!schoolCode || activeRoleTab !== 'Student') return;
+
+            try {
+                // Fetching unpaginated students for filters/dropdowns
+                const response = await axios.post('https://cleezoclass.com:4000/api/users', {
+                    schoolCode,
+                    user_type: 'student',
+                });
+
+                let allStudents = [];
+                if (response.data) {
+                    if (Array.isArray(response.data)) {
+                        allStudents = response.data;
+                    } else if (Array.isArray(response.data.users)) {
+                        allStudents = response.data.users;
+                    } else if (Array.isArray(response.data.data)) {
+                        allStudents = response.data.data;
+                    }
+                }
+                
+                // Extract unique classes cleanly
+                const uniqueClasses = Array.from(
+                    new Set(allStudents.map((user) => String(user?.class_name || '').trim()).filter(Boolean))
+                ).sort((a, b) => a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' }));
+                
+                setAllClasses(uniqueClasses);
+                setAllSections(allStudents); // Keep full reference to map sections locally if needed
+            } catch (error) {
+                console.error("Failed to load classes for dropdown:", error);
+            }
+        };
+
+        loadAllClassesAndSections();
+    }, [activeRoleTab, formData.school_code]);
 
     const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
         const { name, value } = e.target;
-        setFormData((prev) => ({ ...prev, [name as FormFieldKey]: value }));
+        const field = name as FormFieldKey;
+        const sanitizer = detailSanitizers[field];
+        const nextValue = sanitizer ? sanitizer(value) : value;
+        setFormData((prev) => ({ ...prev, [field]: nextValue }));
+        setDetailsErrors((prev) => ({ ...prev, [field]: undefined }));
     };
 
     const handlePhotoChange = (e: React.ChangeEvent<HTMLInputElement>, key: FileFieldKey) => {
         const file = e.target.files?.[0] ?? null;
         setFormData((prev) => ({ ...prev, [key]: file }));
+        setDetailsErrors((prev) => ({ ...prev, [key]: undefined }));
     };
+
+    const validateImageField = (value: UploadAsset, label: string, required = false) => {
+        if (!value) return required ? `${label} is required.` : '';
+        if (value instanceof File) {
+            if (!value.type.startsWith('image/')) return `${label} must be an image file.`;
+        }
+        return '';
+    };
+
+    const validateDetailsForm = () => {
+        const errors: DetailsFormErrors = {};
+
+        if (formData.institute_authorized_person.trim() && !textRegex.test(formData.institute_authorized_person.trim())) {
+            errors.institute_authorized_person = 'Authorized Person can contain only letters, spaces, dot, apostrophe, or hyphen.';
+        }
+        if (formData.email.trim() && !gmailRegex.test(formData.email.trim())) {
+            errors.email = 'Enter a valid Gmail address, for example name@gmail.com.';
+        }
+        if (
+            formData.institute_contact_number.trim() &&
+            !/^[6-9]\d{9}$/.test(formData.institute_contact_number.trim())
+        ) {
+            errors.institute_contact_number =
+                'Institute Contact Number must be a valid 10-digit mobile number.';
+        }
+        const normalizedAppKey = formData.email_app_key.replace(/\s+/g, '');
+        if (formData.email_app_key.trim() && (!/^[A-Za-z0-9-]+$/.test(formData.email_app_key.trim()) || normalizedAppKey.length < 8)) {
+            errors.email_app_key = 'Email App Key must be at least 8 letters/numbers and cannot contain special characters.';
+        }
+        if (formData.city.trim() && !textRegex.test(formData.city.trim())) {
+            errors.city = 'City can contain only letters, spaces, dot, apostrophe, or hyphen.';
+        }
+        if (formData.pincode.trim() && !/^\d{6}$/.test(formData.pincode.trim())) {
+            errors.pincode = 'Pincode must be exactly 6 digits.';
+        }
+        if (formData.registration_no.trim() && !alphaNumericRegex.test(formData.registration_no.trim())) {
+            errors.registration_no = 'School Reg. No. can contain letters, numbers, spaces, slash, dot, hash, or hyphen.';
+        }
+
+        if (String(formData.school_strength || '').trim() && !/^[1-9]\d*$/.test(String(formData.school_strength || '').trim())) {
+            errors.school_strength = 'No. of Students must be a positive number.';
+        }
+        if (String(formData.staff_strength || '').trim() && !/^[1-9]\d*$/.test(String(formData.staff_strength || '').trim())) {
+            errors.staff_strength = 'No. of Staff must be a positive number.';
+        }
+        if (formData.tagline.trim() && formData.tagline.trim().length < 2) {
+            errors.tagline = 'Branches must be at least 2 characters.';
+        }
+
+        const logoError = validateImageField(formData.authorized_logo, detailFieldLabels.authorized_logo);
+        if (logoError) errors.authorized_logo = logoError;
+        const schoolPhotoError = validateImageField(formData.school_photo, detailFieldLabels.school_photo);
+        if (schoolPhotoError) errors.school_photo = schoolPhotoError;
+        (['correspondent', 'front_office', 'other_photo'] as FileFieldKey[]).forEach((field) => {
+            const fileError = validateImageField(formData[field], detailFieldLabels[field]);
+            if (fileError) errors[field] = fileError;
+        });
+
+        setDetailsErrors(errors);
+        return Object.keys(errors).length === 0;
+    };
+
+    const detailsInputStyle = (
+        field: keyof FormDataState,
+        extra?: React.CSSProperties
+    ): React.CSSProperties => ({
+        ...styles.input,
+        ...(detailsErrors[field] ? styles.inputError : {}),
+        ...(extra || {}),
+    });
+
+    const renderDetailsError = (field: keyof FormDataState) =>
+        detailsErrors[field] ? <span style={styles.errorText}>{detailsErrors[field]}</span> : null;
 
     const triggerStudentPhotoInput = () => {
         studentPhotoInputRef.current?.click();
@@ -508,18 +773,9 @@ const CentralizationDashboard: React.FC = () => {
 
     const uploadStudentPhoto = async () => {
         if (!studentPhotoFile) return addUserForm.photo || '';
-
         const schoolCode = formData.school_code || localStorage.getItem('schoolCode');
         const uploadData = new FormData();
         uploadData.append('photo', studentPhotoFile);
-
-        console.log('[CentralizationDashboard] uploadStudentPhoto start', {
-            userModalMode,
-            editingUserId,
-            schoolCode,
-            fileName: studentPhotoFile.name,
-            fileSize: studentPhotoFile.size,
-        });
 
         const response = await axios.post(
             'https://cleezoclass.com:4000/api/upload-photo',
@@ -529,15 +785,13 @@ const CentralizationDashboard: React.FC = () => {
                 params: { schoolCode },
             }
         );
-
-        console.log('[CentralizationDashboard] uploadStudentPhoto response', response.data);
         return response.data?.photoPath || addUserForm.photo || '';
     };
 
     const getStudentSectionsForClass = (className: string) =>
         Array.from(
             new Set(
-                roleUsers
+                allSections
                     .filter((user) => String(user?.class_name || '').trim() === String(className).trim())
                     .map((user) => String(user?.section || '').trim())
                     .filter(Boolean)
@@ -545,10 +799,6 @@ const CentralizationDashboard: React.FC = () => {
         ).sort((a, b) => a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' }));
 
     const openAddUserModal = (userType: UserType) => {
-        console.log('[CentralizationDashboard] openAddUserModal', {
-            activeRoleTab,
-            userType,
-        });
         setUserModalMode('add');
         setEditingUserId(null);
         setCreatedCredentials(null);
@@ -588,8 +838,7 @@ const CentralizationDashboard: React.FC = () => {
             class_teacher: String(user?.class_teacher || ''),
             school_name: String(user?.school_name || formData.school_name || ''),
             address: String(user?.address || formData.address || ''),
-            dob: String(user?.dob || ''),
-            photo: normalizePhotoUrl(user?.photo) || String(user?.photo || ''),
+            dob: user?.dob ? String(user.dob).split('T')[0] : '',
             admission_no: String(user?.admission_no || ''),
             cbse_reg_no: String(user?.cbse_reg_no || ''),
             curriculum: String(user?.curriculum || formData.curriculum || ''),
@@ -631,13 +880,6 @@ const CentralizationDashboard: React.FC = () => {
             return;
         }
 
-        console.log('[CentralizationDashboard] openEditUserModal', {
-            activeRoleTab,
-            resolvedId,
-            userType,
-            user,
-        });
-
         setUserModalMode('edit');
         setEditingUserId(resolvedId);
         setCreatedCredentials(null);
@@ -647,71 +889,23 @@ const CentralizationDashboard: React.FC = () => {
         setIsAddUserOpen(true);
     };
 
-    const buildUserSubmitPayload = (form: AddUserFormState, schoolCode: string) => {
-        const basePayload: Record<string, unknown> = {
-            user_type: form.user_type,
-            category: form.user_type,
-            name: form.name,
-            username: form.username,
-            password: form.password,
-            gender: form.gender,
-            phone_no: form.user_type === 'student' ? form.father_phone_no || form.phone_no : form.phone_no,
-            aadhar_no: form.aadhar_no,
-            father_name: form.father_name,
-            school_name: form.school_name || formData.school_name || localStorage.getItem('instituteName') || '',
-            address: form.address || formData.address || '',
-            dob: form.dob,
-            photo: typeof form.photo === 'string' ? form.photo : '',
-            schoolCode,
-            curriculum: form.curriculum || formData.curriculum || '',
-            Curriculum: form.curriculum || formData.curriculum || '',
-            designation: form.designation || '',
-        };
-
-        if (form.user_type === 'student') {
-            return {
-                ...basePayload,
-                father_phone_no: form.father_phone_no,
-                class_name: form.class_name,
-                section: form.section,
-                class_teacher: form.class_teacher,
-                admission_no: form.admission_no,
-                cbse_reg_no: form.cbse_reg_no,
-            };
-        }
-
-        if (form.user_type === 'teacher') {
-            return {
-                ...basePayload,
-                teaches_to_1: form.teaches_to_1,
-                teaches_to_2: form.teaches_to_2,
-                teaches_to_3: form.teaches_to_3,
-                teaches_to_4: form.teaches_to_4,
-                teaches_to_5: form.teaches_to_5,
-                teaches_to_6: form.teaches_to_6,
-                teaches_to_7: form.teaches_to_7,
-                teaches_to_8: form.teaches_to_8,
-                teaches_to_9: form.teaches_to_9,
-                teaches_to_10: form.teaches_to_10,
-                teaches_to_11: form.teaches_to_11,
-                teaches_to_12: form.teaches_to_12,
-            };
-        }
-
-        return basePayload;
-    };
-
     const reloadRoleUsers = async () => {
         if (!activeRoleTab) return;
-
         const schoolCode = formData.school_code || localStorage.getItem('schoolCode');
         if (!schoolCode) return;
 
-        const response = await axios.post('https://cleezoclass.com:4000/api/users', {
+        const response = await axios.post('https://cleezoclass.com:4000/api/users-centralization', {
             schoolCode,
             user_type: roleTabConfig[activeRoleTab].userType,
+            page: currentPage,
+            limit: pageSize,
+            class_name: studentClassFilter,
+            section: studentSectionFilter,
+            name: studentNameFilter
         });
-        setRoleUsers(Array.isArray(response.data) ? response.data : []);
+        
+        const data = response.data;
+        applyRoleUsersResponse(data);
     };
 
     const handleAddUserChange = (
@@ -719,12 +913,44 @@ const CentralizationDashboard: React.FC = () => {
     ) => {
         const { name, value } = e.target;
         const field = name as keyof AddUserFormState;
+
+        const nameRegex = /^[A-Za-z\s'-]*$/;
+
+        if ((field === 'name' || field === 'father_name') && !nameRegex.test(value)) {
+            return; 
+        }
+
+        if (field === 'phone_no' || field === 'father_phone_no') {
+            let numericValue = value.replace(/\D/g, '');
+
+            if (numericValue.length > 10) {
+                numericValue = numericValue.slice(0, 10);
+            }
+
+            if (numericValue.length > 0 && !/^[6-9]/.test(numericValue)) {
+                return;
+            }
+
+            setAddUserForm((prev) => ({
+                ...prev,
+                [field]: numericValue,
+            }));
+
+            return;
+        }
+
+        if (field === 'aadhar_no') {
+            const numericValue = value.replace(/\D/g, '');
+            if (numericValue.length > 12) return;
+            setAddUserForm((prev) => ({ ...prev, [field]: numericValue }));
+            return;
+        }
+
         setAddUserForm((prev) => ({ ...prev, [field]: value }));
     };
 
     const handleAddUserSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
         e.preventDefault();
-
         const schoolCode = formData.school_code || localStorage.getItem('schoolCode');
         if (!schoolCode) {
             alert('School Code missing');
@@ -733,14 +959,15 @@ const CentralizationDashboard: React.FC = () => {
 
         const userType = addUserForm.user_type;
 
-        console.log('[CentralizationDashboard] handleAddUserSubmit start', {
-            userModalMode,
-            editingUserId,
-            userType,
-            schoolCode,
-            addUserForm,
-            hasPhotoFile: Boolean(studentPhotoFile),
-        });
+        const activePhone = userType === 'student' ? addUserForm.father_phone_no : addUserForm.phone_no;
+        if (activePhone && activePhone.length !== 10) {
+            alert('Phone number must be exactly 10 digits.');
+            return;
+        }
+        if (addUserForm.aadhar_no && addUserForm.aadhar_no.length !== 12) {
+            alert('Aadhar number must be exactly 12 digits.');
+            return;
+        }
 
         try {
             setIsAddUserSubmitting(true);
@@ -751,13 +978,11 @@ const CentralizationDashboard: React.FC = () => {
                     ...addUserForm,
                     photo: normalizedPhotoPath,
                 };
-                console.log('[CentralizationDashboard] edit payload', editPayload);
                 const response = await axios.put(
                     `https://cleezoclass.com:4000/api/users/${editingUserId}`,
                     editPayload,
                     { params: { schoolCode }, headers: { 'Content-Type': 'application/json' } }
                 );
-                console.log('[CentralizationDashboard] edit response', response.data);
                 alert(response.data?.message || `${userType} updated successfully`);
             } else {
                 const photoPath = studentPhotoFile ? await uploadStudentPhoto() : '';
@@ -768,7 +993,6 @@ const CentralizationDashboard: React.FC = () => {
                     schoolCode,
                     category: userType,
                 };
-                console.log('[CentralizationDashboard] add payload', addPayload);
                 const response = await axios.post(
                     'https://cleezoclass.com:4000/api/submit-studentData',
                     addPayload,
@@ -777,7 +1001,6 @@ const CentralizationDashboard: React.FC = () => {
                         headers: { 'Content-Type': 'application/json' },
                     }
                 );
-                console.log('[CentralizationDashboard] add response', response.data);
 
                 const responseData = response.data?.data || {};
                 setCreatedCredentials({
@@ -792,7 +1015,6 @@ const CentralizationDashboard: React.FC = () => {
 
             try {
                 await reloadRoleUsers();
-                console.log('[CentralizationDashboard] reloadRoleUsers completed');
             } catch (reloadError) {
                 console.error('Failed to refresh role users after save:', reloadError);
             }
@@ -805,30 +1027,27 @@ const CentralizationDashboard: React.FC = () => {
                 setUserModalMode('add');
             }
         } catch (error: any) {
-            console.error('[CentralizationDashboard] Error saving user:', error?.response?.data || error?.message || error);
+            console.error('Error saving user:', error?.response?.data || error?.message || error);
             alert(error?.response?.data?.message || (userModalMode === 'edit' ? 'Failed to update user' : 'Failed to add user'));
         } finally {
             setIsAddUserSubmitting(false);
-            console.log('[CentralizationDashboard] handleAddUserSubmit finished', {
-                userModalMode,
-                editingUserId,
-                userType,
-            });
         }
     };
 
     const copyCredentials = async (text: string) => {
         try {
             await navigator.clipboard.writeText(text);
-        } catch {
-            // Clipboard access can fail in some browser contexts; the text is still visible.
-        }
+        } catch { }
     };
 
     const handleUpdate = () => {
+        if (!validateDetailsForm()) {
+            alert('Please fix the highlighted details before updating.');
+            return;
+        }
+
         const schoolCode = localStorage.getItem('schoolCode');
         const uploadData = new FormData();
-
         (Object.keys(formData) as Array<keyof FormDataState>).forEach((key) => {
             const value = formData[key];
             if (key === 'authorized_logo') {
@@ -837,7 +1056,6 @@ const CentralizationDashboard: React.FC = () => {
                 }
                 return;
             }
-
             uploadData.append(key, value instanceof File ? value : value ?? '');
         });
 
@@ -846,18 +1064,26 @@ const CentralizationDashboard: React.FC = () => {
                 headers: { 'Content-Type': 'multipart/form-data' },
             })
             .then(() => alert('Updated successfully'))
-            .catch(() => alert('Update failed'));
+            .catch((error) => {
+                console.error('School details update failed:', error?.response?.data || error?.message || error);
+                alert(error?.response?.data?.message || error?.response?.data?.error || 'Update failed');
+            });
     };
-
 
     const handleFileUpload = async (category: string) => {
         if (!excelFile) {
             alert('Please choose an Excel file first');
             return;
         }
-
+        if (excelValidationErrors.length > 0) {
+            const errorText = excelValidationErrors
+                .slice(0, 8)
+                .map((error) => `${error.cellAddress ? `Cell ${error.cellAddress}` : `Row ${error.rowNumber}`}: ${error.field} - ${error.message}`)
+                .join('\n');
+            alert(['Please fix these Excel validation errors before submitting:', errorText].join('\n'));
+            return;
+        }
         const schoolCode = formData.school_code || localStorage.getItem('schoolCode');
-
         if (!schoolCode) {
             alert('School Code missing');
             return;
@@ -870,7 +1096,6 @@ const CentralizationDashboard: React.FC = () => {
         try {
             setUploading(true);
             setPreviewCategory(getUploadPreviewCategory(activeRoleTab));
-
             const apiCategory = category.toLowerCase() === 'staff' ? 'teacher' : category.toLowerCase();
 
             const response = await axios.post<UploadResponse>(
@@ -882,71 +1107,41 @@ const CentralizationDashboard: React.FC = () => {
                 }
             );
 
-            const {
-                insertedRecords,
-                duplicates,
-                replacedRecords = [],
-                skippedRows = 0,
-            } = response.data;
+            const { insertedRecords, duplicates, replacedRecords = [], skippedRows = 0 } = response.data;
             setUploadedData(insertedRecords);
             setPreviewData(insertedRecords);
             setIsExcelPreviewOpen(true);
-
-            alert(
-                `Upload Successful!\nInserted: ${insertedRecords.length}\nReplaced: ${replacedRecords.length || duplicates.length}\nSkipped: ${skippedRows}`
-            );
-
+            alert(`Upload Successful!\nInserted: ${insertedRecords.length}\nReplaced: ${replacedRecords.length || duplicates.length}\nSkipped: ${skippedRows}`);
             setExcelFile(null);
+            setExcelValidationErrors([]);
+            setShowExcelSampleRows(false);
         } catch (error) {
             console.error('Excel upload failed:', error);
-            alert('Excel upload failed');
+            if (axios.isAxiosError<UploadResponse>(error)) {
+                const serverMessage = error.response?.data?.message;
+                const rowErrors = error.response?.data?.rowErrors || [];
+                const rowErrorText = rowErrors
+                    .slice(0, 5)
+                    .map((rowError) => `Row ${rowError.rowNumber}: ${rowError.designation || rowError.name || rowError.message || 'Invalid row'}`)
+                    .join('\n');
+                alert([serverMessage || 'Excel upload failed', rowErrorText].filter(Boolean).join('\n'));
+            } else {
+                alert('Excel upload failed');
+            }
         } finally {
             setUploading(false);
         }
     };
 
     const getExcelTemplateHeaders = (category: string) => {
-        const baseHeaders = [
-            'name',
-            'gender',
-            'dob',
-            'phone_no',
-            'aadhar_no',
-            'father_name',
-            'address',
-        ];
-
-        const studentHeaders = [
-            ...baseHeaders,
-            'class_name',
-            'section',
-            'class_teacher',
-            'admission_no',
-            'curriculum',
-            'cbse_reg_no',
-        ];
-
+        const baseHeaders = ['name', 'gender', 'dob', 'phone_no', 'aadhar_no', 'father_name', 'address'];
+        const studentHeaders = [...baseHeaders, 'class_name', 'section', 'class_teacher', 'admission_no', 'curriculum', 'cbse_reg_no'];
         const teacherHeaders = [
             ...baseHeaders,
-            'designation',
-            'teaches_to_1',
-            'teaches_to_2',
-            'teaches_to_3',
-            'teaches_to_4',
-            'teaches_to_5',
-            'teaches_to_6',
-            'teaches_to_7',
-            'teaches_to_8',
-            'teaches_to_9',
-            'teaches_to_10',
-            'teaches_to_11',
-            'teaches_to_12',
+            'designation', 'teaches_to_1', 'teaches_to_2', 'teaches_to_3', 'teaches_to_4', 'teaches_to_5',
+            'teaches_to_6', 'teaches_to_7', 'teaches_to_8', 'teaches_to_9', 'teaches_to_10', 'teaches_to_11', 'teaches_to_12'
         ];
-
-        const managementHeaders = [
-            ...baseHeaders,
-            'designation',
-        ];
+        const managementHeaders = [...baseHeaders, 'designation'];
 
         if (category === 'Staff') return teacherHeaders;
         if (category === 'Management') return managementHeaders;
@@ -956,210 +1151,383 @@ const CentralizationDashboard: React.FC = () => {
     const downloadExcelTemplate = (category: string) => {
         const headers = getExcelTemplateHeaders(category);
         const workbook = XLSX.utils.book_new();
-        const worksheet = XLSX.utils.aoa_to_sheet([headers]);
+        const sampleRows = category === 'Staff' ? staffTemplateSampleRows : [];
+        const worksheet = XLSX.utils.aoa_to_sheet([
+            headers,
+            ...sampleRows.map((row) => headers.map((header) => row[header as keyof typeof row] || '')),
+        ]);
         const sheetName = category === 'Staff' ? 'TeacherTemplate' : `${category}Template`;
+        if (category === 'Staff') {
+            worksheet['!cols'] = headers.map((header) => ({
+                wch: header.startsWith('teaches_to_') ? 14 : Math.max(header.length + 4, 16),
+            }));
+        }
+        if (category === 'Management') {
+            const designationColIndex = headers.indexOf('designation');
+            if (designationColIndex >= 0) {
+                const cellAddress = XLSX.utils.encode_cell({ r: 0, c: designationColIndex });
+                worksheet[cellAddress].c = [{
+                    a: 'Cleezo',
+                    t: `Use only these designations: ${managementDesignationLabels.join(', ')}`,
+                }];
+            }
+        }
         XLSX.utils.book_append_sheet(workbook, worksheet, sheetName);
-        XLSX.writeFile(
-            workbook,
-            `${category === 'Staff' ? 'teacher' : category.toLowerCase()}_template.xlsx`
+        if (category === 'Management') {
+            const designationSheet = XLSX.utils.aoa_to_sheet([
+                ['Allowed Management Designations'],
+                ...managementDesignationOptions.map((option) => [option.label]),
+            ]);
+            XLSX.utils.book_append_sheet(workbook, designationSheet, 'AllowedDesignations');
+        }
+        XLSX.writeFile(workbook, `${category === 'Staff' ? 'teacher' : category.toLowerCase()}_template.xlsx`);
+    };
+
+    const normalizeExcelHeader = (value: string) =>
+        value.toLowerCase().trim().replace(/\s+/g, "_");
+
+    const getColumnMeta = (row: any, keys: string[], rowNumber: number) => {
+        const foundKey = Object.keys(row).find((col) =>
+            keys.some((key) => normalizeExcelHeader(col) === normalizeExcelHeader(key))
+        );
+        if (!foundKey) {
+            return {
+                key: keys[0],
+                columnNumber: undefined,
+                cellAddress: undefined,
+                label: formatExcelColumnLabel(keys[0]),
+            };
+        }
+        const columnNumber = Object.keys(row).indexOf(foundKey) + 1;
+        return {
+            key: foundKey,
+            columnNumber,
+            cellAddress: `${XLSX.utils.encode_col(columnNumber - 1)}${rowNumber}`,
+            label: formatExcelColumnLabel(foundKey),
+        };
+    };
+
+    const getValue = (row: any, keys: string[]) => {
+        for (const key of keys) {
+            const foundKey = Object.keys(row).find(
+                (col) => normalizeExcelHeader(col) === normalizeExcelHeader(key)
+            );
+            if (foundKey && row[foundKey] !== undefined) {
+                return row[foundKey];
+            }
+        }
+        return "";
+    };
+
+    const hasExcelValue = (value: unknown) =>
+        value !== undefined && value !== null && String(value).trim() !== "";
+
+    const isNonEmptyExcelRow = (row: any) =>
+        Object.values(row || {}).some((value) => hasExcelValue(value));
+
+    const isValidExcelDate = (value: unknown) => {
+        if (!hasExcelValue(value)) return true;
+        if (value instanceof Date) return !Number.isNaN(value.getTime());
+
+        if (typeof value === "number" && Number.isFinite(value) && XLSX.SSF?.parse_date_code) {
+            const parsed = XLSX.SSF.parse_date_code(value);
+            return Boolean(parsed?.y && parsed?.m && parsed?.d);
+        }
+
+        const text = String(value).trim();
+        const match = text.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+        if (!match) return false;
+
+        const year = Number(match[1]);
+        const month = Number(match[2]);
+        const day = Number(match[3]);
+        const date = new Date(Date.UTC(year, month - 1, day));
+        return (
+            date.getUTCFullYear() === year &&
+            date.getUTCMonth() === month - 1 &&
+            date.getUTCDate() === day
         );
     };
 
-const getValue = (row: any, keys: string[]) => {
-  for (const key of keys) {
-    const foundKey = Object.keys(row).find(
-      (col) => col.toLowerCase().replace(/\s+/g, "_") === key.toLowerCase()
-    );
+const validateExcelRows = (rawData: any[], category: UploadPreviewCategory): ExcelValidationError[] => {
+        const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+        const nameRegex = /^[A-Za-z\s.'-]+$/;
+        const alphaNumericTextRegex = /^[A-Za-z0-9\s./#-]+$/;
+        const phoneKeys = [
+            "phone_no",
+            "phone_number",
+            "phone number",
+            "phone",
+            "mobile",
+            "mobile_number",
+            "mobile number",
+            "contact_number",
+            "whatsapp_number",
+            "father_phone",
+            "father_phone_no",
+            "father_mobile",
+            "father_contact",
+        ];
+        const emailKeys = ["email", "email_id", "email id", "mail", "email_address", "email address"];
+        const dateKeys = ["dob", "date_of_birth", "date of birth", "birth_date"];
 
-    if (foundKey && row[foundKey] !== undefined) {
-      return row[foundKey];
-    }
-  }
-  return "";
-};
-const formatPreviewDob = (value: any) => {
-  if (value === undefined || value === null || String(value).trim() === "") {
-    return "";
-  }
+        const createError = (
+            row: any,
+            rowNumber: number,
+            keys: string[],
+            message: string
+        ): ExcelValidationError => {
+            const meta = getColumnMeta(row, keys, rowNumber);
+            const expectedColumnIndex = getExcelTemplateHeaders(category).findIndex((header) =>
+                keys.some((key) => normalizeExcelHeader(header) === normalizeExcelHeader(key))
+            );
+            const fallbackColumnNumber = expectedColumnIndex >= 0 ? expectedColumnIndex + 1 : undefined;
+            const columnNumber = meta.columnNumber || fallbackColumnNumber;
+            return {
+                rowNumber,
+                columnNumber,
+                cellAddress: meta.cellAddress || (columnNumber ? `${XLSX.utils.encode_col(columnNumber - 1)}${rowNumber}` : undefined),
+                field: meta.label,
+                message,
+            };
+        };
 
-  if (value instanceof Date && !Number.isNaN(value.getTime())) {
-    return value.toISOString().slice(0, 10);
-  }
+        const validateRequired = (
+            row: any,
+            rowNumber: number,
+            keys: string[],
+            label: string,
+            errors: ExcelValidationError[]
+        ) => {
+            if (!hasExcelValue(getValue(row, keys))) {
+                errors.push(createError(row, rowNumber, keys, `${label} is required.`));
+                return false;
+            }
+            return true;
+        };
 
-  const numericValue = Number(value);
-  if (Number.isFinite(numericValue) && XLSX.SSF?.parse_date_code) {
-    const parsed = XLSX.SSF.parse_date_code(numericValue);
-    if (parsed?.y && parsed?.m && parsed?.d) {
-      const month = String(parsed.m).padStart(2, "0");
-      const day = String(parsed.d).padStart(2, "0");
-      return `${parsed.y}-${month}-${day}`;
-    }
-  }
+        return rawData.flatMap((row, index) => {
+            if (!isNonEmptyExcelRow(row)) return [];
 
-  const parsedDate = new Date(String(value).trim());
-  if (!Number.isNaN(parsedDate.getTime())) {
-    return parsedDate.toISOString().slice(0, 10);
-  }
+            const rowNumber = index + 2;
+            const errors: ExcelValidationError[] = [];
 
-  return String(value).trim();
-};
+            if (category === 'Student') {
+                const studentNameKeys = ['name', 'student_name', 'student name', 'student'];
+                const genderKeys = ['gender', 'sex'];
+                const phoneNoKeys = ['phone_no', 'phone_number', 'phone number', 'phone', 'mobile', 'father_phone', 'father_mobile'];
+                const aadharKeys = ['aadhar_no', 'aadhar_number', 'aadhar number', 'aadhar', 'aadhaar'];
+                const fatherNameKeys = ['father_name', 'father name', 'dad_name', 'dad', 'father'];
+                const classNameKeys = ['class_name', 'class', 'grade'];
+                const sectionKeys = ['section', 'sec'];
+                const classTeacherKeys = ['class_teacher', 'teacher', 'teacher_name'];
+                const admissionKeys = ['admission_no', 'admission number', 'admission'];
+                const curriculumKeys = ['curriculum'];
+                const cbseKeys = ['cbse_reg_no', 'cbse reg no', 'cbse registration no'];
 
-const formatExcelColumnLabel = (key: string) =>
-  key.replace(/_/g, ' ').replace(/\b\w/g, (char) => char.toUpperCase());
+                if (validateRequired(row, rowNumber, studentNameKeys, 'Student Name', errors)) {
+                    const value = String(getValue(row, studentNameKeys)).trim();
+                    if (!nameRegex.test(value)) {
+                        errors.push(createError(row, rowNumber, studentNameKeys, 'Student Name can contain only letters, spaces, dot, apostrophe, or hyphen.'));
+                    }
+                }
 
-const formatExcelCellValue = (value: unknown) => {
-  if (value === null || value === undefined) return '-';
-  if (typeof value === 'string') {
-    const trimmed = value.trim();
-    return trimmed || '-';
-  }
-  if (typeof value === 'number' || typeof value === 'boolean') {
-    return String(value);
-  }
-  if (value instanceof Date && !Number.isNaN(value.getTime())) {
-    return value.toISOString().slice(0, 10);
-  }
-  if (typeof value === 'object') {
-    try {
-      return JSON.stringify(value);
-    } catch {
-      return '-';
-    }
-  }
-  return String(value);
-};
+                if (validateRequired(row, rowNumber, genderKeys, 'Gender', errors)) {
+                    const value = String(getValue(row, genderKeys)).trim().toLowerCase();
+                    if (!['male', 'female', 'other'].includes(value)) {
+                        errors.push(createError(row, rowNumber, genderKeys, 'Gender must be Male, Female, or Other.'));
+                    }
+                }
 
-const getUploadPreviewCategory = (roleTab: RoleTab): UploadPreviewCategory =>
-  roleTab === 'Staff' ? 'Staff' : roleTab === 'Management' ? 'Management' : 'Student';
+                if (validateRequired(row, rowNumber, dateKeys, 'Date of Birth', errors) && !isValidExcelDate(getValue(row, dateKeys))) {
+                    errors.push(createError(row, rowNumber, dateKeys, 'Date of Birth must be in YYYY-MM-DD format or a valid Excel date.'));
+                }
 
-const buildPreviewRows = (rawData: any[], category: UploadPreviewCategory) => {
-  if (category === 'Staff') {
-    return rawData.map((row: any) => ({
-      name: getValue(row, ['name', 'teacher_name', 'teacher', 'staff_name'])
-        .toString()
-        .toUpperCase() || '',
-      gender: getValue(row, ['gender', 'sex']),
-      phone_no: getValue(row, ['phone_no', 'phone number', 'phone', 'mobile']),
-      aadhar_no: getValue(row, ['aadhar_no', 'aadhar number', 'aadhar', 'aadhaar']),
-      dob: formatPreviewDob(getValue(row, ['dob', 'date_of_birth', 'date of birth', 'birth_date'])),
-      father_name: getValue(row, ['father_name', 'father name']).toString().toUpperCase() || '',
-      address: getValue(row, ['address', 'staff_address']),
-      designation: getValue(row, ['designation', 'subject', 'role']),
-      teaches_to_1: getValue(row, ['teaches_to_1', 'class 1']),
-      teaches_to_2: getValue(row, ['teaches_to_2', 'class 2']),
-      teaches_to_3: getValue(row, ['teaches_to_3', 'class 3']),
-      teaches_to_4: getValue(row, ['teaches_to_4', 'class 4']),
-      teaches_to_5: getValue(row, ['teaches_to_5', 'class 5']),
-      teaches_to_6: getValue(row, ['teaches_to_6', 'class 6']),
-      teaches_to_7: getValue(row, ['teaches_to_7', 'class 7']),
-      teaches_to_8: getValue(row, ['teaches_to_8', 'class 8']),
-      teaches_to_9: getValue(row, ['teaches_to_9', 'class 9']),
-      teaches_to_10: getValue(row, ['teaches_to_10', 'class 10']),
-      teaches_to_11: getValue(row, ['teaches_to_11', 'class 11']),
-      teaches_to_12: getValue(row, ['teaches_to_12', 'class 12']),
-    }));
-  }
+                if (validateRequired(row, rowNumber, phoneNoKeys, 'Mobile Number', errors)) {
+                    const value = String(getValue(row, phoneNoKeys)).replace(/\D/g, '');
+                    if (!/^[6-9]\d{9}$/.test(value)) {
+                        errors.push(createError(row, rowNumber, phoneNoKeys, 'Mobile Number must be 10 digits and start with 6, 7, 8, or 9.'));
+                    }
+                }
 
-  if (category === 'Management') {
-    return rawData.map((row: any) => ({
-      name: getValue(row, ['name', 'manager_name', 'staff_name'])
-        .toString()
-        .toUpperCase() || '',
-      gender: getValue(row, ['gender', 'sex']),
-      phone_no: getValue(row, ['phone_no', 'phone number', 'phone', 'mobile']),
-      aadhar_no: getValue(row, ['aadhar_no', 'aadhar number', 'aadhar', 'aadhaar']),
-      dob: formatPreviewDob(getValue(row, ['dob', 'date_of_birth', 'date of birth', 'birth_date'])),
-      father_name: getValue(row, ['father_name', 'father name']).toString().toUpperCase() || '',
-      address: getValue(row, ['address', 'management_address']),
-      designation: getValue(row, ['designation', 'role']),
-    }));
-  }
+                if (validateRequired(row, rowNumber, aadharKeys, 'Aadhar Number', errors)) {
+                    const value = String(getValue(row, aadharKeys)).replace(/\D/g, '');
+                    if (!/^\d{12}$/.test(value)) {
+                        errors.push(createError(row, rowNumber, aadharKeys, 'Aadhar Number must be exactly 12 digits.'));
+                    }
+                }
 
-  return rawData.map((row: any) => ({
-    student_name: getValue(row, [
-      'student_name',
-      'student name',
-      'name',
-      'student',
-    ]).toString().toUpperCase() || '',
-    gender: getValue(row, ['gender', 'sex']),
-    phone_number: getValue(row, [
-      'phone_number',
-      'phone number',
-      'phone',
-      'mobile',
-      'father_phone',
-      'father_mobile',
-    ]),
-    aadhar_number: getValue(row, [
-      'aadhar_number',
-      'aadhar number',
-      'aadhar',
-      'aadhaar',
-    ]),
-    dob: formatPreviewDob(getValue(row, ['dob', 'date_of_birth', 'date of birth', 'birth_date'])),
-    father_name: getValue(row, [
-      'father_name',
-      'father name',
-      'dad_name',
-      'dad',
-      'father',
-    ]).toString().toUpperCase() || '',
-    class: getValue(row, ['class', 'class_name', 'grade']),
-    section: getValue(row, ['section', 'sec']),
-    class_teacher: getValue(row, [
-      'class_teacher',
-      'teacher',
-      'teacher_name',
-    ]).toString().toUpperCase() || '',
-    address: getValue(row, ['address', 'student_address']),
-  }));
-};
+                if (validateRequired(row, rowNumber, fatherNameKeys, 'Father Name', errors)) {
+                    const value = String(getValue(row, fatherNameKeys)).trim();
+                    if (!nameRegex.test(value)) {
+                        errors.push(createError(row, rowNumber, fatherNameKeys, 'Father Name can contain only letters, spaces, dot, apostrophe, or hyphen.'));
+                    }
+                }
 
-    const handlePreview = (file: File, category: UploadPreviewCategory) => {
-    const reader = new FileReader();
+                // Address is now optional for Student Excel upload
+                validateRequired(row, rowNumber, classNameKeys, 'Class', errors);
+                validateRequired(row, rowNumber, sectionKeys, 'Section', errors);
 
-    reader.onload = (e) => {
-        const data = e.target?.result;
-        const workbook = XLSX.read(data, { type: 'binary' });
+                const classTeacherValue = getValue(row, classTeacherKeys);
+                if (hasExcelValue(classTeacherValue) && !nameRegex.test(String(classTeacherValue).trim())) {
+                    errors.push(createError(row, rowNumber, classTeacherKeys, 'Class Teacher can contain only letters, spaces, dot, apostrophe, or hyphen.'));
+                }
 
-        const sheetName = workbook.SheetNames[0];
-        const worksheet = workbook.Sheets[sheetName];
+                [admissionKeys, curriculumKeys, cbseKeys].forEach((keys) => {
+                    const value = getValue(row, keys);
+                    if (hasExcelValue(value) && !alphaNumericTextRegex.test(String(value).trim())) {
+                        errors.push(createError(row, rowNumber, keys, `${formatExcelColumnLabel(keys[0])} can contain letters, numbers, spaces, slash, dot, hash, or hyphen.`));
+                    }
+                });
+            }
 
-        const rawData = XLSX.utils.sheet_to_json(worksheet);
-        const formattedData = buildPreviewRows(rawData, category);
+            phoneKeys.forEach((key) => {
+                const value = getValue(row, [key]);
+                if (hasExcelValue(value) && !/^\d{10}$/.test(String(value).replace(/\D/g, "")) && category !== 'Student') {
+                    errors.push(createError(row, rowNumber, [key], "Mobile number must be 10 digits."));
+                }
+            });
 
-        setPreviewData(formattedData);
-        setPreviewCategory(category);
-        setIsExcelPreviewOpen(true);
+            emailKeys.forEach((key) => {
+                const value = getValue(row, [key]);
+                if (hasExcelValue(value) && !emailRegex.test(String(value).trim())) {
+                    errors.push(createError(row, rowNumber, [key], "Email should be in a valid format."));
+                }
+            });
+
+            dateKeys.forEach((key) => {
+                const value = getValue(row, [key]);
+                if (hasExcelValue(value) && !isValidExcelDate(value) && category !== 'Student') {
+                    errors.push(createError(row, rowNumber, [key], "Date should be in YYYY-MM-DD format or a valid Excel date."));
+                }
+            });
+
+            return errors;
+        });
     };
 
-    reader.readAsBinaryString(file);
-};
-const [isMobile, setIsMobile] = useState(window.innerWidth < 768);
+    const formatPreviewDob = (value: any) => {
+        if (value === undefined || value === null || String(value).trim() === "") return "";
+        if (value instanceof Date && !Number.isNaN(value.getTime())) {
+            return value.toISOString().slice(0, 10);
+        }
+        const numericValue = Number(value);
+        if (Number.isFinite(numericValue) && XLSX.SSF?.parse_date_code) {
+            const parsed = XLSX.SSF.parse_date_code(numericValue);
+            if (parsed?.y && parsed?.m && parsed?.d) {
+                const month = String(parsed.m).padStart(2, "0");
+                const day = String(parsed.d).padStart(2, "0");
+                return `${parsed.y}-${month}-${day}`;
+            }
+        }
+        const parsedDate = new Date(String(value).trim());
+        if (!Number.isNaN(parsedDate.getTime())) {
+            return parsedDate.toISOString().slice(0, 10);
+        }
+        return String(value).trim();
+    };
 
-useEffect(() => {
-  const handleResize = () => setIsMobile(window.innerWidth < 768);
-  window.addEventListener("resize", handleResize);
-  return () => window.removeEventListener("resize", handleResize);
-}, []);
+    const formatExcelColumnLabel = (key: string) =>
+        key.replace(/_/g, ' ').replace(/\b\w/g, (char) => char.toUpperCase());
+
+    const formatExcelCellValue = (value: unknown) => {
+        if (value === null || value === undefined) return '-';
+        if (typeof value === 'string') return value.trim() || '-';
+        if (typeof value === 'number' || typeof value === 'boolean') return String(value);
+        if (value instanceof Date && !Number.isNaN(value.getTime())) return value.toISOString().slice(0, 10);
+        if (typeof value === 'object') {
+            try { return JSON.stringify(value); } catch { return '-'; }
+        }
+        return String(value);
+    };
+
+    const getUploadPreviewCategory = (roleTab: RoleTab): UploadPreviewCategory =>
+        roleTab === 'Staff' ? 'Staff' : roleTab === 'Management' ? 'Management' : 'Student';
+
+    const buildPreviewRows = (rawData: any[], category: UploadPreviewCategory) => {
+        if (category === 'Staff') {
+            return rawData.map((row: any) => ({
+                name: getValue(row, ['name', 'teacher_name', 'teacher', 'staff_name']).toString().toUpperCase() || '',
+                gender: getValue(row, ['gender', 'sex']),
+                phone_no: getValue(row, ['phone_no', 'phone number', 'phone', 'mobile']),
+                aadhar_no: getValue(row, ['aadhar_no', 'aadhar number', 'aadhar', 'aadhaar']),
+                dob: formatPreviewDob(getValue(row, ['dob', 'date_of_birth', 'date of birth', 'birth_date'])),
+                father_name: getValue(row, ['father_name', 'father name']).toString().toUpperCase() || '',
+                address: getValue(row, ['address', 'staff_address']),
+                designation: getValue(row, ['designation', 'subject', 'role']),
+                teaches_to_1: getValue(row, ['teaches_to_1', 'class 1']),
+                teaches_to_2: getValue(row, ['teaches_to_2', 'class 2']),
+                teaches_to_3: getValue(row, ['teaches_to_3', 'class 3']),
+                teaches_to_4: getValue(row, ['teaches_to_4', 'class 4']),
+                teaches_to_5: getValue(row, ['teaches_to_5', 'class 5']),
+                teaches_to_6: getValue(row, ['teaches_to_6', 'class 6']),
+                teaches_to_7: getValue(row, ['teaches_to_7', 'class 7']),
+                teaches_to_8: getValue(row, ['teaches_to_8', 'class 8']),
+                teaches_to_9: getValue(row, ['teaches_to_9', 'class 9']),
+                teaches_to_10: getValue(row, ['teaches_to_10', 'class 10']),
+                teaches_to_11: getValue(row, ['teaches_to_11', 'class 11']),
+                teaches_to_12: getValue(row, ['teaches_to_12', 'class 12']),
+            }));
+        }
+
+        if (category === 'Management') {
+            return rawData.map((row: any) => ({
+                name: getValue(row, ['name', 'manager_name', 'staff_name']).toString().toUpperCase() || '',
+                gender: getValue(row, ['gender', 'sex']),
+                phone_no: getValue(row, ['phone_no', 'phone number', 'phone', 'mobile']),
+                aadhar_no: getValue(row, ['aadhar_no', 'aadhar number', 'aadhar', 'aadhaar']),
+                dob: formatPreviewDob(getValue(row, ['dob', 'date_of_birth', 'date of birth', 'birth_date'])),
+                father_name: getValue(row, ['father_name', 'father name']).toString().toUpperCase() || '',
+                address: getValue(row, ['address', 'management_address']),
+                designation: getValue(row, ['designation', 'role']),
+            }));
+        }
+
+        return rawData.map((row: any) => ({
+            student_name: getValue(row, ['student_name', 'student name', 'name', 'student']).toString().toUpperCase() || '',
+            gender: getValue(row, ['gender', 'sex']),
+            phone_number: getValue(row, ['phone_no','phone_number', 'phone number', 'phone', 'mobile', 'father_phone', 'father_mobile']),
+            aadhar_number: getValue(row, ['aadhar_no','aadhar_number', 'aadhar number', 'aadhar', 'aadhaar']),
+            dob: formatPreviewDob(getValue(row, ['dob', 'date_of_birth', 'date of birth', 'birth_date'])),
+            father_name: getValue(row, ['father_name', 'father name', 'dad_name', 'dad', 'father']).toString().toUpperCase() || '',
+            class: getValue(row, ['class', 'class_name', 'grade']),
+            section: getValue(row, ['section', 'sec']),
+            class_teacher: getValue(row, ['class_teacher', 'teacher', 'teacher_name']).toString().toUpperCase() || '',
+            address: getValue(row, ['address', 'student_address']),
+        }));
+    };
+
+    const handlePreview = (file: File, category: UploadPreviewCategory) => {
+        const reader = new FileReader();
+        reader.onload = (e) => {
+            const data = e.target?.result;
+            const workbook = XLSX.read(data, { type: 'binary' });
+            const sheetName = workbook.SheetNames[0];
+            const worksheet = workbook.Sheets[sheetName];
+            const rawData = XLSX.utils.sheet_to_json(worksheet);
+            const formattedData = buildPreviewRows(rawData, category);
+            const validationErrors = validateExcelRows(rawData, category);
+            setPreviewData(formattedData);
+            setExcelValidationErrors(validationErrors);
+            setPreviewCategory(category);
+            setIsExcelPreviewOpen(true);
+        };
+        reader.readAsBinaryString(file);
+    };
+
     const downloadExcel = () => {
         if (uploadedData.length === 0) {
             alert('No data to download');
             return;
         }
-
         const dataWithWhatsapp = uploadedData.map((item) => {
             const itemPhone = typeof item.phone === 'string' ? item.phone : '';
             const phoneNo = typeof item.phone_no === 'string' ? item.phone_no : '';
-            const fatherPhoneNo =
-                typeof item.father_phone_no === 'string' ? item.father_phone_no : '';
+            const fatherPhoneNo = typeof item.father_phone_no === 'string' ? item.father_phone_no : '';
             const phone = itemPhone.trim() !== '' ? itemPhone : phoneNo || fatherPhoneNo || '';
             const whatsappLink = phone ? `https://wa.me/${phone}` : 'N/A';
-
             return { ...item, phone, whatsappLink };
         });
-
         const wb = XLSX.utils.book_new();
         const ws = XLSX.utils.json_to_sheet(dataWithWhatsapp);
         XLSX.utils.book_append_sheet(wb, ws, 'UploadedData');
@@ -1171,59 +1539,49 @@ useEffect(() => {
     const filteredRoleUsers =
         activeRoleTab === 'Student'
             ? roleUsers.filter((user) => {
-                  const classMatch = studentClassFilter
-                      ? String(user?.class_name || '').trim().toLowerCase() ===
-                        String(studentClassFilter).trim().toLowerCase()
-                      : true;
-                  const sectionMatch = studentSectionFilter
-                      ? String(user?.section || '').trim().toLowerCase() ===
-                        String(studentSectionFilter).trim().toLowerCase()
-                      : true;
-                  const nameMatch = studentNameFilter
-                      ? String(user?.name || '')
-                            .trim()
-                            .toLowerCase()
-                            .includes(String(studentNameFilter).trim().toLowerCase())
-                      : true;
-                  return classMatch && sectionMatch && nameMatch;
-              })
+                const classMatch = studentClassFilter
+                    ? String(user?.class_name || '').trim().toLowerCase() === String(studentClassFilter).trim().toLowerCase()
+                    : true;
+                const sectionMatch = studentSectionFilter
+                    ? String(user?.section || '').trim().toLowerCase() === String(studentSectionFilter).trim().toLowerCase()
+                    : true;
+                const nameMatch = studentNameFilter
+                    ? String(user?.name || '').trim().toLowerCase().includes(String(studentNameFilter).trim().toLowerCase())
+                    : true;
+                return classMatch && sectionMatch && nameMatch;
+            })
             : roleUsers;
 
-    const studentClassOptions = Array.from(
-        new Set(
-            roleUsers
-                .map((user) => String(user?.class_name || '').trim())
-                .filter(Boolean)
-        )
-    ).sort((a, b) => a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' }));
+    const studentClassOptions = allClasses;
 
     const studentSectionOptions = Array.from(
         new Set(
-            roleUsers
-                .filter((user) =>
-                    studentClassFilter
-                        ? String(user?.class_name || '').trim().toLowerCase() ===
-                          String(studentClassFilter).trim().toLowerCase()
-                        : true
-                )
+            allSections
+                .filter((user) => studentClassFilter ? String(user?.class_name || '').trim().toLowerCase() === String(studentClassFilter).trim().toLowerCase() : true)
                 .map((user) => String(user?.section || '').trim())
                 .filter(Boolean)
         )
     ).sort((a, b) => a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' }));
 
+    const getUserRecordId = (user: any) =>
+        user?.id ?? user?.ID ?? user?.Id ?? user?.user_id ?? user?.userId ?? user?.staff_id ?? user?.management_id ?? null;
+
+    const isUserDisabled = (user: any) =>
+        Number(user?.is_disabled || user?.disabled || 0) === 1 || String(user?.status || '').trim().toLowerCase() === 'disabled';
+
     const deleteUser = async (user: any) => {
         const schoolCode = formData.school_code || localStorage.getItem('schoolCode');
-        if (!schoolCode || !user?.id) return;
-        const confirmDelete = window.confirm(`Delete ${user?.name || 'this user'}?`);
-        if (!confirmDelete) return;
+        const userId = getUserRecordId(user);
+        if (!schoolCode || !userId) return;
         try {
             setRoleLoading(true);
-            await axios.delete(`https://cleezoclass.com:4000/api/users/${user.id}`, {
+            setActionUser(null);
+            await axios.delete(`https://cleezoclass.com:4000/api/users/${userId}`, {
                 params: { schoolCode },
                 data: { schoolCode },
             });
             await reloadRoleUsers();
-            alert('Deleted successfully');
+            alert('Deleted permanently');
         } catch (error) {
             console.error('Delete failed:', error);
             alert('Delete failed');
@@ -1232,28 +1590,45 @@ useEffect(() => {
         }
     };
 
+    const toggleUserDisabled = async (user: any) => {
+        const schoolCode = formData.school_code || localStorage.getItem('schoolCode');
+        const userId = getUserRecordId(user);
+        if (!schoolCode || !userId) return;
+
+        const disabled = !isUserDisabled(user);
+        const action = disabled ? 'disable' : 'enable';
+
+        try {
+            setRoleLoading(true);
+            setActionUser(null);
+            await axios.patch(
+                `https://cleezoclass.com:4000/api/users/${userId}/disabled`,
+                { schoolCode, disabled },
+                { params: { schoolCode } }
+            );
+            await reloadRoleUsers();
+            alert(disabled ? 'User disabled. Login is blocked now.' : 'User enabled. Login works now.');
+        } catch (error) {
+            console.error(`${action} failed:`, error);
+            alert(`${action === 'disable' ? 'Disable' : 'Enable'} failed`);
+        } finally {
+            setRoleLoading(false);
+        }
+    };
+
     useEffect(() => {
         const schoolCode = formData.school_code || localStorage.getItem('schoolCode');
+        if (!schoolCode) return;
 
-        console.log('🔍 [Tracker Sync] Checking for schoolCode in localStorage...');
-        if (!schoolCode) {
-            console.warn('⚠️ [Tracker Sync] No schoolCode found. Skipping API call.');
-            return;
-        }
-
-        console.log(`📡 [Tracker Sync] Fetching stats for: ${schoolCode}`);
         axios
             .get<TrackingApiResponse>(`https://cleezoclass.com:4000/track-records/${schoolCode}`)
             .then((res) => {
                 if (res.data.success) {
-                    console.log('✅ [Tracker Sync] Data received successfully:', res.data.stats);
                     setTrackingStats(res.data.stats);
-                } else {
-                    console.error('❌ [Tracker Sync] API responded but success was false:', res.data);
                 }
             })
             .catch((err: Error) => {
-                console.error('🔥 [Tracker Sync] Critical error during fetch:', err.message);
+                console.error('Tracker Sync Critical error during fetch:', err.message);
             });
     }, [uploadedData, formData.school_code]);
 
@@ -1275,88 +1650,270 @@ useEffect(() => {
     };
 
     const handleLogout = () => {
-        localStorage.removeItem('instituteName');
-        localStorage.removeItem('username');
-        localStorage.removeItem('schoolCode');
-        localStorage.removeItem('userRole');
-        localStorage.removeItem('userType');
-        localStorage.removeItem('name');
+        localStorage.clear();
         sessionStorage.clear();
         navigate('/', { replace: true });
     };
 
     const addUserTypeLabel =
-        addUserForm.user_type === 'management'
-            ? 'Management'
-            : addUserForm.user_type === 'teacher'
-              ? 'Teacher'
-              : 'Student';
+        addUserForm.user_type === 'management' ? 'Management' : addUserForm.user_type === 'teacher' ? 'Teacher' : 'Student';
     const addUserSubmitLabel = `Add ${addUserTypeLabel.toLowerCase()}`;
     const isAddStudent = addUserForm.user_type === 'student';
     const isAddTeacher = addUserForm.user_type === 'teacher';
     const isAddManagement = addUserForm.user_type === 'management';
 
+    const getPaginationRange = () => {
+        const totalNumbers = 5; 
+        const siblingCount = 1; 
+
+        if (totalPages <= 7) {
+            return Array.from({ length: totalPages }, (_, idx) => idx + 1);
+        }
+
+        const leftSiblingIndex = Math.max(currentPage - siblingCount, 1);
+        const rightSiblingIndex = Math.min(currentPage + siblingCount, totalPages);
+
+        const shouldShowLeftDots = leftSiblingIndex > 2;
+        const shouldShowRightDots = rightSiblingIndex < totalPages - 2;
+
+        const firstPageIndex = 1;
+        const lastPageIndex = totalPages;
+
+        if (!shouldShowLeftDots && shouldShowRightDots) {
+            let leftItemCount = 3 + 2 * siblingCount;
+            let leftRange = Array.from({ length: leftItemCount }, (_, idx) => idx + 1);
+            return [...leftRange, 'DOTS', lastPageIndex];
+        }
+
+        if (shouldShowLeftDots && !shouldShowRightDots) {
+            let rightItemCount = 3 + 2 * siblingCount;
+            let rightRange = Array.from(
+                { length: rightItemCount },
+                (_, idx) => totalPages - rightItemCount + 1 + idx
+            );
+            return [firstPageIndex, 'DOTS', ...rightRange];
+        }
+
+        if (shouldShowLeftDots && shouldShowRightDots) {
+            let middleRange = Array.from(
+                { length: rightSiblingIndex - leftSiblingIndex + 1 },
+                (_, idx) => leftSiblingIndex + idx
+            );
+            return [firstPageIndex, 'DOTS', ...middleRange, 'DOTS', lastPageIndex];
+        }
+
+        return Array.from({ length: totalPages }, (_, idx) => idx + 1);
+    };
+
+    const renderPaginationControls = () => {
+        const safeTotalPages = Math.max(1, totalPages || 1);
+        const safeTotalRecords = Math.max(0, totalRecords || roleUsers.length || 0);
+        const startRecord = safeTotalRecords === 0 ? 0 : (currentPage - 1) * pageSize + 1;
+        const endRecord = Math.min(currentPage * pageSize, safeTotalRecords);
+
+        return (
+            <div style={styles.paginationContainer}>
+                <div style={styles.paginationInfo}>
+                    Showing {startRecord}-{endRecord} of {safeTotalRecords} {activeRoleTab?.toLowerCase()} records
+                </div>
+
+                <div style={styles.paginationButtons}>
+                    <select
+                        value={pageSize}
+                        onChange={(event) => {
+                            setPageSize(Number(event.target.value));
+                            setCurrentPage(1);
+                        }}
+                        style={{ ...styles.input, ...styles.paginationSelect }}
+                    >
+                        {[10, 15, 20, 50].map((size) => (
+                            <option key={size} value={size}>
+                                {size} / page
+                            </option>
+                        ))}
+                    </select>
+
+                    <button
+                        type="button"
+                        disabled={currentPage === 1}
+                        onClick={() => setCurrentPage((prev) => Math.max(prev - 1, 1))}
+                        style={{
+                            ...styles.paginationBtn,
+                            opacity: currentPage === 1 ? 0.5 : 1,
+                            cursor: currentPage === 1 ? 'not-allowed' : 'pointer'
+                        }}
+                    >
+                        Prev
+                    </button>
+
+                    {getPaginationRange().map((pageNum, index) => {
+                        if (pageNum === 'DOTS') {
+                            return (
+                                <span key={`dots-${index}`} style={{ margin: '0 8px', alignSelf: 'center', color: '#888' }}>
+                                    ...
+                                </span>
+                            );
+                        }
+
+                        return (
+                            <button
+                                type="button"
+                                key={pageNum}
+                                onClick={() => setCurrentPage(Number(pageNum))}
+                                style={{
+                                    ...styles.paginationBtn,
+                                    backgroundColor: currentPage === pageNum ? '#f3a673' : '#fff',
+                                    color: currentPage === pageNum ? '#fff' : '#000',
+                                    fontWeight: currentPage === pageNum ? 'bold' : 'normal'
+                                }}
+                            >
+                                {pageNum}
+                            </button>
+                        );
+                    })}
+
+                    <button
+                        type="button"
+                        disabled={currentPage === safeTotalPages}
+                        onClick={() => setCurrentPage((prev) => Math.min(prev + 1, safeTotalPages))}
+                        style={{
+                            ...styles.paginationBtn,
+                            opacity: currentPage === safeTotalPages ? 0.5 : 1,
+                            cursor: currentPage === safeTotalPages ? 'not-allowed' : 'pointer'
+                        }}
+                    >
+                        Next
+                    </button>
+                </div>
+            </div>
+        );
+    };
+
+
+    const exportToCSV = (users: any[], userType: string) => {
+        const headers = ['Name', 'Gender', 'DOB', 'Father Name', 'Username', 'Password', 'Phone Number'];
+        
+        const rows = users.map(user => [
+            `"${user.name || ''}"`,
+            `"${user.gender || ''}"`,
+            `"${user.dob ? String(user.dob).split('T')[0] : ''}"`,
+            `"${user.father_name || ''}"`,
+            `"${user.username || ''}"`,
+            `"${user.password || ''}"`, 
+            `"${user.phone_no || user.father_phone_no || user.phone || ''}"`
+        ]);
+
+        const csvContent = [headers.join(','), ...rows.map(e => e.join(','))].join('\n');
+        
+        const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        
+        link.setAttribute('href', url);
+        link.setAttribute('download', `${userType}_details_export.xlsx`);
+        link.style.visibility = 'hidden';
+        
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+    };
+
+    const getRoleColumnValue = (user: any, columnKey: string) => {
+        if (columnKey === 'phone') {
+            return user.phone_no || user.father_phone_no || user.phone || '-';
+        }
+        return user[columnKey] || '-';
+    };
+
+    const exportRoleDetailsToPDF = (users: any[], roleTab: RoleTab) => {
+        if (!users.length) {
+            alert('No data to export');
+            return;
+        }
+
+        const config = roleTabConfig[roleTab];
+        const doc = new jsPDF({ orientation: 'landscape' });
+        const title = `${config.detailsTitle} Export`;
+        const exportedAt = new Date().toLocaleString();
+
+        doc.setFontSize(14);
+        doc.text(title, 14, 14);
+        doc.setFontSize(9);
+        doc.text(`Exported: ${exportedAt}`, 14, 21);
+
+        autoTable(doc, {
+            startY: 28,
+            head: [config.columns.map((column) => column.label)],
+            body: users.map((user) =>
+                config.columns.map((column) => String(getRoleColumnValue(user, column.key)))
+            ),
+            styles: { fontSize: 8, cellPadding: 2 },
+            headStyles: { fillColor: [51, 65, 85] },
+        });
+
+        doc.save(`${roleTab.toLowerCase()}_details.pdf`);
+    };
+
+    const exportRoleDetailsToXLSX = (users: any[], roleTab: RoleTab) => {
+        if (!users.length) {
+            alert('No data to export');
+            return;
+        }
+
+        const config = roleTabConfig[roleTab];
+        const exportRows = users.map((user) =>
+            config.columns.reduce<Record<string, string>>((row, column) => {
+                row[column.label] = String(getRoleColumnValue(user, column.key));
+                return row;
+            }, {})
+        );
+
+        const workbook = XLSX.utils.book_new();
+        const worksheet = XLSX.utils.json_to_sheet(exportRows);
+        worksheet['!cols'] = config.columns.map((column) => ({
+            wch: Math.max(column.label.length + 4, 16),
+        }));
+        XLSX.utils.book_append_sheet(workbook, worksheet, `${roleTab}Details`);
+        XLSX.writeFile(workbook, `${roleTab.toLowerCase()}_details.xlsx`);
+    };
+
     return (
         <div style={styles.container}>
             {/* HEADER */}
-       {/* HEADER */}
-<div style={styles.header}>
-  
-  {/* LEFT: Logo + Name */}
-  <div style={{ display: "flex", alignItems: "center", gap: "15px", flex: 1 }}>
-    
-    <div 
-      style={styles.logoBox} 
-      onClick={() => clickHiddenInput('file-authorized_logo')}
-    >
-      {formData.authorized_logo ? (
-        <img 
-          src={
-            formData.authorized_logo instanceof File 
-              ? URL.createObjectURL(formData.authorized_logo) 
-              : formData.authorized_logo
-          } 
-          alt="School Logo" 
-          style={{ width: '100%', height: '100%', objectFit: 'contain' }} 
-        />
-      ) : (
-        <>School Logo</>
-      )}
-
-      <input
-        id="file-authorized_logo"
-        type="file"
-        accept="image/*"
-        onChange={(e) => handlePhotoChange(e, 'authorized_logo')}
-        style={{ display: 'none' }}
-      />
-    </div>
-
-    <div style={styles.schoolNameBox}>
-      {formData.school_name || 'School Name'}
-    </div>
-
-  </div>
-
-  {/* RIGHT: Logout */}
-  <button style={styles.logoutBtn} onClick={handleLogout}>
-    Logout
-  </button>
-
-</div>
-            {/* NAV BAR */}
-            {/* <div style={styles.navBar}>
-                {(['Details', 'Management', 'Staff', 'Student', 'Uploads'] as TabName[]).map((tab) => (
-                    <div
-                        key={tab}
-                        style={{ ...styles.navTab, ...(activeTab === tab ? styles.activeTab : {}) }}
-                        onClick={() => setActiveTab(tab)}
-                    >
-                        {tab}
+            <div style={styles.header}>
+                <div style={{ display: "flex", alignItems: "center", gap: "15px", flex: 1 }}>
+                    <div style={styles.logoUploadWrap}>
+                        <div style={{ ...styles.logoBox, ...(detailsErrors.authorized_logo ? styles.photoBoxError : {}) }} onClick={() => clickHiddenInput('file-authorized_logo')}>
+                            {formData.authorized_logo ? (
+                                <img
+                                    src={formData.authorized_logo instanceof File ? URL.createObjectURL(formData.authorized_logo) : formData.authorized_logo}
+                                    alt="School Logo"
+                                    style={{ width: '100%', height: '100%', objectFit: 'contain' }}
+                                />
+                            ) : (
+                                <>School Logo</>
+                            )}
+                            <input
+                                id="file-authorized_logo"
+                                type="file"
+                                accept="image/*"
+                                onChange={(e) => handlePhotoChange(e, 'authorized_logo')}
+                                style={{ display: 'none' }}
+                            />
+                        </div>
+                        {renderDetailsError('authorized_logo')}
                     </div>
-                ))}
-            </div> */}
-         <div style={styles.navBar}>
+                    <div style={styles.schoolNameBox}>
+                        {formData.school_name || 'School Name'}
+                    </div>
+                </div>
+                <button style={styles.logoutBtn} onClick={handleLogout}>
+                    Logout
+                </button>
+            </div>
+
+            {/* NAV BAR */}
+            <div style={styles.navBar}>
                 {(['Details', 'Management', 'Staff', 'Student'] as TabName[]).map((tab) => (
                     <div
                         key={tab}
@@ -1369,13 +1926,7 @@ useEffect(() => {
             </div>
 
             {/* MAIN CONTENT AREA */}
-            <div
-                style={
-                    activeTab === 'Uploads'
-                        ? styles.uploadsMainContent
-                        : styles.mainContent
-                }
-            >
+            <div style={activeTab === 'Uploads' ? styles.uploadsMainContent : styles.mainContent}>
                 {activeRoleTab && (
                     <div style={styles.managementContainer}>
                         <div style={styles.tabActionHeader}>
@@ -1390,27 +1941,6 @@ useEffect(() => {
                         </div>
 
                         <div style={styles.uploadCenterWrap}>
-                            <div style={styles.uploadFieldsRow}>
-                                <input
-                                    type="text"
-                                    placeholder="File Name"
-                                    value={excelFile ? excelFile.name : ''}
-                                    readOnly
-                                    style={{ ...styles.input, ...styles.uploadFieldInput }}
-                                />
-                                <input
-                                    type="text"
-                                    placeholder="File Type"
-                                    value={
-                                        excelFile
-                                            ? excelFile.name.split('.').pop()?.toUpperCase() ?? ''
-                                            : ''
-                                    }
-                                    readOnly
-                                    style={{ ...styles.input, ...styles.uploadFieldInput }}
-                                />
-                            </div>
-
                             <div style={styles.uploadButtonsRow}>
                                 <button
                                     type="button"
@@ -1422,116 +1952,159 @@ useEffect(() => {
                                     }}
                                     onClick={() => {
                                         setPreviewCategory(getUploadPreviewCategory(activeRoleTab));
+                                        setShowExcelSampleRows(false);
                                         setIsExcelPreviewOpen(true);
                                     }}
                                 >
-                                    Open Excel Upload
+                                     Upload Excel
                                 </button>
                             </div>
                         </div>
-
                     </div>
                 )}
 
                 {isExcelPreviewOpen && (() => {
                     const rows = uploadedData.length > 0 ? uploadedData : previewData;
                     const columns = rows.length > 0 ? Object.keys(rows[0]) : [];
+                    const shouldShowStaffSample =
+                        previewCategory === 'Staff' &&
+                        showExcelSampleRows &&
+                        !excelFile &&
+                        uploadedData.length === 0 &&
+                        previewData.length === 0;
+                    const staffSampleColumns = staffTemplateSampleRows.length > 0
+                        ? Object.keys(staffTemplateSampleRows[0])
+                        : [];
 
                     return (
                         <div style={styles.excelPreviewOverlay} onClick={() => setIsExcelPreviewOpen(false)}>
-                            <div
-                                style={styles.excelPreviewModal}
-                                onClick={(e) => e.stopPropagation()}
-                            >
+                            <div style={styles.excelPreviewModal} onClick={(e) => e.stopPropagation()}>
                                 <div style={styles.excelPreviewHeader}>
                                     <div>
                                         <h4 style={styles.excelPreviewTitle}>
                                             {previewCategory === 'Staff'
-                                                ? uploadedData.length > 0
-                                                    ? 'Uploaded Staff Details'
-                                                    : 'Staff Excel Preview'
+                                                ? uploadedData.length > 0 ? 'Uploaded Staff Details' : 'Staff Excel Preview'
                                                 : previewCategory === 'Management'
-                                                  ? uploadedData.length > 0
-                                                      ? 'Uploaded Management Details'
-                                                      : 'Management Excel Preview'
-                                                  : uploadedData.length > 0
-                                                    ? 'Uploaded Student Details'
-                                                    : 'Student Excel Preview'}
+                                                    ? uploadedData.length > 0 ? 'Uploaded Management Details' : 'Management Excel Preview'
+                                                    : uploadedData.length > 0 ? 'Uploaded Student Details' : 'Student Excel Preview'}
                                         </h4>
                                         <p style={styles.excelPreviewSubtitle}>
                                             {rows.length} record{rows.length === 1 ? '' : 's'} ready for review
                                         </p>
                                     </div>
                                     <div style={styles.excelPreviewActions}>
-                                        <label style={styles.excelPreviewPickBtn}>
-                                            Choose Excel File
-                                            <input
-                                                type="file"
-                                                accept=".xlsx,.xls"
-                                                hidden
-                                                onChange={(e) => {
-                                            const file = e.target.files?.[0] ?? null;
-                                            setExcelFile(file);
-                                            if (file) {
-                                                setUploadedData([]);
-                                                handlePreview(file, getUploadPreviewCategory(activeRoleTab));
-                                            } else {
-                                                setPreviewData([]);
-                                                setIsExcelPreviewOpen(false);
-                                            }
-                                        }}
-                                            />
-                                        </label>
-                                        <button
-                                            type="button"
-                                            onClick={() =>
-                                                downloadExcelTemplate(
-                                                    roleTabConfig[activeRoleTab].templateCategory
-                                                )
-                                            }
-                                            style={styles.excelPreviewTemplateBtn}
-                                        >
-                                            Download Template
-                                        </button>
-                                        <button
-                                            type="button"
-                                            onClick={() =>
-                                                handleFileUpload(
-                                                    roleTabConfig[activeRoleTab].templateCategory
-                                                )
-                                            }
-                                            disabled={!excelFile || uploading}
-                                            style={{
-                                                ...styles.excelPreviewSubmitBtn,
-                                                backgroundColor: excelFile ? '#404040' : '#999',
-                                            }}
-                                        >
-                                            {uploading ? 'Uploading...' : 'Submit Excel'}
-                                        </button>
-                                        {uploadedData.length > 0 && (
+                                        {uploadedData.length === 0 && (
+                                            <label style={styles.excelPreviewPickBtn}>
+                                                Choose Excel File
+                                                <input
+                                                    type="file"
+                                                    accept=".xlsx,.xls"
+                                                    hidden
+                                                    onChange={(e) => {
+                                                        const file = e.target.files?.[0] ?? null;
+                                                        setExcelFile(file);
+                                                        if (file) {
+                                                            setUploadedData([]);
+                                                            setShowExcelSampleRows(false);
+                                                            handlePreview(file, getUploadPreviewCategory(activeRoleTab));
+                                                        } else {
+                                                            setPreviewData([]);
+                                                            setExcelValidationErrors([]);
+                                                            setShowExcelSampleRows(false);
+                                                        }
+                                                    }}
+                                                />
+                                            </label>
+                                        )}
+                                        {!excelFile && uploadedData.length === 0 && (
                                             <button
                                                 type="button"
-                                                onClick={downloadExcel}
-                                                style={styles.uploadPreviewDownloadBtn}
+                                                onClick={() => {
+                                                    downloadExcelTemplate(roleTabConfig[activeRoleTab].templateCategory);
+                                                    setShowExcelSampleRows(activeRoleTab === 'Staff');
+                                                }}
+                                                style={styles.excelPreviewTemplateBtn}
                                             >
-                                                Uploaded Data
+                                                Download Template
                                             </button>
                                         )}
-                                        <button
-                                            type="button"
-                                            onClick={() => setIsExcelPreviewOpen(false)}
-                                            style={styles.excelPreviewCloseBtn}
-                                        >
-                                            Close
+                                        {excelFile && (
+                                            <button
+                                                type="button"
+                                                onClick={() => handleFileUpload(roleTabConfig[activeRoleTab].templateCategory)}
+                                                disabled={uploading || excelValidationErrors.length > 0}
+                                                style={{
+                                                    ...styles.excelPreviewSubmitBtn,
+                                                    backgroundColor: excelValidationErrors.length > 0 ? "#9ca3af" : "#404040",
+                                                    cursor: uploading || excelValidationErrors.length > 0 ? "not-allowed" : "pointer",
+                                                }}
+                                            >
+                                                {uploading ? "Uploading..." : "Submit Excel"}
+                                            </button>
+                                        )}
+                                        {uploadedData.length > 0 && (
+                                            <button type="button" onClick={downloadExcel} style={styles.uploadPreviewDownloadBtn}>
+                                                Download Data
+                                            </button>
+                                        )}
+                                        <button type="button" onClick={() => setIsExcelPreviewOpen(false)} style={styles.excelPreviewCloseBtn}>
+                                            <IoClose />
                                         </button>
                                     </div>
                                 </div>
 
                                 <div style={styles.excelPreviewSummary}>
-                                    <span>
-                                        Selected file: {excelFile ? excelFile.name : 'No file selected'}
-                                    </span>
+                                    <span>Selected file: {excelFile ? excelFile.name : 'No file selected'}</span>
                                 </div>
+
+                                {excelValidationErrors.length > 0 && (
+                                    <div style={styles.excelValidationBox}>
+                                        <strong>{excelValidationErrors.length} validation error{excelValidationErrors.length === 1 ? '' : 's'} found.</strong>
+                                        <ul style={styles.excelValidationList}>
+                                            {excelValidationErrors.slice(0, 10).map((error, index) => (
+                                                <li key={`${error.rowNumber}-${error.field}-${index}`}>
+                                                    {error.cellAddress ? `Cell ${error.cellAddress}` : `Row ${error.rowNumber}`}: {error.field} - {error.message}
+                                                </li>
+                                            ))}
+                                        </ul>
+                                        {excelValidationErrors.length > 10 && (
+                                            <span>Showing first 10 errors. Please fix the remaining rows in Excel.</span>
+                                        )}
+                                    </div>
+                                )}
+
+                                {shouldShowStaffSample && (
+                                    <div style={styles.excelSampleBox}>
+                                        <div style={styles.excelSampleHeader}>
+                                            <strong>Sample staff records</strong>
+                                            <span>Use designation for teacher subject. Use teaches_to_1 to teaches_to_12 for classes taught.</span>
+                                        </div>
+                                        <div style={styles.uploadPreviewTableWrap}>
+                                            <table style={styles.uploadPreviewTable}>
+                                                <thead>
+                                                    <tr>
+                                                        {staffSampleColumns.map((column) => (
+                                                            <th key={column} style={styles.uploadPreviewTh}>
+                                                                {formatExcelColumnLabel(column)}
+                                                            </th>
+                                                        ))}
+                                                    </tr>
+                                                </thead>
+                                                <tbody>
+                                                    {staffTemplateSampleRows.map((row, rowIndex) => (
+                                                        <tr key={rowIndex} style={{ backgroundColor: rowIndex % 2 === 0 ? '#ffffff' : '#f8fafc' }}>
+                                                            {staffSampleColumns.map((column) => (
+                                                                <td key={column} style={styles.uploadPreviewTd}>
+                                                                    {formatExcelCellValue(row[column as keyof typeof row])}
+                                                                </td>
+                                                            ))}
+                                                        </tr>
+                                                    ))}
+                                                </tbody>
+                                            </table>
+                                        </div>
+                                    </div>
+                                )}
 
                                 {rows.length > 0 ? (
                                     <div style={styles.uploadPreviewTableWrap}>
@@ -1547,13 +2120,7 @@ useEffect(() => {
                                             </thead>
                                             <tbody>
                                                 {rows.map((row, rowIndex) => (
-                                                    <tr
-                                                        key={rowIndex}
-                                                        style={{
-                                                            backgroundColor:
-                                                                rowIndex % 2 === 0 ? '#ffffff' : '#f8fafc',
-                                                        }}
-                                                    >
+                                                    <tr key={rowIndex} style={{ backgroundColor: rowIndex % 2 === 0 ? '#ffffff' : '#f8fafc' }}>
                                                         {columns.map((column) => (
                                                             <td key={column} style={styles.uploadPreviewTd}>
                                                                 {formatExcelCellValue(row[column])}
@@ -1564,11 +2131,11 @@ useEffect(() => {
                                             </tbody>
                                         </table>
                                     </div>
-                                ) : (
+                                ) : !shouldShowStaffSample ? (
                                     <div style={styles.excelPreviewEmptyState}>
                                         Choose an Excel file to preview the rows here.
                                     </div>
-                                )}
+                                ) : null}
                             </div>
                         </div>
                     );
@@ -1577,872 +2144,611 @@ useEffect(() => {
                 {/* --- DETAILS TAB VIEW --- */}
                 {activeTab === 'Details' && (
                     <>
-                        {/* LEFT COLUMN */}
-           <div>
-  {/* School Name + Curriculum */}
-  <div style={styles.row}>
-    <div style={{ ...styles.inputGroup, flex: 1, marginRight: '15px' }}>
-      <label style={styles.label}>School Name</label>
-      <input
-        name="school_name"
-        value={formData.school_name}
-        onChange={handleChange}
-        placeholder="Enter School Name"
-        style={styles.input}
-      />
-    </div>
+                        <div>
+                            <div style={styles.row}>
+                                <div style={{ ...styles.inputGroup, flex: 1, marginRight: '15px' }}>
+                                    <label style={styles.label}>School Name</label>
+                                    <input
+                                        name="school_name"
+                                        value={formData.school_name}
+                                        onChange={handleChange}
+                                        placeholder="Enter School Name"
+                                        style={detailsInputStyle('school_name', { backgroundColor: '#f1f5f9', cursor: 'not-allowed' })}
+                                        readOnly
+                                    />
+                                    {renderDetailsError('school_name')}
+                                </div>
 
-    <div style={{ ...styles.inputGroup, flex: 1 }}>
-      <label style={styles.label}>Curriculum</label>
-      <select
-        name="curriculum"
-        value={formData.curriculum}
-        onChange={handleChange}
-        style={styles.input}
-      >
-        <option value="" disabled>Select Curriculum</option>
-        <option value="CBSE">CBSE</option>
-        <option value="ICSE">ICSE</option>
-      </select>
-    </div>
-  </div>
-
-  {/* Address */}
-  <div style={{ ...styles.inputGroup, marginBottom: '15px' }}>
-    <label style={styles.label}>Address</label>
-    <input
-      name="address"
-      value={formData.address}
-      onChange={handleChange}
-      placeholder="Enter Address"
-      style={styles.input}
-    />
-  </div>
-  {/* AUTHORIZED PERSON 1 */}
-<div style={styles.row}>
-  <div style={styles.inputGroup}>
-    <label style={styles.label}>Authorized Person</label>
-    <input
-      name="institute_authorized_person"
-      value={formData.institute_authorized_person}
-      onChange={handleChange}
-      placeholder="Enter Name"
-      style={styles.input}
-    />
-  </div>
-
-  <div style={styles.inputGroup}>
-    <label style={styles.label}>Email</label>
-    <input
-      name="email"
-      value={formData.email}
-      onChange={handleChange}
-      placeholder="Enter Email"
-      style={styles.input}
-    />
-  </div>
-
-  <div style={styles.inputGroup}>
-    <label style={styles.label}>Email App Key</label>
-    <input
-      name="email_app_key"
-      value={formData.email_app_key}
-      onChange={handleChange}
-      placeholder="Enter App Key"
-      style={styles.input}
-    />
-  </div>
-</div>
-
-  {/* City + State */}
-  <div style={styles.row}>
-    <div style={{ ...styles.inputGroup, flex: 1, marginRight: '15px' }}>
-      <label style={styles.label}>City</label>
-      <input
-        name="city"
-        value={formData.city}
-        onChange={handleChange}
-        placeholder="Enter City"
-        style={styles.input}
-      />
-    </div>
-
-    <div style={{ ...styles.inputGroup, flex: 1 }}>
-      <label style={styles.label}>State</label>
-      <select
-        name="state"
-        value={formData.state}
-        onChange={handleChange}
-        style={styles.input}
-      >
-        <option value="" disabled>Select State</option>
-        <option value="Telangana">Telangana</option>
-        <option value="Andhra Pradesh">Andhra Pradesh</option>
-      </select>
-    </div>
-  </div>
-<div style={{ display: 'flex', gap: '15px', alignItems: 'center', marginBottom: '15px' }}>
-  {/* Pincode */}
-  <div style={{ ...styles.inputGroup, flex: 1 }}>
-    <label style={styles.label}>Pincode</label>
-    <input
-      name="pincode"
-      value={formData.pincode}
-      onChange={handleChange}
-      placeholder="Enter Pincode"
-      style={styles.input}
-    />
-  </div>
-
-  {/* Next Button */}
-  <div style={{ flex: 1, display: 'flex', justifyContent: 'flex-end' }}>
-    <button style={{ ...styles.nextBtn, width: 'auto', padding: '10px 20px' }}>
-      Next &gt;
-    </button>
-  </div>
-</div>
-
-</div>
-                        {/* MIDDLE COLUMN */}
-                      <div style={{ borderLeft: '4px solid #ccc', paddingLeft: '30px' }}>
-<div style={{ ...styles.row }}>
-  <div style={{ ...styles.inputGroup, flex: 1 }}>
-        <label style={styles.label}>School code.</label>
-
-    <input
-      name="school_code"
-      value={formData.school_name}
-      placeholder="School Code"
-      style={{ ...styles.input, width: '100%' }}
-    />
-  </div>
-
-  <div style={{ ...styles.inputGroup, flex: 1, marginLeft: '15px' }}>
-    <label style={styles.label}>School Reg. No.</label>
-<input
-  name="registration_no"               
-  value={formData.registration_no}
-  onChange={handleChange}             
-  placeholder="Enter Registration Number"
-  style={{ ...styles.input, width: '100%' }}
-/>
-
-  </div>
-</div>
-
-  <div style={styles.row}>
-    <input
-      name="school_strength"
-      value={formData.school_strength}
-      onChange={handleChange}
-      placeholder="No. of Students"
-      style={styles.input}
-    />
-
-    <input
-      name="staff_strength"
-      value={formData.staff_strength}
-      onChange={handleChange}
-      placeholder="No. of Staff"
-      style={styles.input}
-    />
-  </div>
-
-  <div style={styles.row}>
-    <div style={styles.inputGroup}>
-      <label style={styles.label}>Departments *</label>
-      <select style={styles.input}>
-        <option value="" disabled>Select Department</option>
-        <option>Store / Library</option>
-      </select>
-    </div>
-    <div style={styles.inputGroup}>
-      <label style={styles.label}>Activities *</label>
-      <select style={styles.input}>
-        <option value="" disabled>Select Activity</option>
-        <option>Skating / Karate</option>
-      </select>
-    </div>
-  </div>
-
-<div style={{ display: 'flex', gap: '15px', alignItems: 'center', marginBottom: '15px' }}>
-  <input
-    name="tagline"
-    value={formData.tagline}
-    onChange={handleChange}
-    placeholder="Enter branches"
-    style={{ ...styles.input, flex: 1 }} // flex:1 makes input take remaining width
-  />
-
-    <button style={{ ...styles.nextBtn, width: 'auto', padding: '10px 20px' }}>
-      Next &gt;
-    </button>
-</div>
-
-</div>
-
-                        {/* RIGHT COLUMN (PHOTOS) */}
-                     <div
-                       style={{
-                         display: 'flex',
-                         alignItems: 'flex-start',
-                         gap: '40px',
-                         borderLeft: '4px solid #ccc',
-                         paddingLeft: '30px',
-                       }}
-                     >
-                       {/* Left: Photo Uploads in 2x2 grid */}
-                       <div
-                         style={{
-                           display: 'grid',
-                           gridTemplateColumns: 'repeat(2, 180px)', // 2 images per row
-                           gap: '20px 20px', // row-gap and column-gap
-                         }}
-                       >
-                         {photoFields.map((photo) => {
-                           const photoValue = formData[photo.key];
-
-                           return (
-                           <div key={photo.key} style={{ textAlign: 'left' }}>
-                             <label style={styles.label1}>{photo.label}</label>
-                     
-                             <div
-                               style={styles.photoBox}
-                               onClick={() => clickHiddenInput(`file-${photo.key}`)}
-                             >
-                               {photoValue ? (
-                                 <img
-                                   src={
-                                     photoValue instanceof File
-                                       ? URL.createObjectURL(photoValue)
-                                       : photoValue
-                                   }
-                                   alt={photo.label}
-                                   style={styles.previewImage}
-                                 />
-                               ) : (
-                                 <img src={cameraIcon} alt="camera" style={styles.iconStyle} />
-                               )}
-                             </div>
-                     
-                             <input
-                               id={`file-${photo.key}`}
-                               type="file"
-                               accept="image/*"
-                               onChange={(e) => handlePhotoChange(e, photo.key)}
-                               style={{ display: 'none' }}
-                             />
-                           </div>
-                           );
-                         })}
-                       </div>
-                     
-                     {/* Right: Update/Application Icon */}
-                     <div style={{ display: 'flex', alignItems: 'center' }}>
-                       <div
-                         style={{
-                           ...styles.photoBox,
-                           width: '100px',   // set the width of the container
-                           height: '100px',  // optional: make it square
-                           display: 'flex',
-                           alignItems: 'center',
-                           justifyContent: 'center',
-                           marginTop:'80px'
-                         }}
-                       >
-                         <img
-                           src={applicationIcon}
-                           alt="Update"
-                           onClick={handleUpdate}
-                           style={{
-                             ...styles.updateIconStyle,
-                             width: '80%',  // img fills the container width
-                             height: '80%', // img fills container height
-                             objectFit: 'contain', // maintain aspect ratio
-                             filter: 'invert(35%) sepia(100%) saturate(5000%) hue-rotate(180deg) brightness(95%) contrast(90%)',
-                             transition: 'transform 0.2s',
-                             cursor: 'pointer',
-                           }}
-                           onMouseOver={(e) => (e.currentTarget.style.transform = 'scale(1.1)')}
-                           onMouseOut={(e) => (e.currentTarget.style.transform = 'scale(1.0)')}
-                         />
-                       </div>
-                     </div>
-                     
-                     </div>
-                    </>
-                )}
-
-                {/* --- UPLOADS TAB VIEW (AS PER IMAGE) --- */}
-                {activeTab === 'Uploads' && (
-                    <>
-                        {/* 1. Time Table */}
-                        <div style={styles.uploadSection}>
-                            <h3 style={styles.sectionHeading}>Time Table</h3>
-                            <div style={styles.inputGrid}>
-                                <div style={styles.inputGroup}><label style={styles.label}>Class</label><select style={styles.input}><option>Select</option></select></div>
-                                <div style={styles.inputGroup}><label style={styles.label}>Section</label><select style={styles.input}><option>Select</option></select></div>
-                                <div style={styles.inputGroup}><label style={styles.label}>Teacher</label><select style={styles.input}><option>Select</option></select></div>
-                                <div style={styles.inputGroup}><label style={styles.label}>Day</label><select style={styles.input}><option>Select</option></select></div>
+                                <div style={{ ...styles.inputGroup, flex: 1 }}>
+                                    <label style={styles.label}>Curriculum</label>
+                                    <select
+                                        name="curriculum"
+                                        value={formData.curriculum}
+                                        onChange={handleChange}
+                                        style={detailsInputStyle('curriculum')}
+                                    >
+                                        <option value="" disabled>Select Curriculum</option>
+                                        <option value="CBSE">CBSE</option>
+                                        <option value="ICSE">ICSE</option>
+                                    </select>
+                                    {renderDetailsError('curriculum')}
+                                </div>
                             </div>
-                            <div style={styles.uploadButtonGroup}>
-                                <button style={styles.actionBtn}>Upload Time Table</button>
-                                <span style={styles.orLabel}>(or)</span>
-                                <button style={styles.actionBtn}>Generate New</button>
+
+                            <div style={styles.row}>
+                                <div style={{ ...styles.inputGroup, flex: 2, marginRight: '15px' }}>
+                                    <label style={styles.label}>Address</label>
+                                    <input
+                                        name="address"
+                                        value={formData.address}
+                                        onChange={handleChange}
+                                        placeholder="Enter Address"
+                                        style={detailsInputStyle('address', {
+                                            backgroundColor: '#f1f5f9',
+                                            cursor: 'not-allowed'
+                                        })}
+                                        readOnly
+                                    />
+                                    {renderDetailsError('address')}
+                                </div>
+<div style={{ ...styles.inputGroup, flex: 1 }}>
+    <label style={styles.label}>Institute Contact Number</label>
+    <input
+        type="tel"
+        name="institute_contact_number"
+        value={formData.institute_contact_number}
+        onChange={handleChange}
+        onKeyDown={(e) => {
+            // Block 0,1,2,3,4,5 as the first digit
+            if (formData.institute_contact_number.length === 0) {
+                const forbiddenKeys = ['0', '1', '2', '3', '4', '5'];
+                if (forbiddenKeys.includes(e.key)) {
+                    e.preventDefault();
+                }
+            }
+        }}
+        placeholder="Enter Contact Number"
+        style={detailsInputStyle('institute_contact_number')}
+        maxLength={10}
+    />
+    {renderDetailsError('institute_contact_number')}
+</div>
+                            </div>
+
+                            <div style={styles.row}>
+                                <div style={styles.inputGroup}>
+                                    <label style={styles.label}>Authorized Person</label>
+                                    <input
+                                        name="institute_authorized_person"
+                                        value={formData.institute_authorized_person}
+                                        onChange={handleChange}
+                                        placeholder="Enter Name"
+                                        style={detailsInputStyle('institute_authorized_person')}
+                                    />
+                                    {renderDetailsError('institute_authorized_person')}
+                                </div>
+                                <div style={styles.inputGroup}>
+                                    <label style={styles.label}>Email</label>
+                                    <input
+                                        type="email"
+                                        name="email"
+                                        value={formData.email}
+                                        onChange={handleChange}
+                                        placeholder="name@gmail.com"
+                                        style={detailsInputStyle('email')}
+                                    />
+                                    {renderDetailsError('email')}
+                                </div>
+                                <div style={styles.inputGroup}>
+                                    <label style={styles.label}>Email App Key</label>
+                                    <input
+                                        name="email_app_key"
+                                        value={formData.email_app_key}
+                                        onChange={handleChange}
+                                        placeholder="Enter App Key"
+                                        style={detailsInputStyle('email_app_key')}
+                                    />
+                                    {renderDetailsError('email_app_key')}
+                                </div>
+
+                                <div style={styles.inputGroup}>
+                                    <label style={styles.label}>Pincode</label>
+                                    <input
+                                        name="pincode"
+                                        value={formData.pincode}
+                                        onChange={handleChange}
+                                        placeholder="Enter Pincode"
+                                        style={detailsInputStyle('pincode')}
+                                        inputMode="numeric"
+                                        maxLength={6}
+                                    />
+                                    {renderDetailsError('pincode')}
+                                </div>
                             </div>
                         </div>
 
-                        {/* 2. School Calendar */}
-                        <div style={{ ...styles.uploadSection, borderLeft: '2px solid #ddd', borderRight: '2px solid #ddd' }}>
-                            <h3 style={styles.sectionHeading}>School Calendar</h3>
-                            <div style={styles.inputGrid}>
-                                <div style={styles.inputGroup}><label style={styles.label}>First Day *</label><input type="date" style={styles.input} /></div>
-                                <div style={styles.inputGroup}><label style={styles.label}>Last Day *</label><input type="date" style={styles.input} /></div>
-                                <div style={styles.inputGroup}><label style={styles.label}>Annual Day</label><input type="date" style={styles.input} /></div>
-                                <div style={styles.inputGroup}><label style={styles.label}>Freshers Day</label><input type="date" style={styles.input} /></div>
+                        <div style={{ borderLeft: '4px solid #ccc', paddingLeft: '30px' }}>
+                            <div style={{ ...styles.row }}>
+                                <div style={{ ...styles.inputGroup, flex: 1 }}>
+                                    <label style={styles.label}>School code.</label>
+                                    <input
+                                        name="school_code"
+                                        value={formData.school_code}
+                                        placeholder="School Code"
+                                        style={detailsInputStyle('school_code', { width: '100%' })}
+                                        readOnly
+                                    />
+                                    {renderDetailsError('school_code')}
+                                </div>
+                                <div style={{ ...styles.inputGroup, flex: 1, marginLeft: '15px' }}>
+                                    <label style={styles.label}>School Reg. No.</label>
+                                    <input
+                                        name="registration_no"
+                                        value={formData.registration_no}
+                                        onChange={handleChange}
+                                        placeholder="Enter Registration Number"
+                                        style={detailsInputStyle('registration_no', { width: '100%' })}
+                                    />
+                                    {renderDetailsError('registration_no')}
+                                </div>
                             </div>
-                            <div style={styles.uploadButtonGroup}>
-                                <button style={styles.actionBtn}>Upload Calendar</button>
-                                <span style={styles.orLabel}>(or)</span>
-                                <button style={styles.actionBtn}>Generate New</button>
+
+                            <div style={styles.row}>
+                                <div style={styles.inputGroup}>
+                                    <label style={styles.label}>Number of Students</label>
+                                    <input
+                                        name="school_strength"
+                                        value={formData.school_strength}
+                                        onChange={handleChange}
+                                        placeholder="No. of Students"
+                                        style={detailsInputStyle('school_strength')}
+                                        inputMode="numeric"
+                                    />
+                                    {renderDetailsError('school_strength')}
+                                </div>
+                                <div style={styles.inputGroup}>
+                                    <label style={styles.label}>Number of Staff</label>
+                                    <input
+                                        name="staff_strength"
+                                        value={formData.staff_strength}
+                                        onChange={handleChange}
+                                        placeholder="No. of Staff"
+                                        style={detailsInputStyle('staff_strength')}
+                                        inputMode="numeric"
+                                    />
+                                    {renderDetailsError('staff_strength')}
+                                </div>
+                            </div>
+                            <div style={styles.row}>
+                                <div style={{ ...styles.inputGroup, flex: 1, marginRight: '15px' }}>
+                                    <label style={styles.label}>City</label>
+                                    <input
+                                        name="city"
+                                        value={formData.city}
+                                        onChange={handleChange}
+                                        placeholder="Enter City"
+                                        style={detailsInputStyle('city')}
+                                    />
+                                    {renderDetailsError('city')}
+                                </div>
+                                <div style={{ ...styles.inputGroup, flex: 1 }}>
+                                    <label style={styles.label}>State</label>
+                                    <select
+                                        name="state"
+                                        value={formData.state}
+                                        onChange={handleChange}
+                                        style={detailsInputStyle('state')}
+                                    >
+                                        <option value="" disabled>Select State</option>
+                                        <option value="Andhra Pradesh">Andhra Pradesh</option>
+                                        <option value="Arunachal Pradesh">Arunachal Pradesh</option>
+                                        <option value="Assam">Assam</option>
+                                        <option value="Bihar">Bihar</option>
+                                        <option value="Chhattisgarh">Chhattisgarh</option>
+                                        <option value="Goa">Goa</option>
+                                        <option value="Gujarat">Gujarat</option>
+                                        <option value="Haryana">Haryana</option>
+                                        <option value="Himachal Pradesh">Himachal Pradesh</option>
+                                        <option value="Jharkhand">Jharkhand</option>
+                                        <option value="Karnataka">Karnataka</option>
+                                        <option value="Kerala">Kerala</option>
+                                        <option value="Madhya Pradesh">Madhya Pradesh</option>
+                                        <option value="Maharashtra">Maharashtra</option>
+                                        <option value="Manipur">Manipur</option>
+                                        <option value="Meghalaya">Meghalaya</option>
+                                        <option value="Mizoram">Mizoram</option>
+                                        <option value="Nagaland">Nagaland</option>
+                                        <option value="Odisha">Odisha</option>
+                                        <option value="Punjab">Punjab</option>
+                                        <option value="Rajasthan">Rajasthan</option>
+                                        <option value="Sikkim">Sikkim</option>
+                                        <option value="Tamil Nadu">Tamil Nadu</option>
+                                        <option value="Telangana">Telangana</option>
+                                        <option value="Tripura">Tripura</option>
+                                        <option value="Uttar Pradesh">Uttar Pradesh</option>
+                                        <option value="Uttarakhand">Uttarakhand</option>
+                                        <option value="West Bengal">West Bengal</option>
+                                        <option value="Andaman and Nicobar Islands">Andaman and Nicobar Islands</option>
+                                        <option value="Chandigarh">Chandigarh</option>
+                                        <option value="Dadra and Nagar Haveli and Daman and Diu">Dadra and Nagar Haveli and Daman and Diu</option>
+                                        <option value="Delhi">Delhi</option>
+                                        <option value="Jammu and Kashmir">Jammu and Kashmir</option>
+                                        <option value="Ladakh">Ladakh</option>
+                                        <option value="Lakshadweep">Lakshadweep</option>
+                                        <option value="Puducherry">Puducherry</option>
+                                    </select>
+                                    {renderDetailsError('state')}
+                                </div>
                             </div>
                         </div>
 
-                        {/* 3. School Radius Setup */}
-                    <div style={styles.uploadSection}>
-  <h3 style={styles.sectionHeading}>School Radius Setup</h3>
-  <div style={styles.inputGrid}>
-    {/* Branch / School Name */}
-    <div style={styles.inputGroup}>
-      <label style={styles.label}>Branch *</label>
-      <input
-        name="school_name"
-        value={formData.school_name}
-        onChange={handleChange}
-        placeholder="Enter School Name"
-        style={styles.input}
-      />
-    </div>
+                        <div style={{ borderLeft: '4px solid #ccc', paddingLeft: '30px' }}>
+                            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 180px)', gap: '20px 20px', justifyContent: 'center' }}>
+                                {photoFields.map((photo) => {
+                                    const photoValue = formData[photo.key];
+                                    return (
+                                        <div key={photo.key} style={{ textAlign: 'left' }}>
+                                            <label style={styles.label1}>{photo.label}</label>
+                                            <div style={{ ...styles.photoBox, ...(detailsErrors[photo.key] ? styles.photoBoxError : {}) }} onClick={() => clickHiddenInput(`file-${photo.key}`)}>
+                                                {photoValue ? (
+                                                    <img
+                                                        src={photoValue instanceof File ? URL.createObjectURL(photoValue) : photoValue}
+                                                        alt={photo.label}
+                                                        style={styles.previewImage}
+                                                    />
+                                                ) : (
+                                                    <img src={cameraIcon} alt="camera" style={styles.iconStyle} />
+                                                )}
+                                            </div>
+                                            <input
+                                                id={`file-${photo.key}`}
+                                                type="file"
+                                                accept="image/*"
+                                                onChange={(e) => handlePhotoChange(e, photo.key)}
+                                                style={{ display: 'none' }}
+                                            />
+                                            {renderDetailsError(photo.key)}
+                                        </div>
+                                    );
+                                })}
+                            </div>
 
-    {/* Address */}
-    <div style={styles.inputGroup}>
-      <label style={styles.label}>Address</label>
-      <input
-        name="address"
-        value={formData.address}
-        onChange={handleChange}
-        placeholder="Enter Address"
-        style={styles.input}
-      />
-    </div>
-
-    {/* Latitude */}
-    <div style={styles.inputGroup}>
-      <label style={styles.label}>Latitude *</label>
-      <input
-        name="latitude"
-        placeholder="Lat"
-        value={formData.latitude}
-        onChange={handleChange}
-        style={styles.input}
-      />
-    </div>
-
-    {/* Longitude */}
-    <div style={styles.inputGroup}>
-      <label style={styles.label}>Longitude *</label>
-      <input
-        name="longitude"
-        placeholder="Long"
-        value={formData.longitude}
-        onChange={handleChange}
-        style={styles.input}
-      />
-    </div>
-
-    {/* Radius */}
-{/* Radius */}
-<div style={styles.inputGroup}>
-  <label style={styles.label}>Radius (meters)</label>
-  <input
-    name="radius"
-    placeholder="Enter Radius"
-    value={formData.radius}
-    onChange={handleChange}
-    style={styles.input}
-  />
-</div>
-
-{/* Use Radius as text input */}
-<div style={styles.inputGroup}>
-  <label style={styles.label}>Use Radius</label>
-  <input
-    type="text"
-    name="use_radius"
-    placeholder="Enter Use Radius"
-    value={formData.use_radius}
-    onChange={handleChange}
-    style={styles.input}
-  />
-</div>
-
-  </div>
-
-  <button
-    style={{ ...styles.actionBtn, width: '100%', marginTop: '30px' }}
-    onClick={handleUpdate}
-  >
-    Submit
-  </button>
-</div>
-
+                            <div style={{ display: 'flex', justifyContent: 'center', marginTop: '30px' }}>
+                                <div style={{ ...styles.photoBox, width: '100px', height: '100px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                                    <img
+                                        src={applicationIcon}
+                                        alt="Update"
+                                        onClick={handleUpdate}
+                                        style={{
+                                            ...styles.updateIconStyle,
+                                            width: '80%', height: '80%', objectFit: 'contain',
+                                            filter: 'invert(35%) sepia(100%) saturate(5000%) hue-rotate(180deg) brightness(95%) contrast(90%)',
+                                            transition: 'transform 0.2s', cursor: 'pointer'
+                                        }}
+                                        onMouseOver={(e) => (e.currentTarget.style.transform = 'scale(1.1)')}
+                                        onMouseOut={(e) => (e.currentTarget.style.transform = 'scale(1.0)')}
+                                    />
+                                </div>
+                            </div>
+                        </div>
                     </>
                 )}
             </div>
-{isAddUserOpen && userModalMode === 'edit' && (
-  <StudentEditingPopup
-    isOpen={isAddUserOpen}
-    editingId={editingUserId}
-    userType={addUserForm.user_type}
-    formData={addUserForm}
-    onFieldChange={(field, value) => {
-      setAddUserForm((prev) => ({ ...prev, [field]: value }));
-    }}
-    onClassChange={(className) => {
-      setAddUserForm((prev) => ({ ...prev, class_name: className, section: '' }));
-    }}
-    classOptions={studentClassOptions}
-    getSectionsForClass={getStudentSectionsForClass}
-    photoPreview={studentPhotoPreview}
-    photoFile={studentPhotoFile}
-    onPhotoChange={handleStudentPhotoChange}
-    onRemovePhoto={() => {
-      setStudentPhotoFile(null);
-      setStudentPhotoPreview(normalizePhotoUrl(addUserForm.photo));
-    }}
-    onCancel={closeAddUserModal}
-    onSubmit={handleAddUserSubmit}
-    isLoading={isAddUserSubmitting}
-  />
-)}
-{isAddUserOpen && userModalMode === 'add' && (
-  <div style={styles.modalOverlay}>
-    <div style={styles.modalCard}>
-      <div style={styles.modalHeader}>
-        <div>
-          <h3 style={styles.modalTitle}>{`Add ${addUserTypeLabel}`}</h3>
-          <p style={styles.modalSubtitle}>{`Create a new ${addUserForm.user_type} account for this school.`}</p>
-        </div>
-        <button type="button" onClick={closeAddUserModal} style={styles.modalCloseBtn}>
-          ×
-        </button>
-      </div>
 
-      {createdCredentials && (
-        <div style={styles.credentialsCard}>
-          <div style={styles.credentialsHeader}>
-            <div style={styles.credentialsHeaderLeft}>
-              <div style={styles.credentialsIconWrap}>✓</div>
-              <div>
-                <div style={styles.credentialsTitle}>User created successfully</div>
-                <div style={styles.credentialsSubtitle}>
-                  Copy these login details before closing the panel.
-                </div>
-              </div>
-            </div>
-            <span style={styles.credentialsBadge}>{createdCredentials.user_type}</span>
-          </div>
-          <div style={styles.credentialsGrid}>
-            <div style={styles.credentialsBlock}>
-              <div style={styles.credentialsLabel}>Name</div>
-              <div style={styles.credentialsValue}>{createdCredentials.name || '-'}</div>
-            </div>
-            <div style={styles.credentialsBlock}>
-              <div style={styles.credentialsLabel}>Username</div>
-              <div style={styles.credentialsValueRow}>
-                <span style={styles.credentialsMono}>{createdCredentials.username || '-'}</span>
-                <button
-                  type="button"
-                  style={styles.copyMiniBtn}
-                  onClick={() => copyCredentials(createdCredentials.username || '')}
-                  disabled={!createdCredentials.username}
-                >
-                  Copy
-                </button>
-              </div>
-            </div>
-            <div style={styles.credentialsBlock}>
-              <div style={styles.credentialsLabel}>Password</div>
-              <div style={styles.credentialsValueRow}>
-                <span style={styles.credentialsMono}>{createdCredentials.password || '-'}</span>
-                <button
-                  type="button"
-                  style={styles.copyMiniBtn}
-                  onClick={() => copyCredentials(createdCredentials.password || '')}
-                  disabled={!createdCredentials.password}
-                >
-                  Copy
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-
-      <form onSubmit={handleAddUserSubmit} style={styles.modalForm}>
-        <div style={styles.modalSection}>
-          <h4 style={styles.modalSectionTitle}>Personal Information</h4>
-          <div style={{ ...styles.modalGrid, gridTemplateColumns: 'repeat(auto-fit, minmax(210px, 1fr))' }}>
-            <div style={styles.inputGroup}>
-              <label style={styles.label}>Full Name *</label>
-              <input
-                name="name"
-                value={addUserForm.name}
-                onChange={handleAddUserChange}
-                style={{ ...styles.input, textTransform: 'uppercase' }}
-                placeholder="Enter full name"
-              />
-            </div>
-
-            <div style={styles.inputGroup}>
-              <label style={styles.label}>Username</label>
-              <input
-                name="username"
-                value={addUserForm.username}
-                onChange={handleAddUserChange}
-                style={styles.input}
-                placeholder="Optional"
-              />
-            </div>
-
-            <div style={styles.inputGroup}>
-              <label style={styles.label}>Password</label>
-              <input
-                name="password"
-                value={addUserForm.password}
-                onChange={handleAddUserChange}
-                style={styles.input}
-                placeholder="Optional"
-              />
-            </div>
-
-            <div style={styles.inputGroup}>
-              <label style={styles.label}>Gender</label>
-              <select
-                name="gender"
-                value={addUserForm.gender}
-                onChange={handleAddUserChange}
-                style={styles.input}
-              >
-                <option value="">Select Gender</option>
-                <option value="Male">Male</option>
-                <option value="Female">Female</option>
-                <option value="Other">Other</option>
-              </select>
-            </div>
-
-            <div style={styles.inputGroup}>
-              <label style={styles.label}>Date of Birth</label>
-              <input
-                type="date"
-                name="dob"
-                value={addUserForm.dob}
-                onChange={handleAddUserChange}
-                style={styles.input}
-              />
-            </div>
-          </div>
-        </div>
-
-        <div style={styles.modalSection}>
-          <h4 style={styles.modalSectionTitle}>Contact Information</h4>
-          <div style={{ ...styles.modalGrid, gridTemplateColumns: 'repeat(auto-fit, minmax(210px, 1fr))' }}>
-            <div style={styles.inputGroup}>
-              <label style={styles.label}>
-                {isAddStudent ? "Father's Phone Number" : 'Phone Number'}
-              </label>
-              <input
-                name={isAddStudent ? 'father_phone_no' : 'phone_no'}
-                value={isAddStudent ? addUserForm.father_phone_no : addUserForm.phone_no}
-                onChange={handleAddUserChange}
-                style={styles.input}
-                placeholder="Enter phone number"
-              />
-            </div>
-
-            <div style={styles.inputGroup}>
-              <label style={styles.label}>Aadhar Number</label>
-              <input
-                name="aadhar_no"
-                value={addUserForm.aadhar_no}
-                onChange={handleAddUserChange}
-                style={styles.input}
-                placeholder="Enter Aadhar number"
-              />
-            </div>
-
-            <div style={styles.inputGroup}>
-              <label style={styles.label}>Father Name</label>
-              <input
-                name="father_name"
-                value={addUserForm.father_name}
-                onChange={handleAddUserChange}
-                style={styles.input}
-                placeholder="Enter father name"
-              />
-            </div>
-
-            <div style={styles.inputGroup}>
-              <label style={styles.label}>School Name</label>
-              <input
-                name="school_name"
-                value={addUserForm.school_name}
-                onChange={handleAddUserChange}
-                style={styles.input}
-                placeholder="School name"
-              />
-            </div>
-
-            <div style={styles.inputGroup}>
-              <label style={styles.label}>Address</label>
-              <textarea
-                name="address"
-                value={addUserForm.address}
-                onChange={handleAddUserChange}
-                style={{ ...styles.input, minHeight: '84px', resize: 'vertical' }}
-                placeholder="Enter address"
-              />
-            </div>
-          </div>
-        </div>
-
-        {isAddStudent && (
-          <>
-            <div style={styles.modalSection}>
-              <h4 style={styles.modalSectionTitle}>Student Details</h4>
-              <div style={{ ...styles.modalGrid, gridTemplateColumns: 'repeat(auto-fit, minmax(210px, 1fr))' }}>
-                <div style={styles.inputGroup}>
-                  <label style={styles.label}>Class*</label>
-                  <select
-                    name="class_name"
-                    value={addUserForm.class_name}
-                    onChange={(e) => {
-                      setAddUserForm((prev) => ({
-                        ...prev,
-                        class_name: e.target.value,
-                        section: '',
-                      }));
+            {isAddUserOpen && userModalMode === 'edit' && (
+                <StudentEditingPopup
+                    isOpen={isAddUserOpen}
+                    editingId={editingUserId}
+                    userType={addUserForm.user_type}
+                    formData={addUserForm}
+                    onFieldChange={(field, value) => {
+                        setAddUserForm((prev) => ({ ...prev, [field]: value }));
                     }}
-                    style={styles.input}
-                  >
-                    <option value="">-- Select Class --</option>
-                    {studentClassOptions.map((className) => (
-                      <option key={className} value={className}>
-                        {className}
-                      </option>
-                    ))}
-                  </select>
+                    onClassChange={(className) => {
+                        setAddUserForm((prev) => ({ ...prev, class_name: className, section: '' }));
+                    }}
+                    classOptions={studentClassOptions}
+                    getSectionsForClass={getStudentSectionsForClass}
+                    photoPreview={studentPhotoPreview}
+                    photoFile={studentPhotoFile}
+                    onPhotoChange={handleStudentPhotoChange}
+                    onRemovePhoto={() => {
+                        setStudentPhotoFile(null);
+                        setStudentPhotoPreview(normalizePhotoUrl(addUserForm.photo));
+                    }}
+                    onCancel={closeAddUserModal}
+                    onSubmit={handleAddUserSubmit}
+                    isLoading={isAddUserSubmitting}
+                />
+            )}
+
+            {isAddUserOpen && userModalMode === 'add' && (
+                <div style={styles.modalOverlay}>
+                    <div style={styles.modalCard}>
+                        <div style={styles.modalHeader}>
+                            <div>
+                                <h3 style={styles.modalTitle}>{`Add ${addUserTypeLabel}`}</h3>
+                                <p style={styles.modalSubtitle}>{`Create a new ${addUserForm.user_type} account for this school.`}</p>
+                            </div>
+                            <button type="button" onClick={closeAddUserModal} style={styles.modalCloseBtn}>
+                                ×
+                            </button>
+                        </div>
+
+                        {createdCredentials && (
+                            <div style={styles.credentialsCard}>
+                                <div style={styles.credentialsHeader}>
+                                    <div style={styles.credentialsHeaderLeft}>
+                                        <div style={styles.credentialsIconWrap}>✓</div>
+                                        <div>
+                                            <div style={styles.credentialsTitle}>User created successfully</div>
+                                            <div style={styles.credentialsSubtitle}>Copy these login details before closing the panel.</div>
+                                        </div>
+                                    </div>
+                                    <span style={styles.credentialsBadge}>{createdCredentials.user_type}</span>
+                                </div>
+                                <div style={styles.credentialsGrid}>
+                                    <div style={styles.credentialsBlock}>
+                                        <div style={styles.credentialsLabel}>Name</div>
+                                        <div style={styles.credentialsValue}>{createdCredentials.name || '-'}</div>
+                                    </div>
+                                    <div style={styles.credentialsBlock}>
+                                        <div style={styles.credentialsLabel}>Username</div>
+                                        <div style={styles.credentialsValueRow}>
+                                            <span style={styles.credentialsMono}>{createdCredentials.username || '-'}</span>
+                                            <button
+                                                type="button" style={styles.copyMiniBtn}
+                                                onClick={() => copyCredentials(createdCredentials.username || '')}
+                                                disabled={!createdCredentials.username}
+                                            >Copy</button>
+                                        </div>
+                                    </div>
+                                    <div style={styles.credentialsBlock}>
+                                        <div style={styles.credentialsLabel}>Password</div>
+                                        <div style={styles.credentialsValueRow}>
+                                            <span style={styles.credentialsMono}>{createdCredentials.password || '-'}</span>
+                                            <button
+                                                type="button" style={styles.copyMiniBtn}
+                                                onClick={() => copyCredentials(createdCredentials.password || '')}
+                                                disabled={!createdCredentials.password}
+                                            >Copy</button>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        )}
+
+                        <form onSubmit={handleAddUserSubmit} style={styles.modalForm}>
+                            <div style={styles.modalSection}>
+                                <h4 style={styles.modalSectionTitle}>Personal Information</h4>
+                                <div style={{ ...styles.modalGrid, gridTemplateColumns: 'repeat(auto-fit, minmax(210px, 1fr))' }}>
+                                    <div style={styles.inputGroup}>
+                                        <label style={styles.label}>Full Name *</label>
+                                        <input
+                                            name="name"
+                                            value={addUserForm.name}
+                                            onChange={handleAddUserChange}
+                                            style={{ ...styles.input, textTransform: 'uppercase' }}
+                                            placeholder="Enter full name"
+                                            pattern="[A-Za-z\s'-]*"
+                                            title="Only alphabets, spaces, hyphens, and apostrophes are allowed."
+                                        />
+                                    </div>
+                                    <div style={styles.inputGroup}>
+                                        <label style={styles.label}>Gender</label>
+                                        <select name="gender" value={addUserForm.gender} onChange={handleAddUserChange} style={styles.input}>
+                                            <option value="">Select Gender</option>
+                                            <option value="Male">Male</option>
+                                            <option value="Female">Female</option>
+                                            <option value="Other">Other</option>
+                                        </select>
+                                    </div>
+                                    <div style={styles.inputGroup}>
+                                        <label style={styles.label}>Date of Birth</label>
+                                        <input type="date" name="dob" value={addUserForm.dob} onChange={handleAddUserChange} style={styles.input} />
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div style={styles.modalSection}>
+                                <h4 style={styles.modalSectionTitle}>Contact Information</h4>
+                                <div style={{ ...styles.modalGrid, gridTemplateColumns: 'repeat(auto-fit, minmax(210px, 1fr))' }}>
+                                    <div style={styles.inputGroup}>
+                                        <label style={styles.label}>
+                                            {isAddStudent ? "Father's Phone Number *" : 'Phone Number *'}
+                                        </label>
+                                        <input
+                                            name={isAddStudent ? 'father_phone_no' : 'phone_no'}
+                                            value={isAddStudent ? addUserForm.father_phone_no : addUserForm.phone_no}
+                                            onChange={handleAddUserChange}
+                                            style={styles.input}
+                                            placeholder="10-digit number"
+                                            maxLength={10}
+                                        />
+                                    </div>
+                                    <div style={styles.inputGroup}>
+                                        <label style={styles.label}>Aadhar Number</label>
+                                        <input
+                                            name="aadhar_no"
+                                            value={addUserForm.aadhar_no}
+                                            onChange={handleAddUserChange}
+                                            style={styles.input}
+                                            placeholder="12-digit number"
+                                            maxLength={12}
+                                        />
+                                    </div>
+                                    <div style={styles.inputGroup}>
+                                        <label style={styles.label}>Father Name</label>
+                                        <input
+                                            name="father_name"
+                                            value={addUserForm.father_name}
+                                            onChange={handleAddUserChange}
+                                            style={styles.input}
+                                            placeholder="Enter father name"
+                                            pattern="[A-Za-z\s'-]*"
+                                            title="Only alphabets, spaces, hyphens, and apostrophes are allowed."
+                                        />
+                                    </div>
+                                    <div style={styles.inputGroup}>
+                                        <label style={styles.label}>School Name</label>
+                                        <input
+                                            name="school_name"
+                                            value={addUserForm.school_name}
+                                            onChange={handleAddUserChange}
+                                            style={{ ...styles.input, backgroundColor: '#f1f5f9', cursor: 'not-allowed' }}
+                                            readOnly
+                                        />
+                                    </div>
+                                    <div style={styles.inputGroup}>
+                                        <label style={styles.label}>Address</label>
+                                        <textarea
+                                            name="address"
+                                            value={addUserForm.address}
+                                            onChange={handleAddUserChange}
+                                            style={{ ...styles.input, minHeight: '84px', resize: 'vertical', backgroundColor: '#f1f5f9', cursor: 'not-allowed' }}
+                                            readOnly
+                                        />
+                                    </div>
+                                </div>
+                            </div>
+
+                            {isAddStudent && (
+                                <>
+                                    <div style={styles.modalSection}>
+                                        <h4 style={styles.modalSectionTitle}>Student Details</h4>
+                                        <div style={{ ...styles.modalGrid, gridTemplateColumns: 'repeat(auto-fit, minmax(210px, 1fr))' }}>
+                                            <div style={styles.inputGroup}>
+                                                <label style={styles.label}>Class*</label>
+                                                <select
+                                                    name="class_name" value={addUserForm.class_name}
+                                                    onChange={(e) => {
+                                                        setAddUserForm((prev) => ({ ...prev, class_name: e.target.value, section: '' }));
+                                                    }} style={styles.input}
+                                                >
+                                                    <option value="">-- Select Class --</option>
+                                                    {studentClassOptions.map((className) => (
+                                                        <option key={className} value={className}>{className}</option>
+                                                    ))}
+                                                </select>
+                                            </div>
+                                            <div style={styles.inputGroup}>
+                                                <label style={styles.label}>Section</label>
+                                                <select name="section" value={addUserForm.section} onChange={handleAddUserChange} style={styles.input} disabled={!addUserForm.class_name}>
+                                                    <option value="">-- Select Section --</option>
+                                                    {getStudentSectionsForClass(addUserForm.class_name).map((sec) => (
+                                                        <option key={sec} value={sec}>{sec}</option>
+                                                    ))}
+                                                </select>
+                                            </div>
+                                            <div style={styles.inputGroup}>
+                                                <label style={styles.label}>Class Teacher</label>
+                                                <input type="text" name="class_teacher" value={addUserForm.class_teacher} onChange={handleAddUserChange} style={styles.input} />
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    <div style={styles.modalSection}>
+                                        <h4 style={styles.modalSectionTitle}>Academic IDs</h4>
+                                        <div style={{ ...styles.modalGrid, gridTemplateColumns: 'repeat(auto-fit, minmax(210px, 1fr))' }}>
+                                            <div style={styles.inputGroup}>
+                                                <label style={styles.label}>Admission No.</label>
+                                                <input type="text" name="admission_no" value={addUserForm.admission_no} onChange={handleAddUserChange} style={styles.input} />
+                                            </div>
+                                            <div style={styles.inputGroup}>
+                                                <label style={styles.label}>Curriculum</label>
+                                                <input type="text" name="curriculum" value={addUserForm.curriculum || ''} onChange={handleAddUserChange} placeholder="e.g. CBSE / ICSE" style={styles.input} />
+                                            </div>
+                                            <div style={styles.inputGroup}>
+                                                <label style={styles.label}>CBSE Reg No.</label>
+                                                <input type="text" name="cbse_reg_no" value={addUserForm.cbse_reg_no} onChange={handleAddUserChange} style={styles.input} />
+                                            </div>
+                                        </div>
+                                    </div>
+                                </>
+                            )}
+
+                            {(isAddTeacher || isAddManagement) && (
+                                <div style={styles.modalSection}>
+                                    <h4 style={styles.modalSectionTitle}>Designation</h4>
+                                    <div style={{ ...styles.modalGrid, gridTemplateColumns: '1fr' }}>
+                                        <div style={styles.inputGroup}>
+                                            <label style={styles.label}>Designation</label>
+                                            {isAddManagement ? (
+                                                <select name="designation" value={addUserForm.designation} onChange={handleAddUserChange} style={styles.input}>
+                                                    <option value="">Select designation</option>
+                                                    {managementDesignationOptions.map((option) => (
+                                                        <option key={option.value} value={option.value}>{option.label}</option>
+                                                    ))}
+                                                </select>
+                                            ) : (
+                                                <input type="text" name="designation" value={addUserForm.designation || ''} onChange={handleAddUserChange} style={styles.input} placeholder="Enter designation" />
+                                            )}
+                                        </div>
+                                    </div>
+                                </div>
+                            )}
+
+                            {isAddTeacher && (
+                                <div style={styles.modalSection}>
+                                    <h4 style={styles.modalSectionTitle}>Teaching Classes</h4>
+                                    <div style={{ ...styles.modalGrid, gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))' }}>
+                                        {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12].map((num) => {
+                                            const fieldName = `teaches_to_${num}` as keyof AddUserFormState;
+                                            return (
+                                                <div style={styles.inputGroup} key={fieldName}>
+                                                    <label style={styles.label}>Teaches to Class {num}</label>
+                                                    <input type="text" name={fieldName} value={String(addUserForm[fieldName] || '')} onChange={handleAddUserChange} style={styles.input} placeholder={`Class ${num}`} />
+                                                </div>
+                                            );
+                                        })}
+                                    </div>
+                                </div>
+                            )}
+
+                            <div style={styles.modalActions}>
+                                <button type="button" onClick={closeAddUserModal} style={styles.cancelActionBtn}>Cancel</button>
+                                <button type="submit" style={styles.primaryActionBtn} disabled={isAddUserSubmitting}>
+                                    {isAddUserSubmitting ? 'Saving...' : addUserSubmitLabel}
+                                </button>
+                            </div>
+                        </form>
+                    </div>
                 </div>
-                <div style={styles.inputGroup}>
-                  <label style={styles.label}>Section</label>
-                  <select
-                    name="section"
-                    value={addUserForm.section}
-                    onChange={handleAddUserChange}
-                    style={styles.input}
-                    disabled={!addUserForm.class_name}
-                  >
-                    <option value="">-- Select Section --</option>
-                    {getStudentSectionsForClass(addUserForm.class_name).map((sec) => (
-                      <option key={sec} value={sec}>
-                        {sec}
-                      </option>
-                    ))}
-                  </select>
+            )}
+
+            <div style={styles.progressFooter}>
+                <div style={styles.trackerRow}>
+                    {([
+                        { title: 'Details', sub: 'Details Submitted' },
+                        { title: 'Management', sub: 'Logins Created' },
+                        { title: 'Staff', sub: 'Staff Created' },
+                        { title: 'Students', sub: 'Students Created' },
+                    ] as Array<{ title: StepTitle; sub: string }>).map((step, i, arr) => {
+                        const isDone = isStepComplete(step.title);
+                        const color = isDone ? stepColors[i] : '#cfcfcf';
+                        return (
+                            <React.Fragment key={i}>
+                                <div style={{ textAlign: 'center', minWidth: '110px' }}>
+                                    <div style={{ ...styles.stepCircle, borderColor: color, color: color, backgroundColor: isDone ? `${color}15` : '#fff', borderStyle: isDone ? 'solid' : 'dashed', fontWeight: 'bold' }}>
+                                        {i + 1}
+                                    </div>
+                                    <div style={{ ...styles.stepLabel, color: isDone ? '#333' : '#999' }}>
+                                        <strong>{step.title}</strong>
+                                    </div>
+                                    <div style={styles.subLabel}>{step.sub}</div>
+                                </div>
+                                {i !== arr.length - 1 && (
+                                    <div style={styles.connectorWrapper}>
+                                        <div style={{ ...styles.connectorLine, backgroundColor: isDone ? color : '#cfcfcf' }} />
+                                        <div style={{ ...styles.connectorArrow, borderLeftColor: isDone ? color : '#cfcfcf' }} />
+                                    </div>
+                                )}
+                            </React.Fragment>
+                        );
+                    })}
                 </div>
-                <div style={styles.inputGroup}>
-                  <label style={styles.label}>Class Teacher</label>
-                  <input
-                    type="text"
-                    name="class_teacher"
-                    value={addUserForm.class_teacher}
-                    onChange={handleAddUserChange}
-                    style={styles.input}
-                  />
-                </div>
-              </div>
             </div>
 
-            <div style={styles.modalSection}>
-              <h4 style={styles.modalSectionTitle}>Academic IDs</h4>
-              <div style={{ ...styles.modalGrid, gridTemplateColumns: 'repeat(auto-fit, minmax(210px, 1fr))' }}>
-                <div style={styles.inputGroup}>
-                  <label style={styles.label}>Admission No.</label>
-                  <input
-                    type="text"
-                    name="admission_no"
-                    value={addUserForm.admission_no}
-                    onChange={handleAddUserChange}
-                    style={styles.input}
-                  />
-                </div>
-                <div style={styles.inputGroup}>
-                  <label style={styles.label}>Curriculum</label>
-                  <input
-                    type="text"
-                    name="curriculum"
-                    value={addUserForm.curriculum || ''}
-                    onChange={handleAddUserChange}
-                    placeholder="e.g. CBSE / ICSE / State Board"
-                    style={styles.input}
-                  />
-                </div>
-                <div style={styles.inputGroup}>
-                  <label style={styles.label}>CBSE Reg No.</label>
-                  <input
-                    type="text"
-                    name="cbse_reg_no"
-                    value={addUserForm.cbse_reg_no}
-                    onChange={handleAddUserChange}
-                    style={styles.input}
-                  />
-                </div>
-              </div>
-            </div>
-          </>
-        )}
-
-        {(isAddTeacher || isAddManagement) && (
-          <div style={styles.modalSection}>
-            <h4 style={styles.modalSectionTitle}>Designation</h4>
-            <div style={{ ...styles.modalGrid, gridTemplateColumns: '1fr' }}>
-              <div style={styles.inputGroup}>
-                <label style={styles.label}>Designation</label>
-                {isAddManagement ? (
-                  <select
-                    name="designation"
-                    value={addUserForm.designation}
-                    onChange={handleAddUserChange}
-                    style={styles.input}
-                  >
-                    <option value="">Select designation</option>
-                    {managementDesignationOptions.map((option) => (
-                      <option key={option.value} value={option.value}>
-                        {option.label}
-                      </option>
-                    ))}
-                  </select>
-                ) : (
-                  <input
-                    type="text"
-                    name="designation"
-                    value={addUserForm.designation || ''}
-                    onChange={handleAddUserChange}
-                    style={styles.input}
-                    placeholder="Enter designation"
-                  />
-                )}
-              </div>
-            </div>
-          </div>
-        )}
-
-        {isAddTeacher && (
-          <div style={styles.modalSection}>
-            <h4 style={styles.modalSectionTitle}>Teaching Classes</h4>
-            <div style={{ ...styles.modalGrid, gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))' }}>
-              {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12].map((num) => {
-                const fieldName = `teaches_to_${num}` as keyof AddUserFormState;
-                return (
-                  <div style={styles.inputGroup} key={fieldName}>
-                    <label style={styles.label}>Teaches to Class {num}</label>
-                    <input
-                      type="text"
-                      name={fieldName}
-                      value={String(addUserForm[fieldName] || '')}
-                      onChange={handleAddUserChange}
-                      style={styles.input}
-                      placeholder={`Class ${num}`}
-                    />
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-        )}
-
-        <div style={styles.modalActions}>
-          <button type="button" onClick={closeAddUserModal} style={styles.cancelActionBtn}>
-            Cancel
-          </button>
-          <button type="submit" style={styles.primaryActionBtn} disabled={isAddUserSubmitting}>
-            {isAddUserSubmitting ? 'Saving...' : addUserSubmitLabel}
-          </button>
-        </div>
-      </form>
-    </div>
-  </div>
-)}
-          <div style={styles.progressFooter}>
-<div style={styles.trackerRow}>
-  {([
-    { title: 'Details', sub: 'Details Submitted' },
-    { title: 'Management', sub: 'Logins Created' },
-    { title: 'Staff', sub: 'Staff Created' },
-    { title: 'Students', sub: 'Students Created' },
-    // { title: 'Uploaded Files', sub: 'Files Uploaded' },
-  ] as Array<{ title: StepTitle; sub: string }>).map((step, i, arr) => {
-    const isDone = isStepComplete(step.title);
-    const color = isDone ? stepColors[i] : '#cfcfcf'; 
-
-    
-    return (
-      <React.Fragment key={i}>
-        <div style={{ textAlign: 'center', minWidth: '110px' }}>
-          <div
-            style={{
-              ...styles.stepCircle,
-              borderColor: color,
-              color: color,
-              // Keep background light color if done, else white
-              backgroundColor: isDone ? `${color}15` : '#fff', 
-              // Switch from dashed to solid border when done
-              borderStyle: isDone ? 'solid' : 'dashed',
-              fontWeight: 'bold'
-            }}
-          >
-            {/* CHANGED THIS LINE: Always show the index + 1 */}
-            {i + 1}
-          </div>
-          <div style={{ ...styles.stepLabel, color: isDone ? '#333' : '#999' }}>
-            <strong>{step.title}</strong>
-          </div>
-          <div style={styles.subLabel}>{step.sub}</div>
-        </div>
-
-        {/* CONNECTOR */}
-        {i !== arr.length - 1 && (
-          <div style={styles.connectorWrapper}>
-            <div
-              style={{
-                ...styles.connectorLine,
-                backgroundColor: isDone ? color : '#cfcfcf',
-              }}
-            />
-            <div
-              style={{
-                ...styles.connectorArrow,
-                borderLeftColor: isDone ? color : '#cfcfcf',
-              }}
-            />
-          </div>
-        )}
-      </React.Fragment>
-    );
-  })}
-</div>
-       
-             </div>
             {activeRoleTab && (
                 <div style={styles.roleRecordsSection}>
                     <h3 style={styles.sectionHeading}>{roleTabConfig[activeRoleTab].detailsTitle}</h3>
@@ -2454,15 +2760,14 @@ useEffect(() => {
                                     value={studentClassFilter}
                                     onChange={(e) => {
                                         setStudentClassFilter(e.target.value);
-                                        setStudentSectionFilter('');
-                                    }}
+                                        setStudentSectionFilter(''); 
+                                        setCurrentPage(1);           
+                                    }} 
                                     style={styles.input}
                                 >
                                     <option value="">All Classes</option>
                                     {studentClassOptions.map((className) => (
-                                        <option key={className} value={className}>
-                                            {className}
-                                        </option>
+                                        <option key={className} value={className}>{className}</option>
                                     ))}
                                 </select>
                             </div>
@@ -2470,14 +2775,16 @@ useEffect(() => {
                                 <label style={styles.label}>Section</label>
                                 <select
                                     value={studentSectionFilter}
-                                    onChange={(e) => setStudentSectionFilter(e.target.value)}
+                                    onChange={(e) => {
+                                        setStudentSectionFilter(e.target.value);
+                                        setCurrentPage(1);           
+                                    }}
                                     style={styles.input}
+                                    disabled={!studentClassFilter}
                                 >
                                     <option value="">All Sections</option>
-                                    {studentSectionOptions.map((section) => (
-                                        <option key={section} value={section}>
-                                            {section}
-                                        </option>
+                                    {studentSectionOptions.map((sect) => (
+                                        <option key={sect} value={sect}>{sect}</option>
                                     ))}
                                 </select>
                             </div>
@@ -2485,77 +2792,133 @@ useEffect(() => {
                                 <label style={styles.label}>Name</label>
                                 <input
                                     value={studentNameFilter}
-                                    onChange={(e) => setStudentNameFilter(e.target.value)}
+                                    onChange={(e) => {
+                                        setStudentNameFilter(e.target.value);
+                                        setCurrentPage(1);
+                                    }}
                                     placeholder="Search student name"
                                     style={styles.input}
                                 />
                             </div>
                         </div>
                     )}
+                    
                     {roleLoading ? (
                         <div style={styles.roleRecordsEmpty}>Loading {activeRoleTab.toLowerCase()} users...</div>
                     ) : roleUsers.length === 0 ? (
                         <div style={styles.roleRecordsEmpty}>No {activeRoleTab.toLowerCase()} users found.</div>
                     ) : (
                         <div style={styles.roleRecordsTableWrap}>
+
+                            <div style={styles.actionHeaderContainer}>
+                                
+                                <button
+                                    type="button"
+                                    style={styles.exportBtn}
+                                    onClick={() => exportRoleDetailsToPDF(filteredRoleUsers, activeRoleTab)}
+                                >
+                                    Export PDF
+                                </button>
+                                <button
+                                    type="button"
+                                    style={styles.exportBtn}
+                                    onClick={() => exportRoleDetailsToXLSX(filteredRoleUsers, activeRoleTab)}
+                                >
+                                    Export XLSX
+                                </button>
+                            </div>
                             <table style={styles.roleRecordsTable}>
                                 <thead>
                                     <tr style={styles.roleRecordsHeadRow}>
                                         {roleTabConfig[activeRoleTab].columns.map((column) => (
-                                            <th key={column.key} style={styles.roleRecordsHeadCell}>
-                                                {column.label}
-                                            </th>
+                                            <th key={column.key} style={styles.roleRecordsHeadCell}>{column.label}</th>
                                         ))}
                                         <th style={styles.roleRecordsHeadCell}>Actions</th>
                                     </tr>
                                 </thead>
                                 <tbody>
-                                    {filteredRoleUsers.map((user, index) => (
-                                        <tr key={user.id || `${user.username || user.name}-${index}`}>
-                                            {roleTabConfig[activeRoleTab].columns.map((column) => {
-                                                const value =
-                                                    column.key === 'phone'
-                                                        ? user.phone_no || user.father_phone_no || user.phone || '-'
-                                                        : user[column.key] || '-';
-                                                return (
-                                                    <td key={column.key} style={styles.roleRecordsCell}>
-                                                        {value}
-                                                    </td>
-                                                );
-                                            })}
-                                            <td style={styles.roleRecordsCell}>
-                                                <div style={styles.rowActionGroup}>
-                                                    <button
-                                                        type="button"
-                                                        style={styles.rowEditIconBtn}
-                                                        onClick={() => openEditUserModal(user)}
-                                                        aria-label="Edit user"
-                                                    >
-                                                        <Pencil size={16} strokeWidth={2.2} />
-                                                    </button>
-                                                    <button
-                                                        type="button"
-                                                        style={styles.rowDeleteIconBtn}
-                                                        onClick={() => deleteUser(user)}
-                                                        aria-label="Delete user"
-                                                    >
-                                                        <Trash2 size={16} strokeWidth={2.2} />
-                                                    </button>
-                                                </div>
-                                            </td>
-                                        </tr>
-                                    ))}
+                                    {filteredRoleUsers.map((user, index) => {
+                                        const userId = getUserRecordId(user) ?? `${user.username || user.name}-${index}`;
+                                        const disabled = isUserDisabled(user);
+                                        return (
+                                            <tr key={userId} style={disabled ? styles.disabledRoleRow : undefined} onClick={() => { if (disabled) setActionUser(user); }}>
+                                                {roleTabConfig[activeRoleTab].columns.map((column) => {
+                                                    const value = column.key === 'phone' ? user.phone_no || user.father_phone_no || user.phone || '-' : user[column.key] || '-';
+                                                    return (
+                                                        <td key={column.key} style={styles.roleRecordsCell}>{value}</td>
+                                                    );
+                                                })}
+                                                <td style={styles.roleRecordsCell}>
+                                                    <div style={styles.rowActionGroup}>
+                                                        <button
+                                                            type="button" 
+                                                            style={styles.rowEditIconBtn}
+                                                            onClick={(event) => {
+                                                                event.stopPropagation();
+                                                                openEditUserModal(user);
+                                                            }} 
+                                                            aria-label="Edit user"
+                                                        >
+                                                            <Pencil size={16} strokeWidth={2.2} />
+                                                        </button>
+
+                                                        <button
+                                                            type="button" 
+                                                            style={{ ...styles.rowEditIconBtn, color: isUserDisabled(user) ? '#059669' : '#d97706' }}
+                                                            onClick={(event) => {
+                                                                event.stopPropagation();
+                                                                toggleUserDisabled(user);
+                                                            }}
+                                                            aria-label={isUserDisabled(user) ? "Enable user" : "Disable user"}
+                                                        >
+                                                            {isUserDisabled(user) ? <Unlock size={16} strokeWidth={2.2} /> : <Ban size={16} strokeWidth={2.2} />}
+                                                        </button>
+
+                                                        <button
+                                                            type="button" 
+                                                            style={styles.rowDeleteIconBtn}
+                                                            onClick={(event) => { 
+                                                                event.stopPropagation(); 
+                                                                if (window.confirm('Are you sure you want to permanently delete this user?')) {
+                                                                    deleteUser(user); 
+                                                                }
+                                                            }}
+                                                            aria-label="Delete user"
+                                                        >
+                                                            <Trash2 size={16} strokeWidth={2.2} />
+                                                        </button>
+                                                    </div>
+                                                </td>
+                                            </tr>
+                                        );
+                                    })}
                                 </tbody>
                             </table>
+                            {renderPaginationControls()}
                         </div>
                     )}
+                </div>
+            )}
+
+            {actionUser && (
+                <div style={styles.accountActionOverlay} onClick={() => setActionUser(null)}>
+                    <div style={styles.accountActionCard} role="dialog" aria-modal="true" aria-labelledby="account-action-title" onClick={(event) => event.stopPropagation()}>
+                        <h3 id="account-action-title" style={styles.accountActionTitle}>Account actions</h3>
+                        <p style={styles.accountActionText}>Choose an action for <strong>{actionUser?.name || 'this user'}</strong>.</p>
+                        <button type="button" style={styles.accountActionButton} onClick={() => toggleUserDisabled(actionUser)}>
+                            {isUserDisabled(actionUser) ? 'Enable login' : 'Disable login'}
+                        </button>
+                        <button type="button" style={{ ...styles.accountActionButton, ...styles.accountActionDangerButton }} onClick={() => deleteUser(actionUser)}>
+                            Delete permanently
+                        </button>
+                        <button type="button" style={styles.accountActionCancelButton} onClick={() => setActionUser(null)}>Cancel</button>
+                    </div>
                 </div>
             )}
         </div>
     );
 };
 
-// 2. UPDATED STYLES
 const styles: Record<string, React.CSSProperties> = {
   container: {
     fontFamily: "Arial, sans-serif",
@@ -2563,7 +2926,17 @@ const styles: Record<string, React.CSSProperties> = {
     minHeight: "100vh",
     padding: "10px",
   },
-
+exportBtn: {
+    backgroundColor: '#2563eb', 
+    color: '#ffffff',
+    padding: '8px 16px',
+    borderRadius: '6px',
+    border: 'none',
+    fontWeight: '500',
+    cursor: 'pointer',
+    transition: 'background-color 0.2s',
+    marginBottom: '16px', 
+  },
 header: {
   display: "flex",
   justifyContent: "space-between",
@@ -2583,6 +2956,14 @@ header: {
     cursor: "pointer",
     overflow: "hidden",
     backgroundColor: "#fff",
+  },
+
+  logoUploadWrap: {
+    width: "150px",
+    display: "flex",
+    flexDirection: "column",
+    alignItems: "flex-start",
+    gap: "4px",
   },
 
 schoolNameBox: {
@@ -2706,7 +3087,7 @@ schoolNameBox: {
   },
 
   uploadPreviewDownloadBtn: {
-    backgroundColor: "#2563eb",
+    backgroundColor: "#1b1b1c",
     color: "#fff",
     border: "none",
     borderRadius: "999px",
@@ -2837,12 +3218,78 @@ schoolNameBox: {
     cursor: "pointer",
     fontWeight: 700,
   },
-
+paginationContainer: {
+    display: "flex",
+    justifyContent: "space-between",
+    alignItems: "center",
+    padding: "15px 10px",
+    backgroundColor: "#fff",
+    border: "1px solid #ddd",
+    borderTop: "none",
+    flexWrap: "wrap",
+    gap: "10px"
+  },
+  paginationInfo: {
+    fontSize: "14px",
+    color: "#475569"
+  },
+  paginationButtons: {
+    display: "flex",
+    gap: "5px",
+    alignItems: "center"
+  },
+  paginationBtn: {
+    border: "1px solid #cbd5e1",
+    backgroundColor: "#fff",
+    padding: "6px 12px",
+    borderRadius: "6px",
+    cursor: "pointer",
+    fontSize: "13px",
+    transition: "background-color 0.2s"
+  },
+  paginationSelect: {
+    width: "130px"
+  },
   excelPreviewSummary: {
     padding: "12px 20px",
     borderBottom: "1px solid #e2e8f0",
     backgroundColor: "#f8fafc",
     color: "#475569",
+    fontSize: "13px",
+  },
+
+  excelValidationBox: {
+    margin: "12px 20px 0",
+    padding: "12px 14px",
+    border: "1px solid #fecaca",
+    borderRadius: "8px",
+    backgroundColor: "#fef2f2",
+    color: "#991b1b",
+    fontSize: "13px",
+    lineHeight: 1.45,
+  },
+
+  excelValidationList: {
+    margin: "6px 0",
+    paddingLeft: "18px",
+  },
+
+  excelSampleBox: {
+    margin: "12px 20px",
+    border: "1px solid #dbeafe",
+    borderRadius: "8px",
+    overflow: "hidden",
+    backgroundColor: "#f8fbff",
+  },
+
+  excelSampleHeader: {
+    display: "flex",
+    justifyContent: "space-between",
+    gap: "12px",
+    flexWrap: "wrap",
+    padding: "12px 14px",
+    borderBottom: "1px solid #dbeafe",
+    color: "#1e3a8a",
     fontSize: "13px",
   },
 
@@ -2884,6 +3331,19 @@ schoolNameBox: {
     backgroundColor: "#fff",
   },
 
+  inputError: {
+    borderColor: "#dc2626",
+    boxShadow: "0 0 0 2px rgba(220, 38, 38, 0.12)",
+  },
+
+  errorText: {
+    color: "#dc2626",
+    fontSize: "11px",
+    lineHeight: 1.35,
+    marginTop: "4px",
+    textAlign: "left",
+  },
+
   nextBtn: {
     backgroundColor: "#333",
     color: "white",
@@ -2903,6 +3363,11 @@ schoolNameBox: {
     backgroundColor: "#f0f0f0",
     cursor: "pointer",
     overflow: "hidden",
+  },
+
+  photoBoxError: {
+    borderColor: "#dc2626",
+    boxShadow: "0 0 0 2px rgba(220, 38, 38, 0.12)",
   },
 
   previewImage: {
@@ -3048,6 +3513,12 @@ schoolNameBox: {
     whiteSpace: "nowrap",
   },
 
+  disabledRoleRow: {
+    backgroundColor: "#fee2e2",
+    color: "#7f1d1d",
+    cursor: "pointer",
+  },
+
   roleRecordsEmpty: {
     padding: "12px 0",
     color: "#777",
@@ -3068,6 +3539,7 @@ schoolNameBox: {
     display: "flex",
     gap: "8px",
     flexWrap: "wrap",
+    alignItems: "center",
   },
 
   rowEditIconBtn: {
@@ -3098,6 +3570,68 @@ schoolNameBox: {
     padding: 0,
   },
 
+  accountActionOverlay: {
+    position: "fixed",
+    inset: 0,
+    zIndex: 1200,
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    padding: "20px",
+    backgroundColor: "rgba(15, 23, 42, 0.58)",
+  },
+
+  accountActionCard: {
+    width: "100%",
+    maxWidth: "420px",
+    padding: "26px",
+    borderRadius: "18px",
+    backgroundColor: "#fff",
+    boxShadow: "0 24px 60px rgba(15, 23, 42, 0.3)",
+  },
+
+  accountActionTitle: {
+    margin: "0 0 8px",
+    color: "#111827",
+    fontSize: "22px",
+  },
+
+  accountActionText: {
+    margin: "0 0 20px",
+    color: "#4b5563",
+    lineHeight: 1.5,
+  },
+
+  accountActionButton: {
+    width: "100%",
+    marginBottom: "10px",
+    padding: "12px 16px",
+    border: "1px solid #d1d5db",
+    borderRadius: "10px",
+    backgroundColor: "#f9fafb",
+    color: "#111827",
+    cursor: "pointer",
+    fontSize: "14px",
+    fontWeight: 700,
+  },
+
+  accountActionDangerButton: {
+    borderColor: "#fca5a5",
+    backgroundColor: "#fff5f5",
+    color: "#dc2626",
+  },
+
+  accountActionCancelButton: {
+    width: "100%",
+    padding: "11px 16px",
+    border: "none",
+    borderRadius: "10px",
+    backgroundColor: "transparent",
+    color: "#6b7280",
+    cursor: "pointer",
+    fontSize: "14px",
+  },
+
   tabActionHeader: {
     width: "100%",
     display: "flex",
@@ -3109,7 +3643,7 @@ schoolNameBox: {
   },
 
   addUserBtn: {
-    backgroundColor: "#1f6feb",
+    backgroundColor: "#232425",
     color: "#fff",
     border: "none",
     borderRadius: "999px",
@@ -3418,5 +3952,12 @@ schoolNameBox: {
     color: "#888",
     textAlign: "center",
   },
+  actionHeaderContainer: {
+    display: "flex",
+    justifyContent: "flex-end",
+    gap: "8px",
+    flexWrap: "wrap",
+  },
 };
+
 export default CentralizationDashboard;

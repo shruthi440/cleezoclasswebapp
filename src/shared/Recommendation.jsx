@@ -13,7 +13,7 @@ const InvigilatorDashboard = () => {
   const [message, setMessage] = useState("");
   const [loading, setLoading] = useState(false);
 
-  const API = "http://localhost:4000/api";
+  const API = "http://localhost:5000/api";
 
   // 🔹 Fetch Classes and Assigned Invigilators on Load
   useEffect(() => {

@@ -23,32 +23,53 @@ const ExpenseForm = () => {
   };
 
 const handleSubmit = async () => {
-  if (!categoryName.trim()) return alert("Category name is required!");
-  const validExpenses = expenses.filter(e => e.name.trim() !== "");
-  if (!validExpenses.length) return alert("Add at least one expense");
-
-  const schoolCode = localStorage.getItem("schoolCode"); // ⬅️ GET schoolCode
-
-  for (let exp of validExpenses) {
-    await fetch("https://cleezoclass.com:4000/api/admin/add-expense", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        schoolCode,                 // ⬅️ ADD HERE
-        categoryName,
-        categoryDescription,
-        expenseName: exp.name,
-        expenseDescription: exp.description
-      }),
-    });
+  if (!categoryName.trim()) {
+    alert("Category name is required!");
+    return;
   }
 
-  alert("All data saved!");
-  setCategoryName("");
-  setCategoryDescription("");
-  setExpenses([{ name: "", description: "" }]);
-};
+  const validExpenses = expenses.filter(
+    (e) => e.name.trim() !== ""
+  );
 
+  if (!validExpenses.length) {
+    alert("Add at least one expense");
+    return;
+  }
+
+  const schoolCode = localStorage.getItem("schoolCode");
+
+  try {
+    for (let exp of validExpenses) {
+      await fetch("https://cleezoclass.com:4000/api/admin/add-expense", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          schoolCode,
+          categoryName,
+          categoryDescription,
+          expenseName: exp.name,
+          expenseDescription: exp.description,
+        }),
+      });
+    }
+
+    alert("All data saved!");
+
+    setCategoryName("");
+    setCategoryDescription("");
+    setExpenses([{ name: "", description: "" }]);
+
+    // Refresh page
+    window.location.reload();
+
+  } catch (error) {
+    console.error("Error saving expenses:", error);
+    alert("Failed to save data");
+  }
+};
   return (
     <div
       style={{

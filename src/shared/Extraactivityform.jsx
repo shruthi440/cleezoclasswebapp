@@ -141,7 +141,7 @@ const Extraactivityform = ({ setCustomActivities, embedded = false }) => {
 }
           .form-row button {
             padding: 8px 12px;
-            border-radius: 4px;
+            border-radius: 16px;
             border: none;
             cursor: pointer;
             flex-shrink: 0;

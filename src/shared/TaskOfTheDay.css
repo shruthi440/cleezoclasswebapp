@@ -74,7 +74,32 @@ padding: 5px;
   display: flex;
   align-items: center;
   justify-content: space-between;
+  gap: 10px;
   margin-bottom: 16px;
+}
+
+.tod-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 0 0 auto;
+}
+
+.tod-date-filter {
+  width: 132px;
+}
+
+.tod-add-button {
+  height: 34px;
+  border: none;
+  border-radius: 8px;
+  padding: 0 12px;
+  background: #e9a0a5;
+  color: #000;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
 }
 
 .tod-title {

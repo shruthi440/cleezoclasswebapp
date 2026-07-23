@@ -236,7 +236,7 @@ const [events, setEvents] = useState([]);
     }
 
     // API Call to add holiday
-    axios.post('http://localhost:4000/api/holidays', { date: holidayDate, name: holidayName })
+    axios.post('http://localhost:5000/api/holidays', { date: holidayDate, name: holidayName })
       .then(res => {
         alert('Holiday Added!');
         // Ideally, refetch the holiday list here: fetchHolidays();
@@ -254,7 +254,7 @@ const [events, setEvents] = useState([]);
     }
 
     // API Call to delete holiday
-    axios.delete(`http://localhost:4000/api/holidays/${selectedHoliday}`)
+    axios.delete(`http://localhost:5000/api/holidays/${selectedHoliday}`)
       .then(() => {
         alert(`Holiday ID ${selectedHoliday} Deleted!`);
         setHolidaysList(prev => prev.filter(h => h.id !== Number(selectedHoliday)));
@@ -267,7 +267,7 @@ const [events, setEvents] = useState([]);
       if (!meetingNo || !newAgendaItem) return alert('Select Meeting No and enter Agenda Item');
       
       // API Call to add agenda item
-      axios.post('http://localhost:4000/api/agenda', { meetingNo, agendaItem: newAgendaItem })
+      axios.post('http://localhost:5000/api/agenda', { meetingNo, agendaItem: newAgendaItem })
         .then(res => {
             alert(`Agenda item "${newAgendaItem}" added to Meeting No ${meetingNo}!`);
             setNewAgendaItem('');
@@ -283,7 +283,7 @@ const [events, setEvents] = useState([]);
       formData.append('minutesFile', fileToUpload);
 
       // API Call to upload minutes
-      axios.post('http://localhost:4000/api/minutes/upload', formData, {
+      axios.post('http://localhost:5000/api/minutes/upload', formData, {
           headers: {
               'Content-Type': 'multipart/form-data'
           }
@@ -298,7 +298,7 @@ const [events, setEvents] = useState([]);
   const handleScheduleRequest = () => {
     if (!schClass || !schSection || !schDate || !schTime) return alert('Please fill all fields for Schedule Request');
     
-    axios.post('http://localhost:4000/api/schedule', {
+    axios.post('http://localhost:5000/api/schedule', {
       class: schClass,
       section: schSection,
       date: schDate,
@@ -331,8 +331,8 @@ const [events, setEvents] = useState([]);
   };
 
   useEffect(() => {
-    axios.get('http://localhost:4000/api/party1').then(res => setParty1List(res.data));
-    axios.get('http://localhost:4000/api/classes').then(res => setClasses(res.data));
+    axios.get('http://localhost:5000/api/party1').then(res => setParty1List(res.data));
+    axios.get('http://localhost:5000/api/classes').then(res => setClasses(res.data));
     fetchChatRequests();
     // fetchHolidays(); // Uncomment and implement
   }, []);
@@ -342,7 +342,7 @@ const [events, setEvents] = useState([]);
     let classToFetch = indClass || grpClass || schClass;
     
     if (classToFetch) {
-      axios.get(`http://localhost:4000/api/sections/${classToFetch}`)
+      axios.get(`http://localhost:5000/api/sections/${classToFetch}`)
         .then(res => {
           setSections(res.data);
           // Clear related fields only for the class that triggered the change
@@ -364,19 +364,19 @@ const [events, setEvents] = useState([]);
 
   useEffect(() => {
     if (indClass && indSection) {
-      axios.get(`http://localhost:4000/api/students/${indClass}/${indSection}`).then(res => setStudents(res.data));
+      axios.get(`http://localhost:5000/api/students/${indClass}/${indSection}`).then(res => setStudents(res.data));
       setIndStudent('');
     }
   }, [indClass, indSection]);
 
   useEffect(() => {
-    axios.get("http://localhost:4000/api/chat_requests/sessions")
+    axios.get("http://localhost:5000/api/chat_requests/sessions")
       .then(res => setSessionIds(res.data))
       .catch(err => console.error("Error fetching sessions:", err));
   }, []);
 
   const fetchChatRequests = () => {
-    axios.get('http://localhost:4000/api/chat-requests')
+    axios.get('http://localhost:5000/api/chat-requests')
       .then(res => {
         const removedIds = getRemovedIds();
         setChatRequests(res.data.filter(req => !removedIds.includes(req.id)));
@@ -386,7 +386,7 @@ const [events, setEvents] = useState([]);
   const handleIndividualChat = () => {
     if (!indParty1 || !indClass || !indSection || !indStudent) return alert('Please fill all fields');
     const party1Obj = party1List.find(p => p.name === indParty1);
-    axios.post('http://localhost:4000/api/chat-request', {
+    axios.post('http://localhost:5000/api/chat-request', {
       party1_id: party1Obj.id,
       party1_name: party1Obj.name,
       party2_class: indClass,
@@ -411,7 +411,7 @@ const [events, setEvents] = useState([]);
   const handleGroupChat = () => {
     if (!grpParty1 || !grpClass || !grpSection) return alert('Please fill all fields');
     const party1Obj = party1List.find(p => p.name === grpParty1);
-    axios.post('http://localhost:4000/api/chat-request', {
+    axios.post('http://localhost:5000/api/chat-request', {
       party1_id: party1Obj.id,
       party1_name: party1Obj.name,
       party2_class: grpClass,

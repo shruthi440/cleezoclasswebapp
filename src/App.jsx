@@ -162,7 +162,6 @@ import AccountantDashboardNew from "./accountant/AccountantDashboardnew.jsx";
 import AccountantFeesPageNew from "./accountant/AccountantFeesPageNew.jsx";
 import AccountantReportsPage from "./accountant/AccountantReportsPage.tsx";
 import AccountantExpensesPageNew from "./accountant/AccountantExpensesPageNew.jsx";
-import AccountantFeeTypeWiseSummary from "./accountant/AccountantFeeTypeWiseSummary.jsx";
 import AdmissionDashboardNew from "./adminfolder/AdminDashboardNew.tsx";
 import AdiminAcademicsNew from "./adminfolder/AdiminAcademicsNew.jsx";
 import AdminEventsAndMeetings from "./adminfolder/AdminEventsAndMeetings.jsx";
@@ -172,6 +171,8 @@ import AdmissionTimetableNew from "./shared/AdmissionTimetableNew.jsx";
 import AdminGenerations from "./adminfolder/AdminGenerations.jsx";
 import Posters from "./shared/posters.jsx";
 import AdminDashboard from "./adminfolder/AdminDashboard.jsx";
+import AccountantReportsPage1 from "./accountant/AccountantReportsPage copy.tsx";
+import NumberOfStudents from "./shared/NumberOfStudents.jsx";
 
 const ROLE_HOME_ROUTE = {
   hr: "/HRDashboard",
@@ -294,6 +295,8 @@ const NotificationBridge = () => {
   return null;
 };
 
+
+
 function App() {
   return (
         <GuideProvider>
@@ -330,10 +333,9 @@ function App() {
                    <Route path="/AccountantFees" element={<AccountantFeesPageNew />} />
                    <Route path="/AccountantExpenses" element={<ProtectedRoute allowedRoles={["accountant"]}><AccountantExpensesPageNew /></ProtectedRoute>} />
                    <Route path="/AccountantReportsPage" element={<ProtectedRoute allowedRoles={["accountant"]}><AccountantReportsPage /></ProtectedRoute>} />
-                   <Route path="/AccountantFeeTypeWiseSummary" element={<ProtectedRoute allowedRoles={["accountant"]}><AccountantFeeTypeWiseSummary /></ProtectedRoute>} />
 
                    <Route path="/AdminDashboardold" element={<AdminDashboard/>} />
-
+<Route path="/AccountantReportsPage1" element={<AccountantReportsPage1/>} />
                    <Route path="/AdminDashboard" element={<AdmissionDashboardNew/>} />
                    <Route path="/AdiminAcademicsNew" element={<AdiminAcademicsNew/>} />
                    <Route path="/AdminEventsAndMeetings" element={<AdminEventsAndMeetings/>} />
@@ -436,6 +438,7 @@ function App() {
         <Route path="/FrontDesk_Tickets" element={<FrontDesk_Tickets/>} />
         <Route path="/TaskOfTheDay" element={<TaskOfTheDay/>} />
         <Route path="/FrontDesk_Enrollment" element={<AdmissionCRMTesting/>} />
+        <Route path="/NumberOfStudents" element={<NumberOfStudents/>} />
 
                 <Route path="/ExammanagementChief" element={<ExammanagementChief/>} />
   <Route path="/AdmissionTeacherChief" element={<AdmissionTeacherChief/>} />

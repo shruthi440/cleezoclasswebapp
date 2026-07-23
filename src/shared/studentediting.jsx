@@ -80,7 +80,15 @@ const StudentManagementedit = ({ defaultTab = 'Student' } = {}) => {
   const [selectedDate, setSelectedDate] = useState('');
   const [activePage, setActivePage] = useState(null);
   const [showAttendance, setShowAttendance] = useState(false);
-
+const managementDesignationOptions = [
+  { label: 'Correspondent', value: 'superadmin' },
+  { label: 'Principal', value: 'admin' },
+  { label: 'Campaigning', value: 'marketing' },
+  { label: 'Accountant', value: 'accountant' },
+  { label: 'HR', value: 'hr' },
+  { label: 'Bus Manager', value: 'Bus Manager' },
+  { label: 'Bus Driver', value: 'Bus Driver' },
+];
   const toUpperCaseText = (value) => {
     if (!value) return '';
     return String(value)
@@ -2313,16 +2321,32 @@ const handleAddStudentSubmit = async (e) => {
             <div style={styles.formSection}>
               <h4 style={styles.sectionHeader}>Staff Details</h4>
               <div style={styles.formGrid}>
-                <div style={styles.formGroup}>
-                  <label style={styles.formLabel}>Designation</label>
-                  <input
-                    type="text"
-                    name="designation"
-                    value={editFormData.designation || ''}
-                    onChange={handleFormChange}
-                    style={styles.formInput}
-                  />
-                </div>
+<div style={styles.formGroup}>
+  <label style={styles.formLabel}>Designation</label>
+  {editFormData.user_type === 'management' ? (
+    <select
+      name="designation"
+      value={editFormData.designation || ''}
+      onChange={handleFormChange}
+      style={styles.formInput}
+    >
+      <option value="">-- Select Designation --</option>
+      {managementDesignationOptions.map((option) => (
+        <option key={option.value} value={option.value}>
+          {option.label}
+        </option>
+      ))}
+    </select>
+  ) : (
+    <input
+      type="text"
+      name="designation"
+      value={editFormData.designation || ''}
+      onChange={handleFormChange}
+      style={styles.formInput}
+    />
+  )}
+</div>
                 {editFormData.user_type === 'teacher' && (
                   <>
                     {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12].map((num) => (
@@ -2645,16 +2669,32 @@ const handleAddStudentSubmit = async (e) => {
       <div style={styles.formSection}>
         <h4 style={styles.sectionHeader}>Designation</h4>
         <div style={styles.formGrid}>
-          <div style={styles.formGroup}>
-            <label style={styles.formLabel}>Designation</label>
-            <input
-              type="text"
-              name="designation"
-              value={newStudentFormData.designation || ''}
-              onChange={(e) => handleNewStudentFormChange(e, 'designation')}
-              style={styles.formInput}
-            />
-          </div>
+         <div style={styles.formGroup}>
+  <label style={styles.formLabel}>Designation</label>
+  {newStudentFormData.user_type === 'management' ? (
+    <select
+      name="designation"
+      value={newStudentFormData.designation || ''}
+      onChange={(e) => handleNewStudentFormChange(e, 'designation')}
+      style={styles.formInput}
+    >
+      <option value="">-- Select Designation --</option>
+      {managementDesignationOptions.map((option) => (
+        <option key={option.value} value={option.value}>
+          {option.label}
+        </option>
+      ))}
+    </select>
+  ) : (
+    <input
+      type="text"
+      name="designation"
+      value={newStudentFormData.designation || ''}
+      onChange={(e) => handleNewStudentFormChange(e, 'designation')}
+      style={styles.formInput}
+    />
+  )}
+</div>
         </div>
       </div>
     )}

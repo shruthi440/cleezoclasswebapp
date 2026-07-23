@@ -9,7 +9,8 @@ import EditableProfileMenu from "../shared/EditableProfileMenu.jsx";
 import ErrorPopup from "../shared/ErrorPopup";
 import InstituteBrand from "../shared/InstituteBrand.jsx";
 import { resolveInstituteDisplayName } from "../shared/instituteNameUtils";
-
+import { getUserDisplayName } from "../shared/userDisplayName";
+import TaskOfTheDay from "../shared/TaskOfTheDay.tsx";
 import abcLogo from "../assets/logoab.png";
 import dashboardIcon from "../assets/Dashboard.png";
 import academicsIcon from "../assets/Staff Assign.png";
@@ -20,6 +21,8 @@ import timelineIcon from "../assets/Timeline.png";
 import followupIcon from "../assets/Profile.png";
 import assistantIcon from "../assets/Assistant.png";
 import communicationIcon from "../assets/Communication Assign.png";
+import { FiHelpCircle } from "react-icons/fi";
+import HelpCenter from "../shared/HelpCenter.jsx";
 
 const API_BASE = "https://cleezoclass.com:4000/api";
 
@@ -181,6 +184,10 @@ const AdminEventsAndMeetings = () => {
   const [studentOptions, setStudentOptions] = useState([]);
   const [selectedCardStudent, setSelectedCardStudent] = useState("");
   const [selectedCardStaff, setSelectedCardStaff] = useState("");
+        const [isHelpOpen, setIsHelpOpen] = useState(false);
+  const [openHelpSection, setOpenHelpSection] = useState(null);
+  
+  const userRole = localStorage.getItem("userRole");
   const [liveChatForm, setLiveChatForm] = useState({
     party1: "",
     className: "",
@@ -724,7 +731,36 @@ const AdminEventsAndMeetings = () => {
       setSubmitting(false);
     }
   };
-
+   const [performance, setPerformance] = useState({});
+  
+      useEffect(() => {
+          getOverallPerformance();
+      }, []);
+  
+      const getOverallPerformance = async () => {
+  
+          try {
+  
+              const schoolCode = localStorage.getItem("schoolCode");
+  
+              const response = await axios.get(
+                  "https://cleezoclass.com:4000/api/overall-performance-percentage",
+                  {
+                      params: {
+                          schoolCode,
+                      },
+                  }
+              );
+  
+              if (response.data.success) {
+                  setPerformance(response.data.data);
+              }
+  
+          } catch (error) {
+              console.log(error);
+          }
+  
+      };
   const renderHistoryItem = (label, secondary, tertiary) => (
     <div className="admin-events-history-item" key={`${label}-${secondary}-${tertiary}`}>
       <strong>{label}</strong>
@@ -732,7 +768,8 @@ const AdminEventsAndMeetings = () => {
       {tertiary ? <small>{tertiary}</small> : null}
     </div>
   );
-
+const percentage = Number(performance?.overallPercentage || 0);
+  const progressAngle = `${percentage * 3.6}deg`;
   return (
     <div className="dashboard-page dashboard-home-page frontdesk-dashboard-page accountant-dashboard-page accountant-dashboard-home-page admin-events-page">
       <div className="dashboard-shell accountant-dashboard-shell">
@@ -785,7 +822,17 @@ const AdminEventsAndMeetings = () => {
             </div>
 
             <div className="dashboard-topbar-right accountant-topbar-right">
-        
+                  <button
+                   className="accountant-help-icon-btn"
+                   onClick={() => setIsHelpOpen(true)}
+                 >
+                 <FiHelpCircle
+                 style={{
+                   color: "#e9818c",
+                   fontSize: "34px"
+                 }}
+               />
+                 </button>
               <EditableProfileMenu showHrSwitch />
             </div>
           </div>
@@ -793,32 +840,19 @@ const AdminEventsAndMeetings = () => {
           <div className="admin-events-content">
             <div className="admin-events-top">
                     <div className="accountant-welcome-block">
-                <h2>Hi, Vinay!</h2>
+                <h2>Hi, {getUserDisplayName()}!</h2>
                 <p>Check Store Inventory,</p>
                 <p>Report Track to Class Teacher</p>
                 <p>Submit Building maintenance</p>
               </div>
 
-              <div className="admin-events-task accountant-card">
-                <div className="admin-events-task-header">
-                  <h3>Task of the Day</h3>
-                  <button
-                    type="button"
-                    className="admin-events-plus-btn"
-                    onClick={openEventPopup}
-                  >
-                    <FaPlus />
-                  </button>
-                </div>
-                <div className="admin-events-task-list">
-                  {reminderItems.map((item) => (
-                    <label key={item} className="admin-events-reminder">
-                      <input type="radio" name="events-reminder" />
-                      <span>{item}</span>
-                    </label>
-                  ))}
-                </div>
-              </div>
+      {/* OLD STATIC CARD */}
+{/* NEW DYNAMIC CARD */}
+<div className="admin-events-task accountant-card">
+  <div className="taskCardContent">
+    <TaskOfTheDay />
+  </div>
+</div>
 
               <div className="accountant-mini-cards">
                 {quickCards.map((card) => (
@@ -1091,8 +1125,11 @@ const AdminEventsAndMeetings = () => {
               <div className="admin-events-side-stack">
                 <div className="admin-events-metrics">
                   <div className="admin-events-metric accountant-card">
-                    <div className="admin-events-ring">45%</div>
-                    <h4>Performance</h4>
+<div
+                      className="admin-events-ring"
+                      style={{ "--admission-progress": progressAngle }}>
+                      <span>{percentage}%</span>
+                    </div>                    <h4>Performance</h4>
                     <span>Students Track</span>
                   </div>
                   <div className="admin-events-metric accountant-card">
@@ -1361,7 +1398,18 @@ const AdminEventsAndMeetings = () => {
         message={loadingRecords ? "Loading announcements, events, and meetings..." : popupMessage}
         onClose={() => setPopupMessage("")}
       />
-
+ {
+              isHelpOpen && (
+                <>
+                <HelpCenter
+                userRole={userRole}
+                openHelpSection={openHelpSection}
+                    setOpenHelpSection={setOpenHelpSection}
+                setIsHelpOpen={setIsHelpOpen}
+                />
+                </>
+              )
+            }
       <div className="accountant-footer-brand">
         <span>Powered By:</span>
         <img src={abcLogo} alt="Cleezo Class" className="accountant-footer-logo" />

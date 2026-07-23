@@ -1530,7 +1530,7 @@
 }
 .accountant-progress-ring {
   --size: 2.55rem;
-  --thickness: 4px;
+  /* --thickness: 4px; */
 
   width: var(--size);
   height: var(--size);

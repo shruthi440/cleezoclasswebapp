@@ -23,15 +23,18 @@ import dashboardIcon from "../assets/Dashboard.png";
 import addStudentIcon from "../assets/Enrollment.png";
 import logoab from "../assets/logoab.png";
 import IncomeForm5 from "../shared/IncomeformTwo.jsx";
-
+import { jsPDF } from 'jspdf';
+import autoTable from 'jspdf-autotable'
 import transactionsIcon from "../assets/Communications.png";
 import campaignAutomatedIcon from "../assets/Campaign_Automated.png";
 import campaignDigitalIcon from "../assets/Campaign_Digital.png";
 import campaignStaffIcon from "../assets/Campaign_Staff.png";
 import timelineIcon from "../assets/Timeline.png";
 import feesSearchIcon from "../assets/user (1).png";
+import HelpCenter from "../shared/HelpCenter.jsx";
+import { FiHelpCircle } from "react-icons/fi";
 
-type ReportView = "main" | "ledger" | "previous" | "complete" | "bus" | "studentTransactions" | "paid" | "unpaid" | "discounts" | "referrals" | "feeType";
+type ReportView = "main" | "ledger" | "previous" | "complete" | "bus" | "studentTransactions" | "paid" | "unpaid" | "discounts" | "referrals" | "feeType" | "collectionSummary";
 type ReportRow = Record<string, any>;
 
 type Filters = {
@@ -93,17 +96,56 @@ const normalizePreviousItem = (row: ReportRow) => ({
 });
 
 const normalizeCompleteItem = (row: ReportRow) => {
-  const completeFee = toAmount(
+  // Get all keys from the row that are fees (exclude system fields)
+  const feeKeys = Object.keys(row || {}).filter(key => {
+    const lowerKey = key.toLowerCase();
+    return ![
+      'studentname', 'class_name', 'section', 'studentname',
+      'classname', 'completefee', 'updatedcompletefee', 'final_amount',
+      'total_fee', 'name', 'id', 'login_id', 'paiddate', 'payment_date',
+      'record_date', 'receipt_date', 'created_at', 'paymentmode',
+      'transaction_id', 'receiptnumber', 'academic_year', 'fee_type',
+      'remarks', 'amount_paid', 'due', 'pending', 'unpaidamount'
+    ].includes(lowerKey);
+  });
+
+  // Calculate complete fee from all fee columns only when backend does not send one.
+  const calculatedCompleteFee = feeKeys.reduce((sum, key) => {
+    // Skip _paid and _due columns
+    const lowerKey = key.toLowerCase();
+    if (
+      lowerKey.endsWith('_paid') ||
+      lowerKey.endsWith('_due') ||
+      lowerKey.endsWith('_class') ||
+      [
+        'tuitionfee',
+        'studentbooksfee',
+        'studentexamfee',
+        'busfee',
+        'previousdue',
+        'residentialcompletefee',
+        'otherfee',
+      ].includes(lowerKey)
+    ) {
+      return sum;
+    }
+    return sum + toAmount(row[key]);
+  }, 0);
+  const backendCompleteFee = toAmount(
     getAny(row, ["CompleteFee", "completeFee", "UpdatedCompleteFee", "Final_Amount", "complete_fee", "TOTAL_FEE"])
   );
-  const admissionFee = toAmount(getAny(row, ["Admission_fees", "admission_fees"]));
-  const booksFee = toAmount(getAny(row, ["StudentBooksFee", "Book_Fees", "booksFee", "book_fees"]));
-  const uniformFee = toAmount(getAny(row, ["Uniform_fees", "uniform_fees"]));
-  const examFee = toAmount(getAny(row, ["StudentExamFee", "Exam_fees", "examFee", "exam_fees"]));
-  const busFee = toAmount(getAny(row, ["BusFee", "Bus_fees", "busFee", "bus_fees"]));
-  const otherFee = toAmount(getAny(row, ["OtherFee", "Others", "otherFee", "others"]));
-  const explicitTuitionFee = toAmount(getAny(row, ["TuitionFee", "tuitionFee"]));
-  const derivedTuitionFee = Math.max(completeFee - (admissionFee + booksFee + uniformFee + examFee + busFee + otherFee), 0);
+  const completeFee = backendCompleteFee > 0 ? backendCompleteFee : calculatedCompleteFee;
+
+  // Extract individual fee values
+  const getFeeValue = (possibleKeys: string[]) => {
+    for (const key of possibleKeys) {
+      const value = row[key];
+      if (value !== undefined && value !== null) {
+        return toAmount(value);
+      }
+    }
+    return 0;
+  };
 
   return {
     ...row,
@@ -111,16 +153,18 @@ const normalizeCompleteItem = (row: ReportRow) => {
     Class_name: getAny(row, ["Class_name", "class_name", "className"], ""),
     section: getAny(row, ["section", "Section"], ""),
     CompleteFee: completeFee,
-    TuitionFee: explicitTuitionFee > 0 ? explicitTuitionFee : derivedTuitionFee,
-    TuitionPaid: toAmount(getAny(row, ["TuitionPaid", "Paid_Amount", "paid_amount"])),
-    StudentBooksFee: booksFee,
-    StudentExamFee: examFee,
-    BusFee: busFee,
+    // Get values from the actual fee columns returned by backend
+    
+    BusFee: getFeeValue(['BusFee', 'Bus_fees', 'busFee', 'bus_fees']),
     PreviousDue: toAmount(getAny(row, ["PreviousDue", "Previous_Fee_Due", "previousDue", "previous_fee_due"])),
     ResidentialCompleteFee: toAmount(
       getAny(row, ["ResidentialCompleteFee", "residentialCompleteFee", "residential_complete_fee"])
     ),
-    OtherFee: otherFee,
+    OtherFee: getFeeValue(['OtherFee', 'Others', 'otherFee', 'others']),
+    // Add all other dynamic fees
+    ...Object.fromEntries(
+      feeKeys.map(key => [key, toAmount(row[key])])
+    )
   };
 };
 
@@ -158,13 +202,39 @@ const formatDate = (value: any) => {
 
 const getDefaultMonthRange = () => {
   const now = new Date();
-  const firstDay = new Date(now.getFullYear(), now.getMonth(), 1).toISOString().split("T")[0];
-  const lastDay = new Date(now.getFullYear(), now.getMonth() + 1, 0).toISOString().split("T")[0];
+  const formatDateInputValue = (date: Date) => {
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, "0");
+    const day = String(date.getDate()).padStart(2, "0");
+    return `${year}-${month}-${day}`;
+  };
+  const targetMonthLastDay = new Date(now.getFullYear(), now.getMonth() - 5, 0).getDate();
+  const fromDay = Math.min(now.getDate(), targetMonthLastDay);
+  const fromDate = new Date(now.getFullYear(), now.getMonth() - 6, fromDay);
+  const firstDay = formatDateInputValue(fromDate);
+  const lastDay = formatDateInputValue(now);
   return { firstDay, lastDay };
 };
 
+const collectionMonthOptions = [
+  { value: "All", label: "All Months" },
+  { value: "1", label: "January" },
+  { value: "2", label: "February" },
+  { value: "3", label: "March" },
+  { value: "4", label: "April" },
+  { value: "5", label: "May" },
+  { value: "6", label: "June" },
+  { value: "7", label: "July" },
+  { value: "8", label: "August" },
+  { value: "9", label: "September" },
+  { value: "10", label: "October" },
+  { value: "11", label: "November" },
+  { value: "12", label: "December" },
+];
+
 const reportCards = [
   { key: "ledger", title: "Day-wise", subtitle: " Ledger", icon: DaywiseIcon },
+  { key: "collectionSummary", title: "Collection Report", subtitle: "Month & Year", icon: transactionsIcon },
     { key: "studentTransactions", title: "Transactions", subtitle: "Student Report", icon: TransactionIcon },
 
   // { key: "previous", title: "Previous Due", subtitle: "Pending Report", icon: reportIcon },
@@ -277,6 +347,14 @@ const formatHeaderLabel = (value: string) =>
     .replace(/_/g, " ")
     .replace(/\b\w/g, (char) => char.toUpperCase());
 
+const formatDueReportHeaderLabel = (header: string) => {
+  if (header === "Class_name") return "Class";
+  if (header === "StudentName") return "Student Name";
+  if (header === "Total_Expected") return "Total Fee";
+
+  return formatHeaderLabel(header).trim();
+};
+
 const escapeHtml = (value: any) =>
   String(value ?? "")
     .replace(/&/g, "&amp;")
@@ -308,16 +386,34 @@ const getDynamicTransactionPaidLabel = (key: string) => {
   const withoutSuffix = key.replace(/_paid$/i, "");
   return `${formatHeaderLabel(withoutSuffix)} Paid`;
 };
-
 const normalizeFeeBaseKey = (key: string) =>
   String(key || "")
     .trim()
     .toLowerCase()
+    .replace(/\bfees?\b/g, "")
+    .replace(/\s+/g, "")
     .replace(/_fees?$/i, "")
     .replace(/_fee$/i, "")
+    .replace(/fees?$/i, "")
     .replace(/_amount$/i, "")
     .replace(/_paid$/i, "")
     .replace(/_due$/i, "");
+
+const getFeeTypeName = (item: any) =>
+  String(item?.feeType || item?.fee_type || item?.feeName || item?.fee_name || item || "").trim();
+
+const getCompleteFeeBasesFromFeeTypes = (feeTypes: any[]) => {
+  const seen = new Set<string>();
+  return (Array.isArray(feeTypes) ? feeTypes : [])
+    .map(getFeeTypeName)
+    .filter(Boolean)
+    .filter((feeName) => {
+      const normalized = normalizeFeeBaseKey(feeName);
+      if (!normalized || seen.has(normalized)) return false;
+      seen.add(normalized);
+      return true;
+    });
+};
 
 const getDynamicFeeBases = (rows: ReportRow[]) => {
   const bases = new Set<string>();
@@ -342,11 +438,19 @@ const getDynamicFeeBases = (rows: ReportRow[]) => {
   return Array.from(bases).sort((a, b) => a.localeCompare(b, undefined, { sensitivity: "base" }));
 };
 
-const getDynamicFeeValue = (row: ReportRow, baseKey: string) =>
-  toAmount(
-    getAny(row, [baseKey, `${baseKey}_fee`, `${baseKey}_fees`, `${baseKey}_amount`, baseKey.toUpperCase()], 0)
-  );
-
+const getDynamicFeeValue = (row: ReportRow, baseKey: string) => {
+  const targetNormalized = normalizeFeeBaseKey(baseKey);
+  for (const [key, value] of Object.entries(row || {})) {
+    const normalizedKey = normalizeFeeBaseKey(key);
+    if (normalizedKey === targetNormalized) {
+      const lowerKey = key.toLowerCase();
+      if (!lowerKey.endsWith('_paid') && !lowerKey.endsWith('_due')) {
+        return toAmount(value);
+      }
+    }
+  }
+  return toAmount(getAny(row, [baseKey, `${baseKey}_fee`, `${baseKey}_fees`, `${baseKey}_amount`], 0));
+};
 const getDynamicDiscountColumns = (rows: ReportRow[]) => {
   const columns = new Set<string>();
 
@@ -354,13 +458,26 @@ const getDynamicDiscountColumns = (rows: ReportRow[]) => {
     Object.entries(row || {}).forEach(([key, value]) => {
       const trimmedKey = String(key || "").trim();
       const lowerKey = trimmedKey.toLowerCase();
-      if (!trimmedKey) return;
-      if (lowerKey === "discount_reason" || lowerKey === "reason" || lowerKey === "fee_type") return;
+
       if (!lowerKey.includes("discount")) return;
-      if (toAmount(value) <= 0 && lowerKey !== "discount") return;
-      if (DISCOUNT_REPORT_KEYS.has(trimmedKey) || lowerKey.endsWith("_discount") || lowerKey === "discount") {
-        columns.add(trimmedKey);
+      if (
+        [
+          "discount",
+          "discount_reason",
+          "discountreason",
+          "discount_date",
+          "discount_referred_by",
+          "discount_approved_by",
+          "discount_refno",
+          "reason",
+          "fee_type",
+        ].includes(lowerKey)
+      ) {
+        return;
       }
+      if (toAmount(value) <= 0) return;
+
+      columns.add(trimmedKey);
     });
   });
 
@@ -369,6 +486,71 @@ const getDynamicDiscountColumns = (rows: ReportRow[]) => {
 
 const getDiscountReason = (row: ReportRow) =>
   getAny(row, ["discount_reason", "discountReason", "reason", "editReason"], "-");
+
+const getDiscountRecordDate = (row: ReportRow) =>
+  getAny(row, ["Discount_Date", "discount_date", "record_date", "created_at", "updated_at"], "");
+
+const getReportStudentKey = (row: ReportRow) =>
+  [
+    getAny(row, ["StudentName", "student_name", "studentName", "name"], ""),
+    getAny(row, ["Class_name", "class_name", "className", "class"], ""),
+    getAny(row, ["section", "Section"], ""),
+  ]
+    .map((value) =>
+      String(value || "")
+        .trim()
+        .toLowerCase()
+        .replace(/\s+/g, " ")
+    )
+    .join("|");
+
+const getRowDiscountTotal = (row: ReportRow) => {
+  const directDiscount = toAmount(
+    getAny(row, ["Discount", "discount", "discount_amount", "Discount_Amount", "Concession", "Total_Discount"], 0)
+  );
+  if (directDiscount > 0) return directDiscount;
+
+  return Object.entries(row || {}).reduce((sum, [key, value]) => {
+    const lowerKey = String(key || "").toLowerCase();
+    if (!lowerKey.includes("discount")) return sum;
+    if (
+      [
+        "discount_reason",
+        "discountreason",
+        "discount_date",
+        "discount_referred_by",
+        "discount_approved_by",
+        "discount_refno",
+        "editreason",
+      ].includes(lowerKey)
+    ) {
+      return sum;
+    }
+    return sum + toAmount(value);
+  }, 0);
+};
+
+const normalizeDiscountItem = (row: ReportRow) => ({
+  ...row,
+  StudentName: getAny(row, ["StudentName", "student_name", "studentName", "name", "Student_Name"], ""),
+  Class_name: getAny(row, ["Class_name", "class_name", "className", "class", "FeeClass"], ""),
+  section: getAny(row, ["section", "Section", "sectionName", "FeeSection"], ""),
+  fee_type: getAny(row, ["fee_type", "feeType", "feeName", "fee_name"], "-"),
+  discount_reason: getDiscountReason(row),
+  Discount: getRowDiscountTotal(row),
+});
+
+const normalizeMainDueItem = (row: ReportRow, mergedDiscount = 0) => {
+  const discount = mergedDiscount || getRowDiscountTotal(row);
+  const originalDue = toAmount(getAny(row, ["Total_Due", "Due_Amount", "Due", "due", "unpaidAmount"], 0));
+  const adjustedDue = Math.max(originalDue - discount, 0);
+
+  return {
+    ...row,
+    Discount: discount,
+    Total_Due: adjustedDue,
+  };
+};
 
 const isReferralDiscountRow = (row: ReportRow) => {
   const reason = String(getDiscountReason(row) || "").trim().toLowerCase();
@@ -436,9 +618,19 @@ const buildActiveFeeTypeKeySet = (rows: ReportRow[]) => {
 
   return keys;
 };
-
-const getDynamicPaidValue = (row: ReportRow, baseKey: string) =>
-  toAmount(getAny(row, [`${baseKey}_paid`, `${baseKey}_fee_paid`, `${baseKey.toUpperCase()}_PAID`], 0));
+const getDynamicPaidValue = (row: ReportRow, baseKey: string) => {
+  const targetNormalized = normalizeFeeBaseKey(baseKey);
+  for (const [key, value] of Object.entries(row || {})) {
+    const normalizedKey = normalizeFeeBaseKey(key);
+    if (normalizedKey === targetNormalized) {
+      const lowerKey = key.toLowerCase();
+      if (lowerKey.endsWith('_paid')) {
+        return toAmount(value);
+      }
+    }
+  }
+  return toAmount(getAny(row, [`${baseKey}_paid`, `${baseKey}_fee_paid`], 0));
+};
 
 const hasAnyAmount = (rows: ReportRow[], getter: (row: ReportRow) => any) =>
   rows.some((row) => toAmount(getter(row)) > 0);
@@ -463,6 +655,9 @@ const AccountantReportsPage: React.FC = () => {
   const [currentPage, setCurrentPage] = useState(1);
   const [activeView, setActiveView] = useState<ReportView>("main");
   const [activeCardKey, setActiveCardKey] = useState<string>("main");
+  const [collectionSubTab, setCollectionSubTab] = useState<"month" | "year">("month");
+  const [collectionData, setCollectionData] = useState<ReportRow[]>([]);
+  const [selectedCollectionMonth, setSelectedCollectionMonth] = useState("All");
 
   const [classList, setClassList] = useState<any[]>([]);
   const [sectionMap, setSectionMap] = useState<any[]>([]);
@@ -473,6 +668,7 @@ const AccountantReportsPage: React.FC = () => {
   const [previousData, setPreviousData] = useState<ReportRow[]>([]);
   const [busData, setBusData] = useState<ReportRow[]>([]);
   const [completeFeeData, setCompleteFeeData] = useState<ReportRow[]>([]);
+  const [completeFeeTypeBases, setCompleteFeeTypeBases] = useState<string[]>([]);
   const [studentTransactions, setStudentTransactions] = useState<ReportRow[]>([]);
   const [discountsData, setDiscountsData] = useState<ReportRow[]>([]);
   const [referralsData, setReferralsData] = useState<ReportRow[]>([]);
@@ -493,6 +689,10 @@ const AccountantReportsPage: React.FC = () => {
   const [summaryPreviousPaid, setSummaryPreviousPaid] = useState(0);
   const [isAddFeesPopupOpen, setIsAddFeesPopupOpen] = useState(false);
   const [isStudentManagementPopupOpen, setIsStudentManagementPopupOpen] = useState(false);
+        const [isHelpOpen, setIsHelpOpen] = useState(false);
+  const [openHelpSection, setOpenHelpSection] = useState(null);
+  
+  const userRole = localStorage.getItem("userRole");
   const [addFeePreview, setAddFeePreview] = useState({
     className: "",
     section: "",
@@ -580,8 +780,11 @@ const AccountantReportsPage: React.FC = () => {
 
   const getFilterDateForRow = useCallback(
     (row: ReportRow) => {
-      if (activeView === "studentTransactions" || activeView === "paid" || activeView === "unpaid" || activeView === "discounts") {
-        return row?.record_date || row?.paidDate || row?.paid_date || row?.Payment_Date || row?.created_at || "";
+      if (activeView === "collectionSummary") {
+        return row?.Collection_Date || row?.paidDate || row?.paid_date || "";
+      }
+      if (activeView === "studentTransactions" || activeView === "paid" || activeView === "unpaid" || activeView === "discounts" || activeView === "referrals") {
+        return row?.Discount_Date || row?.discount_date || row?.record_date || row?.paidDate || row?.paid_date || row?.Payment_Date || row?.created_at || "";
       }
       return row?.record_date || row?.paidDate || row?.Payment_Date || row?.Bus_Payment_Date || row?.paid_date || row?.created_at;
     },
@@ -589,7 +792,12 @@ const AccountantReportsPage: React.FC = () => {
   );
 
   const getRowYear = useCallback(
-    (row: ReportRow) => getFinancialYearFromDate(getFilterDateForRow(row)),
+    (row: ReportRow) => {
+      if (activeView === "collectionSummary" && row?.Collection_Year) {
+        return String(row.Collection_Year);
+      }
+      return getFinancialYearFromDate(getFilterDateForRow(row));
+    },
     [getFilterDateForRow]
   );
 
@@ -605,6 +813,7 @@ const AccountantReportsPage: React.FC = () => {
       unpaidListData,
       discountsData,
       referralsData,
+      collectionData,
     ];
     const years = new Set<string>();
     sources.forEach((list) => {
@@ -631,6 +840,7 @@ const AccountantReportsPage: React.FC = () => {
     studentTransactions,
     unpaidListData,
     discountsData,
+    collectionData,
   ]);
 
   const isPreviousFinancialYearSelected = useMemo(() => {
@@ -750,6 +960,34 @@ const AccountantReportsPage: React.FC = () => {
     []
   );
 
+  const handleCollectionSummaryReport = useCallback(async (type: "month" | "year") => {
+    setLoadingCardKey("collectionSummary");
+    setExtraLoading(true);
+    setCurrentPage(1);
+    setCollectionSubTab(type);
+    setFilters((prev) => ({ ...prev, year: "All" }));
+    if (type === "year") setSelectedCollectionMonth("All");
+    try {
+      const schoolCode = localStorage.getItem("schoolCode");
+      if (!schoolCode) throw new Error("School code missing");
+
+      const endpointType = type === "month" ? "MonthWiseCollectionReport" : "YearWiseCollectionReport";
+      const params = new URLSearchParams({ schoolCode, type: endpointType });
+      const response = await axios.get(`${API_BASE_URL}/api/fee-records-alldata?${params.toString()}`);
+      const rows = Array.isArray(response.data) ? response.data : response.data?.data || [];
+
+      setCollectionData(rows);
+      setActiveView("collectionSummary");
+      setActiveCardKey("collectionSummary");
+    } catch (error) {
+      console.error(error);
+      alert("Failed to fetch collection report");
+    } finally {
+      setExtraLoading(false);
+      setLoadingCardKey("");
+    }
+  }, []);
+
   const handleTodayLedger = async () => {
     setLoadingCardKey("ledger");
     setLedgerLoading(true);
@@ -842,7 +1080,7 @@ const AccountantReportsPage: React.FC = () => {
       const toDate = filters.toDate || lastDay;
 
       const params = new URLSearchParams({
-        type: "AllFeesStatusReport",
+        type: "TotalDueList",
         fromDate,
         toDate,
         schoolCode,
@@ -928,6 +1166,7 @@ const AccountantReportsPage: React.FC = () => {
       const params = new URLSearchParams({ schoolCode, type: "CompleteFeeSummaryReport" });
       const response = await axios.get(`https://cleezoclass.com:4000/api/fee-records-alldata?${params.toString()}`);
       const rows = (Array.isArray(response.data) ? response.data : response.data.data || []).map(normalizeCompleteItem);
+      setCompleteFeeTypeBases(getCompleteFeeBasesFromFeeTypes(response.data?.feeTypes || []));
       setCompleteFeeData(rows);
       setActiveView("complete");
       setActiveCardKey("complete");
@@ -996,159 +1235,112 @@ const AccountantReportsPage: React.FC = () => {
       setLoadingCardKey("");
     }
   };
+const handleStudentTransactions = useCallback(async (sourceCardKey: string = "studentTransactions") => {
+  setLoadingCardKey("studentTransactions");
+  setStudentTransactionsLoading(true);
+  setCurrentPage(1);
+  setActiveCardKey(sourceCardKey);
+  try {
+    const schoolCode = localStorage.getItem("schoolCode");
+    if (!schoolCode) throw new Error("School code missing");
 
-  const handleStudentTransactions = useCallback(async (sourceCardKey: string = "studentTransactions") => {
-    setLoadingCardKey("studentTransactions");
-    setStudentTransactionsLoading(true);
-    setCurrentPage(1);
-    setActiveCardKey(sourceCardKey);
+    const className = filters.className === "All" ? "" : filters.className || "";
+    const section = filters.section === "All" ? "" : filters.section || "";
+    const studentName = filters.studentName || "";
+
+    const queryParams = {
+      schoolCode,
+      studentName,
+      className,
+      section,
+    };
+
+    const parseRows = (payload: any): ReportRow[] => {
+      if (Array.isArray(payload)) return payload;
+      if (Array.isArray(payload?.data)) return payload.data;
+      if (Array.isArray(payload?.rows)) return payload.rows;
+      return [];
+    };
+
+    let result: ReportRow[] = [];
     try {
-      const schoolCode = localStorage.getItem("schoolCode");
-      if (!schoolCode) throw new Error("School code missing");
+      const response = await axios.get(`${API_BASE_URL}/api/student-transactions-dynamic`, {
+        params: queryParams,
+      });
+      result = parseRows(response.data);
+    } catch (dynamicError) {
+      console.warn("Dynamic student-transactions endpoint failed, trying legacy fallback:", dynamicError);
+      const fallbackResponse = await axios.get(`${API_BASE_URL}/api/student-transactions`, {
+        params: queryParams,
+      });
+      result = parseRows(fallbackResponse.data);
+    }
 
-      const className = filters.className === "All" ? "" : filters.className || "";
-      const section = filters.section === "All" ? "" : filters.section || "";
-      const studentName = filters.studentName || "";
-
-      const queryParams = {
-        schoolCode,
-        studentName,
-        className,
-        section,
-      };
-
-      const parseRows = (payload: any): ReportRow[] => {
-        if (Array.isArray(payload)) return payload;
-        if (Array.isArray(payload?.data)) return payload.data;
-        if (Array.isArray(payload?.rows)) return payload.rows;
-        return [];
-      };
-
-      let result: ReportRow[] = [];
-      try {
-        const response = await axios.get("https://cleezoclass.com:4000/api/student-transactions", {
-          params: queryParams,
-        });
-        result = parseRows(response.data);
-      } catch (primaryError) {
-        console.warn("Primary student-transactions endpoint failed, trying dynamic fallback:", primaryError);
-        const fallbackResponse = await axios.get("https://cleezoclass.com:4000/api/student-transactions-dynamic", {
-          params: queryParams,
-        });
-        result = parseRows(fallbackResponse.data);
-      }
-
-      const groupedMap = new Map<string, ReportRow>();
-      result.forEach((row: ReportRow) => {
-        const student = row?.StudentName || "";
-        const className = row?.Class_name || "";
-        const section = row?.section || "";
-        const key = `${student}__${className}__${section}`;
-
-        const existing = groupedMap.get(key) || {
-          ...row,
-          Paid_Amount: 0,
-          Admission_paid: 0,
-          books_paid: 0,
-          uniform_paid: 0,
-          exam_paid: 0,
-          bus_paid: 0,
-          others_paid: 0,
-          RES_INST_1: 0,
-          Previous_Fee_Due: 0,
-          Previous_Paid: 0,
-          paidDate: "",
-          paymentMode: "",
-          transaction_id: "",
-          receiptNumber: "",
-        };
-
-        existing.CompleteFee = Math.max(Number(existing.CompleteFee) || 0, Number(row.CompleteFee) || 0);
-        existing.Admission_fees = Math.max(Number(existing.Admission_fees) || 0, Number(row.Admission_fees) || 0);
-        existing.Book_Fees = Math.max(Number(existing.Book_Fees) || 0, Number(row.Book_Fees) || 0);
-        existing.Uniform_fees = Math.max(Number(existing.Uniform_fees) || 0, Number(row.Uniform_fees) || 0);
-        existing.Exam_fees = Math.max(Number(existing.Exam_fees) || 0, Number(row.Exam_fees) || 0);
-        existing.Bus_fees = Math.max(Number(existing.Bus_fees) || 0, Number(row.Bus_fees) || 0);
-        existing.Others = Math.max(Number(existing.Others) || 0, Number(row.Others) || 0);
-        existing.ResidentialCompleteFee = Math.max(
-          Number(existing.ResidentialCompleteFee) || 0,
-          Number(row.ResidentialCompleteFee) || 0
-        );
-
-        existing.Paid_Amount += Number(row.Paid_Amount) || 0;
-        existing.Admission_paid += Number(row.Admission_paid) || 0;
-        existing.books_paid += Number(row.books_paid) || 0;
-        existing.uniform_paid += Number(row.uniform_paid) || 0;
-        existing.exam_paid += Number(row.exam_paid) || 0;
-        existing.bus_paid += Number(row.bus_paid) || 0;
-        existing.others_paid += Number(row.others_paid) || 0;
-        existing.RES_INST_1 += Number(row.RES_INST_1) || 0;
-        existing.Previous_Fee_Due += Number(row.Previous_Fee_Due ?? row.PreviousDue) || 0;
-        existing.Previous_Paid += Number(row.Previous_Paid) || 0;
-
-        Object.entries(row || {}).forEach(([key, value]) => {
-          const normalizedKey = String(key || "").trim();
-          const lowerKey = normalizedKey.toLowerCase();
-
-          if (!lowerKey.endsWith("_paid")) return;
-          if (STATIC_TRANSACTION_PAID_KEYS.has(lowerKey)) return;
-
-          existing[normalizedKey] = toAmount(existing[normalizedKey]) + toAmount(value);
-        });
-
-        const currentDate = row?.paidDate ? new Date(row.paidDate).getTime() : 0;
-        const existingDate = existing.paidDate ? new Date(existing.paidDate).getTime() : 0;
-        if (currentDate > existingDate) {
-          existing.paidDate = row.paidDate || existing.paidDate;
+    // Filter rows where any "paid" field is > 0
+    const filteredResult = result.filter((row) => {
+      for (const key in row) {
+        if (key.toLowerCase().includes("paid") && toAmount(row[key]) > 0) {
+          return true;
         }
+      }
+      return false;
+    });
 
-        groupedMap.set(key, existing);
-      });
+    // Remove grouping logic (display each transaction separately)
+    setStudentTransactions(filteredResult);
+    setActiveView("studentTransactions");
+    setActiveCardKey(sourceCardKey);
+    studentTransactionsQueryRef.current = getStudentTransactionsQueryKey(filters);
+  } catch (error) {
+    console.error(error);
+    studentTransactionsQueryRef.current = "";
+    alert("Failed to fetch student transactions");
+  } finally {
+    setStudentTransactionsLoading(false);
+    setLoadingCardKey("");
+  }
+}, [filters, getStudentTransactionsQueryKey]);
 
-      setStudentTransactions(Array.from(groupedMap.values()));
-      setActiveView("studentTransactions");
-      setActiveCardKey(sourceCardKey);
-      studentTransactionsQueryRef.current = getStudentTransactionsQueryKey(filters);
-    } catch (error) {
-      console.error(error);
-      studentTransactionsQueryRef.current = "";
-      alert("Failed to fetch student transactions");
-    } finally {
-      setStudentTransactionsLoading(false);
-      setLoadingCardKey("");
-    }
-  }, [filters, getStudentTransactionsQueryKey]);
+const handleDiscountsReport = useCallback(async () => {
+  setLoadingCardKey("discounts");
+  setExtraLoading(true);
+  setCurrentPage(1);
+  try {
+    const schoolCode = localStorage.getItem("schoolCode");
+    if (!schoolCode) throw new Error("School code missing");
 
-  const handleDiscountsReport = useCallback(async () => {
-    setLoadingCardKey("discounts");
-    setExtraLoading(true);
-    setCurrentPage(1);
-    try {
-      const schoolCode = localStorage.getItem("schoolCode");
-      if (!schoolCode) throw new Error("School code missing");
+    const params = new URLSearchParams({
+      schoolCode,
+      className: filters.className || "All",
+      section: filters.section || "All",
+      fromDate: "",
+      toDate: "",
+    });
 
-      const params = new URLSearchParams({
-        schoolCode,
-        className: filters.className || "All",
-        section: filters.section || "All",
-        fromDate: filters.fromDate || "",
-        toDate: filters.toDate || "",
-      });
+    console.groupCollapsed("[Reports][Discounts] fetch");
+    console.log("request params", Object.fromEntries(params.entries()));
 
-      const response = await axios.get(`https://cleezoclass.com:4000/api/discounts-report?${params.toString()}`);
-      const result = Array.isArray(response.data) ? response.data : response.data?.data || [];
-      setDiscountsData(result);
-      setActiveView("discounts");
-      setActiveCardKey("discounts");
-    } catch (error) {
-      console.error(error);
-      alert("Failed to fetch discounts report");
-    } finally {
-      setExtraLoading(false);
-      setLoadingCardKey("");
-    }
-  }, [filters.className, filters.fromDate, filters.section, filters.toDate]);
+    const response = await axios.get(`https://cleezoclass.com:4000/api/discounts-report?${params.toString()}`);
+    const result = Array.isArray(response.data) ? response.data : response.data?.data || [];
+    const normalizedResult = result.map(normalizeDiscountItem);
 
+    console.log("raw count", result.length);
+    console.log("raw sample", result.slice(0, 3));
+    console.log("normalized count", normalizedResult.length);
+    console.log("normalized sample", normalizedResult.slice(0, 3));
+    console.groupEnd();
+
+    setDiscountsData(normalizedResult);
+    setActiveView("discounts");
+    setActiveCardKey("discounts");
+  } catch (error) {
+    console.error(error);
+    alert("Failed to fetch discounts report");
+  } finally {
+    setExtraLoading(false);
+    setLoadingCardKey("");
+  }
+}, [filters.className, filters.section]);
   useEffect(() => {
     const view = new URLSearchParams(location.search).get("view");
     if (view === "discounts") {
@@ -1168,13 +1360,26 @@ const AccountantReportsPage: React.FC = () => {
         schoolCode,
         className: filters.className || "All",
         section: filters.section || "All",
-        fromDate: filters.fromDate || "",
-        toDate: filters.toDate || "",
+        fromDate: "",
+        toDate: "",
       });
+
+      console.groupCollapsed("[Reports][Referrals] fetch");
+      console.log("request params", Object.fromEntries(params.entries()));
 
       const response = await axios.get(`https://cleezoclass.com:4000/api/discounts-report?${params.toString()}`);
       const result = Array.isArray(response.data) ? response.data : response.data?.data || [];
-      setReferralsData(result.filter(isReferralDiscountRow));
+      const normalizedResult = result.map(normalizeDiscountItem);
+      const referralRows = normalizedResult.filter(isReferralDiscountRow);
+
+      console.log("raw count", result.length);
+      console.log("raw sample", result.slice(0, 3));
+      console.log("normalized count", normalizedResult.length);
+      console.log("referral count", referralRows.length);
+      console.log("referral sample", referralRows.slice(0, 3));
+      console.groupEnd();
+
+      setReferralsData(referralRows);
       setActiveView("referrals");
       setActiveCardKey("referrals");
     } catch (error) {
@@ -1184,7 +1389,7 @@ const AccountantReportsPage: React.FC = () => {
       setExtraLoading(false);
       setLoadingCardKey("");
     }
-  }, [filters.className, filters.fromDate, filters.section, filters.toDate]);
+  }, [filters.className, filters.section]);
 
   const handleFeeTypeReport = useCallback(async () => {
     setLoadingCardKey("feeType");
@@ -1291,9 +1496,28 @@ const AccountantReportsPage: React.FC = () => {
   const applyFilters = useCallback(
     (rows: ReportRow[]) =>
       rows.filter((row) => {
-        const studentName = String(getAny(row, ["StudentName", "student_name", "studentName"], "")).toLowerCase();
-        const className = String(getAny(row, ["Class_name", "class_name", "className"], ""));
-        const sectionName = String(getAny(row, ["section", "Section"], ""));
+        if (activeView === "collectionSummary") {
+          if (filters.year !== "All") {
+            const rowYear = String(row?.Collection_Year || "");
+            const [startYear, endYear] = String(filters.year || "").split("-").map((part) => part.trim());
+            if (rowYear && rowYear !== startYear && rowYear !== endYear) return false;
+          }
+          if (collectionSubTab === "month" && selectedCollectionMonth !== "All") {
+            const rowMonthNumber = String(row?.Month_Number || "").trim();
+            const rowMonthName = String(row?.Collection_Month || "").trim().toLowerCase();
+            const selectedLabel = collectionMonthOptions
+              .find((month) => month.value === selectedCollectionMonth)
+              ?.label.toLowerCase();
+            if (rowMonthNumber) return rowMonthNumber === selectedCollectionMonth;
+            if (selectedLabel && rowMonthName) return rowMonthName === selectedLabel;
+            return false;
+          }
+          return true;
+        }
+
+        const studentName = String(getAny(row, ["StudentName", "student_name", "studentName", "name", "Student_Name"], "")).toLowerCase();
+        const className = String(getAny(row, ["Class_name", "class_name", "className", "class", "FeeClass"], ""));
+        const sectionName = String(getAny(row, ["section", "Section", "sectionName", "FeeSection"], ""));
         if (!studentName) return false;
         if (filters.studentName && !studentName.includes(filters.studentName.toLowerCase())) return false;
         if (filters.className !== "All" && className !== String(filters.className)) return false;
@@ -1305,11 +1529,17 @@ const AccountantReportsPage: React.FC = () => {
         }
 
         const rowDate = getFilterDateForRow(row);
-        if (filters.fromDate && rowDate && new Date(rowDate) < new Date(filters.fromDate)) return false;
-        if (filters.toDate && rowDate && new Date(rowDate) > new Date(filters.toDate)) return false;
+        const parsedRowDate = rowDate ? new Date(rowDate) : null;
+        const fromDate = filters.fromDate ? new Date(`${filters.fromDate}T00:00:00`) : null;
+        const toDate = filters.toDate ? new Date(`${filters.toDate}T23:59:59.999`) : null;
+
+        if (parsedRowDate && !Number.isNaN(parsedRowDate.getTime())) {
+          if (fromDate && parsedRowDate < fromDate) return false;
+          if (toDate && parsedRowDate > toDate) return false;
+        }
         return true;
       }),
-    [filters, getFilterDateForRow, getRowYear]
+    [activeView, collectionSubTab, filters, getFilterDateForRow, getRowYear, selectedCollectionMonth]
   );
 
   const activeRows = useMemo(() => {
@@ -1336,10 +1566,23 @@ const AccountantReportsPage: React.FC = () => {
         return applyFilters(referralsData);
       case "feeType":
         return feeTypeData;
+      case "collectionSummary":
+        return applyFilters(collectionData);
       default:
         return [];
     }
-  }, [activeView, applyFilters, busData, completeFeeData, discountsData, feeTypeData, ledgerData, mainData, paidListData, previousData, referralsData, studentTransactions, unpaidListData]);
+  }, [activeView, applyFilters, busData, collectionData, completeFeeData, discountsData, feeTypeData, ledgerData, mainData, paidListData, previousData, referralsData, studentTransactions, unpaidListData]);
+
+  useEffect(() => {
+    if (activeView !== "discounts" && activeView !== "referrals") return;
+
+    console.groupCollapsed(`[Reports][${activeView}] filtered rows`);
+    console.log("filters", filters);
+    console.log("stored count", activeView === "discounts" ? discountsData.length : referralsData.length);
+    console.log("visible count", activeRows.length);
+    console.log("visible sample", activeRows.slice(0, 3));
+    console.groupEnd();
+  }, [activeRows, activeView, discountsData.length, filters, referralsData.length]);
 
   const totalPages = Math.max(1, Math.ceil(activeRows.length / rowsPerPage));
   const paginatedRows = activeRows.slice((currentPage - 1) * rowsPerPage, currentPage * rowsPerPage);
@@ -1348,39 +1591,24 @@ const AccountantReportsPage: React.FC = () => {
     [activeRows, activeView]
   );
   const dynamicCompleteFeeBases = useMemo(
-    () => (activeView === "complete" ? getDynamicFeeBases(activeRows) : []),
-    [activeRows, activeView]
+    () => (activeView === "complete" ? (completeFeeTypeBases.length ? completeFeeTypeBases : getDynamicFeeBases(activeRows)) : []),
+    [activeRows, activeView, completeFeeTypeBases]
   );
   const dynamicDiscountColumns = useMemo(
     () => (activeView === "discounts" || activeView === "referrals" ? getDynamicDiscountColumns(activeRows) : []),
     [activeRows, activeView]
   );
-  const visibleCompleteStaticColumns = useMemo(() => {
-    if (activeView !== "complete") return [];
-
-    const columns = [
-      { key: "CompleteFee", label: "Complete Fee", getValue: (row: ReportRow) => toAmount(row.CompleteFee) },
-      { key: "TuitionFee", label: "Tuition Fee", getValue: (row: ReportRow) => toAmount(row.TuitionFee) },
-      { key: "TuitionPaid", label: "Tuition Paid", getValue: (row: ReportRow) => toAmount(row.TuitionPaid) },
-      { key: "StudentBooksFee", label: "Books Fee", getValue: (row: ReportRow) => toAmount(row.StudentBooksFee) },
-      { key: "StudentExamFee", label: "Exam Fee", getValue: (row: ReportRow) => toAmount(row.StudentExamFee) },
-      { key: "BusFee", label: "Bus Fee", getValue: (row: ReportRow) => toAmount(row.BusFee) },
-      { key: "PreviousDue", label: "Previous Due", getValue: (row: ReportRow) => toAmount(row.PreviousDue) },
-      {
-        key: "ResidentialCompleteFee",
-        label: "Residential Fee",
-        getValue: (row: ReportRow) => toAmount(row.ResidentialCompleteFee),
-      },
-      { key: "OtherFee", label: "Other Fee", getValue: (row: ReportRow) => toAmount(row.OtherFee) },
-    ];
-
-    return columns.filter((column) => hasAnyAmount(activeRows, column.getValue));
-  }, [activeRows, activeView]);
+const visibleCompleteStaticColumns = useMemo(() => {
+  if (activeView !== "complete") return [];
+  return [
+    { key: "CompleteFee", label: "Complete Fee", getValue: (row: ReportRow) => toAmount(row.CompleteFee) },
+   
+  ].filter((column) => hasAnyAmount(activeRows, column.getValue));
+}, [activeRows, activeView]);
   const visibleTransactionStaticColumns = useMemo(() => {
     if (activeView !== "studentTransactions") return [];
 
     const columns = [
-      { key: "Paid_Amount", label: "Tuition Paid", getValue: (row: ReportRow) => toAmount(row.Paid_Amount) },
       { key: "Admission_paid", label: "Admission Paid", getValue: (row: ReportRow) => toAmount(row.Admission_paid) },
       { key: "books_paid", label: "Books Paid", getValue: (row: ReportRow) => toAmount(row.books_paid) },
       { key: "uniform_paid", label: "Uniform Paid", getValue: (row: ReportRow) => toAmount(row.uniform_paid) },
@@ -1434,12 +1662,14 @@ const AccountantReportsPage: React.FC = () => {
         return "Referrals";
       case "feeType":
         return "Fee Type";
+      case "collectionSummary":
+        return collectionSubTab === "month" ? "Month-wise Collection" : "Year-wise Collection";
       case "unpaid":
       case "main":
       default:
         return "Unpaid";
     }
-  }, [activeView]);
+  }, [activeView, collectionSubTab]);
 
   const getTableColumns = useCallback(
     (view: ReportView, rows: ReportRow[]) => {
@@ -1457,6 +1687,21 @@ const AccountantReportsPage: React.FC = () => {
           { key: "paymentMode", label: "Payment Mode", getValue: (row: ReportRow) => row.paymentMode || "-" },
           { key: "transaction_id", label: "Txn ID", getValue: (row: ReportRow) => row.transaction_id || "-" },
           { key: "amount_paid", label: "Amount", getValue: (row: ReportRow) => formatMoney(row.amount_paid) },
+        ];
+      }
+
+      if (view === "collectionSummary") {
+        if (collectionSubTab === "month") {
+          return [
+            { key: "Collection_Month", label: "Month", getValue: (row: ReportRow) => row.Collection_Month || "-" },
+            { key: "Collection_Year", label: "Year", getValue: (row: ReportRow) => row.Collection_Year || "-" },
+            { key: "Total_Collection", label: "Total Collection", getValue: (row: ReportRow) => formatMoney(row.Total_Collection) },
+          ];
+        }
+
+        return [
+          { key: "Collection_Year", label: "Year", getValue: (row: ReportRow) => row.Collection_Year || "-" },
+          { key: "Total_Collection", label: "Total Collection", getValue: (row: ReportRow) => formatMoney(row.Total_Collection) },
         ];
       }
 
@@ -1485,7 +1730,7 @@ const AccountantReportsPage: React.FC = () => {
 
         dynamicCompleteFeeBases.forEach((baseKey) => {
           cols.push(
-            { key: `${baseKey}_fee`, label: `${formatHeaderLabel(baseKey)} Fee`, getValue: (row: ReportRow) => formatMoney(getDynamicFeeValue(row, baseKey)) },
+            { key: `${baseKey}_fee`, label: formatHeaderLabel(baseKey), getValue: (row: ReportRow) => formatMoney(getDynamicFeeValue(row, baseKey)) },
             { key: `${baseKey}_paid`, label: `${formatHeaderLabel(baseKey)} Paid`, getValue: (row: ReportRow) => formatMoney(getDynamicPaidValue(row, baseKey)) }
           );
         });
@@ -1534,34 +1779,33 @@ const AccountantReportsPage: React.FC = () => {
         return cols;
       }
 
-      if (view === "discounts") {
-        const cols = [
-          { key: "StudentName", label: "Student", getValue: (row: ReportRow) => row.StudentName || row.student_name || row.studentName || "-" },
-          { key: "Class_name", label: "Class", getValue: (row: ReportRow) => row.Class_name || row.class_name || row.className || "-" },
-          { key: "section", label: "Section", getValue: (row: ReportRow) => row.section || row.Section || "-" },
-          { key: "fee_type", label: "Fee Type", getValue: (row: ReportRow) => row.fee_type || "-" },
-          { key: "discount_reason", label: "Reason", getValue: (row: ReportRow) => getDiscountReason(row) },
-          { key: "Discount", label: "Total Discount", getValue: (row: ReportRow) => formatMoney(row.Discount) },
-        ];
+  if (view === "discounts") {
+      const cols = [
+        { key: "StudentName", label: "Student", getValue: (row: ReportRow) => row.StudentName || row.student_name || row.studentName || "-" },
+        { key: "Class_name", label: "Class", getValue: (row: ReportRow) => row.Class_name || row.class_name || row.className || "-" },
+        { key: "section", label: "Section", getValue: (row: ReportRow) => row.section || row.Section || "-" },
+        { key: "fee_type", label: "Fee Type", getValue: (row: ReportRow) => row.fee_type || "-" },
+        { key: "discount_reason", label: "Reason", getValue: (row: ReportRow) => getDiscountReason(row) },
+        { key: "Discount", label: "Total Discount", getValue: (row: ReportRow) => formatMoney(getRowDiscountTotal(row)) },
+      ];
 
-        dynamicDiscountColumns.forEach((key) => {
-          if (key === "Discount") return;
-          cols.push({
-            key,
-            label: formatHeaderLabel(key),
-            getValue: (row: ReportRow) => formatMoney(row[key]),
-          });
+      dynamicDiscountColumns.forEach((key) => {
+        if (key === "Discount") return;
+        cols.push({
+          key,
+          label: formatHeaderLabel(key),
+          getValue: (row: ReportRow) => formatMoney(row[key] || 0),
         });
+      });
 
-        cols.push(
-          { key: "record_date", label: "Record Date", getValue: (row: ReportRow) => formatDate(row.record_date || row.created_at || row.updated_at) },
-          { key: "created_at", label: "Created At", getValue: (row: ReportRow) => formatDate(row.created_at) },
-          { key: "updated_at", label: "Updated At", getValue: (row: ReportRow) => formatDate(row.updated_at) }
-        );
+      cols.push(
+        { key: "record_date", label: "Record Date", getValue: (row: ReportRow) => formatDate(getDiscountRecordDate(row)) },
+        { key: "created_at", label: "Created At", getValue: (row: ReportRow) => formatDate(row.created_at) },
+        { key: "updated_at", label: "Updated At", getValue: (row: ReportRow) => formatDate(row.updated_at) }
+      );
 
-        return cols;
-      }
-
+      return cols;
+    }
       if (view === "referrals") {
         const cols = [
           { key: "StudentName", label: "Student", getValue: (row: ReportRow) => row.StudentName || row.student_name || row.studentName || "-" },
@@ -1569,7 +1813,7 @@ const AccountantReportsPage: React.FC = () => {
           { key: "section", label: "Section", getValue: (row: ReportRow) => row.section || row.Section || "-" },
           { key: "fee_type", label: "Fee Type", getValue: (row: ReportRow) => row.fee_type || "-" },
           { key: "discount_reason", label: "Reason", getValue: (row: ReportRow) => getDiscountReason(row) },
-          { key: "Discount", label: "Total Discount", getValue: (row: ReportRow) => formatMoney(row.Discount) },
+          { key: "Discount", label: "Total Discount", getValue: (row: ReportRow) => formatMoney(getRowDiscountTotal(row)) },
         ];
 
         dynamicDiscountColumns.forEach((key) => {
@@ -1582,7 +1826,7 @@ const AccountantReportsPage: React.FC = () => {
         });
 
         cols.push(
-          { key: "record_date", label: "Record Date", getValue: (row: ReportRow) => formatDate(row.record_date || row.created_at || row.updated_at) },
+          { key: "record_date", label: "Record Date", getValue: (row: ReportRow) => formatDate(getDiscountRecordDate(row)) },
           { key: "created_at", label: "Created At", getValue: (row: ReportRow) => formatDate(row.created_at) },
           { key: "updated_at", label: "Updated At", getValue: (row: ReportRow) => formatDate(row.updated_at) }
         );
@@ -1604,7 +1848,7 @@ const AccountantReportsPage: React.FC = () => {
         const headers = rows.length ? Object.keys(rows[0]) : [];
         return headers.map((header) => ({
           key: header,
-          label: header === "Class_name" ? "Class" : header === "StudentName" ? "Student Name" : header === "Total_Expected" ? "Total Fee" : formatHeaderLabel(header),
+          label: view === "main" ? formatDueReportHeaderLabel(header) : header === "Class_name" ? "Class" : header === "StudentName" ? "Student Name" : header === "Total_Expected" ? "Total Fee" : formatHeaderLabel(header),
           getValue: (row: ReportRow) => (typeof row[header] === "object" && row[header] !== null ? "-" : row[header]),
         }));
       }
@@ -1616,6 +1860,7 @@ const AccountantReportsPage: React.FC = () => {
       dynamicCompleteFeeBases,
       dynamicDiscountColumns,
       dynamicTransactionPaidKeys,
+      collectionSubTab,
       formatMoney,
       getDynamicPaidValue,
       getDynamicTransactionPaidLabel,
@@ -1624,7 +1869,49 @@ const AccountantReportsPage: React.FC = () => {
       visibleTransactionStaticColumns,
     ]
   );
+const handleDownloadPDF = useCallback(() => {
+    const columns = getTableColumns(activeView, activeRows);
+    if (!columns.length) return;
 
+    // Create a new jsPDF instance in landscape mode for standard tables
+    const doc = new jsPDF({
+      orientation: "landscape",
+      unit: "mm",
+      format: "a4"
+    });
+
+    // Extract table column headers and formatted cell data
+    const tableHeaders = columns.map((col) => col.label);
+    const tableData = activeRows.map((row) => 
+      columns.map((col) => {
+        const val = col.getValue(row);
+        return val !== null && val !== undefined ? String(val) : "-";
+      })
+    );
+
+    // Title and Meta Information
+    doc.setFontSize(16);
+    doc.text(`${activeReportTitle} Report`, 14, 15);
+    
+    doc.setFontSize(10);
+    doc.setTextColor(100);
+    doc.text(`Rows: ${activeRows.length} | Generated on: ${new Date().toLocaleString()}`, 14, 22);
+
+    // Render AutoTable
+autoTable(doc, {
+  startY: 26,
+  head: [tableHeaders],
+  body: tableData,
+  theme: "grid",
+  headStyles: { fillColor: [15, 76, 129], textColor: [255, 255, 255] },
+  styles: { fontSize: 8, cellPadding: 2 },
+  margin: { top: 25, left: 14, right: 14, bottom: 15 },
+});
+
+    // Save the PDF locally
+    const filename = `accountant-${activeReportTitle.toLowerCase().replace(/\s+/g, "-")}-report.pdf`;
+    doc.save(filename);
+  }, [activeReportTitle, activeRows, activeView, getTableColumns]);
   const handleDownloadReport = useCallback(() => {
     const columns = getTableColumns(activeView, activeRows);
     if (!columns.length) return;
@@ -1690,6 +1977,72 @@ const AccountantReportsPage: React.FC = () => {
   }, [activeReportTitle, activeRows, activeView, getTableColumns]);
 
   const renderTable = () => {
+    if (activeView === "collectionSummary") {
+      return (
+        <>
+          <div className="accountant-reports-toolbar-actions" style={{ marginBottom: "12px", display: "flex", gap: "10px" }}>
+            <button
+              type="button"
+              className={collectionSubTab === "month" ? "accountant-topbar-tab-active" : ""}
+              onClick={() => handleCollectionSummaryReport("month")}
+              disabled={extraLoading}
+            >
+              Month-wise Collection
+            </button>
+            <button
+              type="button"
+              className={collectionSubTab === "year" ? "accountant-topbar-tab-active" : ""}
+              onClick={() => handleCollectionSummaryReport("year")}
+              disabled={extraLoading}
+            >
+              Year-wise Collection
+            </button>
+            {collectionSubTab === "month" && (
+              <select
+                className="accountant-collection-month-select"
+                value={selectedCollectionMonth}
+                onChange={(event) => {
+                  setSelectedCollectionMonth(event.target.value);
+                  setCurrentPage(1);
+                }}
+                aria-label="Select collection month"
+              >
+                {collectionMonthOptions.map((month) => (
+                  <option key={month.value} value={month.value}>
+                    {month.label}
+                  </option>
+                ))}
+              </select>
+            )}
+          </div>
+
+          <table className="accountant-reports-table">
+            <thead>
+              <tr>
+                {collectionSubTab === "month" && <th>Month</th>}
+                <th>Year</th>
+                <th>Total Collection</th>
+              </tr>
+            </thead>
+            <tbody>
+              {paginatedRows.map((row, index) => (
+                <tr key={`${row.Collection_Year || "collection"}-${row.Month_Number || index}`}>
+                  {collectionSubTab === "month" && <td>{row.Collection_Month || "-"}</td>}
+                  <td>{row.Collection_Year || "-"}</td>
+                  <td>{formatMoney(row.Total_Collection)}</td>
+                </tr>
+              ))}
+              {!paginatedRows.length && (
+                <tr>
+                  <td colSpan={collectionSubTab === "month" ? 3 : 2}>No collection data found.</td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </>
+      );
+    }
+
     if (activeView === "main" && !activeRows.length) {
       return (
         <div className="accountant-reports-empty-state">
@@ -1700,12 +2053,7 @@ const AccountantReportsPage: React.FC = () => {
 
     if (activeView === "main") {
       const headers = activeRows.length ? Object.keys(activeRows[0]) : [];
-      const headerLabels = headers.map((header) => {
-        if (header === "Class_name") return "Class";
-        if (header === "StudentName") return "Student Name";
-        if (header === "Total_Expected") return "Total Fee";
-        return header.replace(/_/g, " ").replace(/\b\w/g, (char) => char.toUpperCase());
-      });
+      const headerLabels = headers.map(formatDueReportHeaderLabel);
 
       return (
         <table className="accountant-reports-table">
@@ -1843,7 +2191,7 @@ const AccountantReportsPage: React.FC = () => {
               ))}
               {dynamicCompleteFeeBases.map((baseKey) => (
                 <React.Fragment key={baseKey}>
-                  <th>{formatHeaderLabel(baseKey)} Fee</th>
+                  <th>{formatHeaderLabel(baseKey)}</th>
                   <th>{formatHeaderLabel(baseKey)} Paid</th>
                 </React.Fragment>
               ))}
@@ -1935,50 +2283,50 @@ const AccountantReportsPage: React.FC = () => {
       );
     }
 
-    if (activeView === "discounts" || activeView === "referrals") {
-      return (
-        <table className="accountant-reports-table">
-          <thead>
-            <tr>
-              <th>Student</th>
-              <th>Class</th>
-              <th>Section</th>
-              <th>Fee Type</th>
-              <th>Reason</th>
-              <th>Total Discount</th>
+if (activeView === "discounts" || activeView === "referrals") {
+  return (
+    <table className="accountant-reports-table">
+      <thead>
+        <tr>
+          <th>Student</th>
+          <th>Class</th>
+          <th>Section</th>
+          <th>Fee Type</th>
+          <th>Reason</th>
+          <th>Total Discount</th>
+          {dynamicDiscountColumns
+            .filter((column) => column !== "Discount")
+            .map((column) => (
+              <th key={column}>{formatHeaderLabel(column)}</th>
+            ))}
+          <th>Record Date</th>
+          <th>Created At</th>
+          <th>Updated At</th>
+        </tr>
+      </thead>
+      <tbody>
+        {paginatedRows.map((row, index) => (
+            <tr key={`${row.id || row.StudentName || "discount"}-${index}`}>
+              <td>{row.StudentName || row.student_name || row.studentName || "-"}</td>
+              <td>{row.Class_name || row.class_name || row.className || "-"}</td>
+              <td>{row.section || row.Section || "-"}</td>
+              <td>{row.fee_type || "-"}</td>
+              <td>{getDiscountReason(row)}</td>
+              <td>{formatMoney(getRowDiscountTotal(row))}</td>
               {dynamicDiscountColumns
                 .filter((column) => column !== "Discount")
                 .map((column) => (
-                  <th key={column}>{formatHeaderLabel(column)}</th>
+                  <td key={column}>{formatMoney(row[column] || 0)}</td>
                 ))}
-              <th>Record Date</th>
-              <th>Created At</th>
-              <th>Updated At</th>
+              <td>{formatDate(getDiscountRecordDate(row))}</td>
+              <td>{formatDate(row.created_at)}</td>
+              <td>{formatDate(row.updated_at)}</td>
             </tr>
-          </thead>
-          <tbody>
-            {paginatedRows.map((row, index) => (
-              <tr key={`${row.id || row.StudentName || "discount"}-${index}`}>
-                <td>{row.StudentName || row.student_name || row.studentName || "-"}</td>
-                <td>{row.Class_name || row.class_name || row.className || "-"}</td>
-                <td>{row.section || row.Section || "-"}</td>
-                <td>{row.fee_type || "-"}</td>
-                <td>{getDiscountReason(row)}</td>
-                <td>{formatMoney(row.Discount)}</td>
-                {dynamicDiscountColumns
-                  .filter((column) => column !== "Discount")
-                  .map((column) => (
-                    <td key={column}>{formatMoney(row[column])}</td>
-                  ))}
-                <td>{formatDate(row.record_date || row.created_at || row.updated_at)}</td>
-                <td>{formatDate(row.created_at)}</td>
-                <td>{formatDate(row.updated_at)}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      );
-    }
+        ))}
+      </tbody>
+    </table>
+  );
+}
 
     if (activeView === "feeType") {
       return (
@@ -2135,6 +2483,17 @@ const AccountantReportsPage: React.FC = () => {
             </div>
 
             <div className="accountant-topbar-right">
+                                                 <button
+                className="accountant-help-icon-btn"
+                onClick={() => setIsHelpOpen(true)}
+              >
+                <FiHelpCircle
+                  style={{
+                    color: "#e9818c",
+                    fontSize: "34px",
+                  }}
+                />
+              </button>
               <EditableProfileMenu />
             </div>
           </div>
@@ -2249,6 +2608,10 @@ const AccountantReportsPage: React.FC = () => {
                   onClick = handleFeeTypeReport;
                   disabled = extraLoading;
                   subtitle = loadingCardKey === "feeType" ? "Loading..." : card.subtitle;
+                } else if (card.key === "collectionSummary") {
+                  onClick = () => handleCollectionSummaryReport("month");
+                  disabled = extraLoading;
+                  subtitle = loadingCardKey === "collectionSummary" ? "Loading..." : card.subtitle;
                 } else if (card.key === "ledger") {
                   disabled = ledgerLoading;
                   subtitle = loadingCardKey === "ledger" ? "Loading..." : card.subtitle;
@@ -2291,11 +2654,18 @@ const AccountantReportsPage: React.FC = () => {
                 </div>
                 <div className="accountant-reports-toolbar-actions">
                   <button type="button" onClick={handleDownloadReport} disabled={!activeRows.length}>
-                    Download
+                    Download Excel
                   </button>
+                  <button type="button" onClick={handleDownloadPDF} disabled={!activeRows.length}>
+    Download PDF
+  </button>
                   <button type="button" onClick={handlePrintReport} disabled={!activeRows.length}>
                     Print
-                  </button>
+                  </button>          
+                  {/* <button type="button" onClick={handlePrintReport} disabled={!activeRows.length}>
+                    Excel
+                  </button> */}
+
                 </div>
                 {activeRows.length > 0 && (
                   <div className="accountant-reports-pagination accountant-reports-pagination-inline">
@@ -2397,6 +2767,14 @@ const AccountantReportsPage: React.FC = () => {
             </div>
           </div>
         </div>
+      )}
+                         {isHelpOpen && (
+        <HelpCenter
+          userRole={userRole}
+          openHelpSection={openHelpSection}
+          setOpenHelpSection={setOpenHelpSection}
+          setIsHelpOpen={setIsHelpOpen}
+        />
       )}
     </div>
   );

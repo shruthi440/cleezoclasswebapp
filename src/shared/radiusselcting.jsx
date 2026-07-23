@@ -5,12 +5,15 @@ import 'leaflet/dist/leaflet.css';
 import jsPDF from 'jspdf';
 import { Download, Share, ArrowLeft, ChevronRight, Calendar, Circle } from 'lucide-react';
 import html2canvas from 'html2canvas';
-import { useNavigate } from 'react-router-dom';
+import { useLocation, useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import { FiArrowLeft } from 'react-icons/fi';
 import { Share2 } from 'lucide-react';
-import Swal from 'sweetalert2';
+
 import { Link } from 'react-router-dom';
+import { FaBackward } from 'react-icons/fa';
+import { Toaster, toast } from "react-hot-toast";
+import AdiminAcademicsNew from '../adminfolder/AdiminAcademicsNew';
 
 const schoolLogo = ""; // Optional custom logo
 
@@ -24,7 +27,7 @@ function Radiusselectingg() {
   const logoSrc = schoolLogo || "/default-logo.png";
   const dateInputRef = useRef(null);
   const contentRef = useRef(null);
-  const [selectedDate, setSelectedDate] = useState('');
+  const [selectedDate, setSelectedDate] = useState('const useNavigate = setNavgate()');
   const [activePage, setActivePage] = useState(null);
   const headerRef = useRef();
   const navigate = useNavigate();
@@ -32,6 +35,8 @@ function Radiusselectingg() {
   const dashboardRef = useRef(null);
   const [activeContent, setActiveContent] = useState(null);
   const [isLoading, setIsLoading] = useState(false);
+  const [showRadiusPopup, setShowRadiusPopup] = useState(true)
+
 
   const handleAttendanceClick = () => {
     setActivePage('attendance');
@@ -149,172 +154,211 @@ function Radiusselectingg() {
     setSelectedDate(e.target.value);
   };
 
-const handleSubmit = async (e) => {
-  e.preventDefault();
-  setIsLoading(true);
-  const numericRadius = Number(radius);
-  const rawSchoolcode = localStorage.getItem("schoolCode");
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    setIsLoading(true);
 
-  // Predefined school data
-  const predefinedSchools = {
-    BLUEBELLS: {
-      lat: 13.623645,
-      lng: 79.442220,
-      address: "Bluebells School, Korramenugunta (Tirupati)"
-    },
-    FIRST_IMPRESSION_PRE_SCHOOL: {
-      lat: 13.631,
-      lng: 79.485,
-      address: "FIRST IMPRESSION PRE SCHOOL | UPADHYAYA NAGAR | TIRUPATHI | UPADHYAYA NAGAR"
-    },
-    SREE_GEETHANJALI_EM: {
-      lat: 13.649662,
-      lng: 79.421505,
-      address: "SREE GEETHANJALI E.M | K.T.ROAD, TIRUPATHI | TIRUPATI | Dwaraka Nagar"
-    },
-    SREE_GEETHANJALI_EM_SCHOOL: {
-      lat: 13.628756,
-      lng: 79.419180,
-      address: "SREE GEETHANJALI E.M SCHOOL"
-    }
-  };
+    const numericRadius = Number(radius);
+    const rawSchoolcode = localStorage.getItem("schoolCode");
 
-  if (!rawSchoolcode) {
-    setIsLoading(false);
-    return Swal.fire({
-      icon: 'warning',
-      title: 'Missing School Code',
-      text: 'Please ensure the school code is saved in localStorage!',
-    });
-  }
+    const predefinedSchools = {
+      BLUEBELLS: {
+        lat: 13.623645,
+        lng: 79.442220,
+        address: "Bluebells School, Korramenugunta (Tirupati)"
+      },
+      FIRST_IMPRESSION_PRE_SCHOOL: {
+        lat: 13.631,
+        lng: 79.485,
+        address: "FIRST IMPRESSION PRE SCHOOL | UPADHYAYA NAGAR | TIRUPATHI | UPADHYAYA NAGAR"
+      },
+      SREE_GEETHANJALI_EM: {
+        lat: 13.649662,
+        lng: 79.421505,
+        address: "SREE GEETHANJALI E.M | K.T.ROAD, TIRUPATHI | TIRUPATI | Dwaraka Nagar"
+      },
+      SREE_GEETHANJALI_EM_SCHOOL: {
+        lat: 13.628756,
+        lng: 79.419180,
+        address: "SREE GEETHANJALI E.M SCHOOL"
+      }
+    };
 
-  if (!radius || numericRadius < 50) {
-    setIsLoading(false);
-    return Swal.fire({
-      icon: 'warning',
-      title: 'Invalid Radius',
-      text: 'Please enter a valid radius (minimum 50 meters).',
-    });
-  }
-
-  try {
-    const res = await fetch("https://cleezoclass.com:4000/api/radius", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ radius: numericRadius, schoolcode: rawSchoolcode }),
-    });
-
-    const data = await res.json();
-
-    if (data.error) {
+    if (!rawSchoolcode) {
       setIsLoading(false);
-      return Swal.fire({
-        icon: 'error',
-        title: 'Error!',
-        text: data.error,
-      });
+      toast.error("Please ensure the school code is saved in localStorage!");
+      return;
     }
 
-    // Show success message for radius insertion
-    await Swal.fire({
-      icon: 'success',
-      title: 'Success!',
-      text: 'The radius has been set successfully.',
-    });
+    if (!radius || isNaN(numericRadius)) {
+      setIsLoading(false);
+      toast.error("Please enter a valid radius.");
+      return;
+    }
 
-    const storedRadius = String(data.radius ?? numericRadius);
-    const storedRadiusDate = new Date().toLocaleDateString("en-IN");
-    localStorage.setItem("attendanceRadius", storedRadius);
-    localStorage.setItem("attendanceRadiusDate", storedRadiusDate);
-    console.log("[Radius][save]", {
-      schoolCode: rawSchoolcode,
-      radius: storedRadius,
-      attendanceRadiusDate: storedRadiusDate,
-      apiResponse: data,
-    });
+    try {
+      const res = await fetch(
+        "https://cleezoclass.com:4000/api/radius",
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            radius: numericRadius,
+            schoolcode: rawSchoolcode,
+          }),
+        }
+      );
 
-    // Show message for locating address on map
-    await Swal.fire({
-      icon: 'info',
-      title: 'Processing',
-      text: 'Showing address visualization on the map...',
-    });
+      const data = await res.json();
 
-    // Check if the school code matches any predefined schools
-    if (predefinedSchools[rawSchoolcode]) {
-      const school = predefinedSchools[rawSchoolcode];
-      console.log("🌍 Using predefined location for:", rawSchoolcode);
-      setLatlng({ lat: school.lat, lng: school.lng });
-      setAddress(school.address);
-      setRadius(data.radius);
-      setShowMapPopup(true);
-    } else {
-      const baseAddress = data.address;
-      const baseParts = baseAddress.split(',').map(x => x.trim()).filter(Boolean);
-      const states = ["Andhra Pradesh", "Telangana", "Tamil Nadu", "Kerala"];
+      if (data.error) {
+        toast.error(data.error);
+        return;
+      }
+
+      const storedRadius = String(data.radius ?? numericRadius);
+      const storedRadiusDate = new Date().toLocaleDateString("en-IN");
+
+      localStorage.setItem("attendanceRadius", storedRadius);
+      localStorage.setItem("attendanceRadiusDate", storedRadiusDate);
+
+      toast.success(
+        data.message || "Radius inserted successfully"
+      );
+      if (toast.success) {
+        setIsLoading(false);
+        setTimeout(() => {
+          navigate(-1)
+        }, 1000)
+      }
+
+      if (predefinedSchools[rawSchoolcode]) {
+        const school = predefinedSchools[rawSchoolcode];
+
+        setLatlng({
+          lat: school.lat,
+          lng: school.lng,
+        });
+
+        setAddress(school.address);
+        setRadius(data.radius);
+
+        setTimeout(() => {
+          setShowMapPopup(true);
+        }, 1000);
+
+        return;
+      }
+
+      const baseAddress = data.address || "";
+
+      const baseParts = baseAddress
+        .split(",")
+        .map((x) => x.trim())
+        .filter(Boolean);
+
+      const states = [
+        "Andhra Pradesh",
+        "Telangana",
+        "Tamil Nadu",
+        "Kerala",
+      ];
+
       const locationAttempts = [];
+
       const schoolNameVariants = [
         `${rawSchoolcode} School`,
         `${rawSchoolcode} Institution`,
-        `${rawSchoolcode} Campus`
+        `${rawSchoolcode} Campus`,
       ];
 
       for (const variant of schoolNameVariants) {
         for (let i = 0; i < baseParts.length; i++) {
-          const partial = baseParts.slice(i).join(', ');
+          const partial = baseParts.slice(i).join(", ");
+
           for (const state of states) {
-            locationAttempts.push(`${variant}, ${partial}, ${state}, India`);
+            locationAttempts.push(
+              `${variant}, ${partial}, ${state}, India`
+            );
           }
         }
-        locationAttempts.push(`${variant}, ${baseAddress}, India`);
+
+        locationAttempts.push(
+          `${variant}, ${baseAddress}, India`
+        );
       }
 
       let foundLocation = null;
-      for (let fullAddress of locationAttempts) {
-        console.log("🌍 Trying lookup:", fullAddress);
+
+      for (const fullAddress of locationAttempts) {
         const locRes = await fetch(
-          `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(fullAddress)}`,
+          `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(
+            fullAddress
+          )}`,
           {
             headers: {
-              'User-Agent': 'SchoolLocator/1.0',
-              'Accept-Language': 'en'
-            }
+              "User-Agent": "SchoolLocator/1.0",
+              "Accept-Language": "en",
+            },
           }
         );
+
         const locData = await locRes.json();
+
         if (locData.length > 0) {
           foundLocation = locData[0];
-          console.log("✅ Location found:", fullAddress);
           break;
         }
       }
 
-      if (!foundLocation) {
-        setIsLoading(false);
-        return Swal.fire({
-          icon: 'error',
-          title: 'Location Not Found',
-  text: 'The location was not found on the map, but the radius has been set in the database.'
-        });
-      }
+      // if (!foundLocation) {
+      //   toast.error(
+      //     "Location not found on map, but radius was saved successfully."
+      //   );
+      //   return;
+      // }
 
       const { lat, lon } = foundLocation;
-      setLatlng({ lat: parseFloat(lat), lng: parseFloat(lon) });
+
+      setLatlng({
+        lat: parseFloat(lat),
+        lng: parseFloat(lon),
+      });
+
       setAddress(data.address);
       setRadius(data.radius);
-      setShowMapPopup(true);
+
+      setTimeout(() => {
+        setShowMapPopup(false);
+      }, 1000);
+
+    } catch (err) {
+      console.error(err);
+      // toast.error("An unexpected error occurred.");
+    } finally {
+      setIsLoading(false);
+
     }
-  } catch (err) {
-    console.error("❌ Exception caught:", err);
-    Swal.fire({
-      icon: 'error',
-      title: 'Server Error',
-      text: 'An error occurred. Please try again later.',
-    });
-  } finally {
-    setIsLoading(false);
-  }
-};
+  };
+
+  
+
+
+// useEffect(() => {
+//   const handlePopState = () => {
+//     if (showRadiusPopup) {
+//       setShowRadiusPopup(false);
+//     }
+//   };
+
+//   window.addEventListener("popstate", handlePopState);
+
+//   return () => {
+//     window.removeEventListener("popstate", handlePopState);
+//   };
+// }, [showRadiusPopup]);
 
 
   useEffect(() => {
@@ -347,123 +391,81 @@ const handleSubmit = async (e) => {
       }).addTo(map);
     }
   }, [showMapPopup, latlng, radius]);
- const [dynamicLogoSrc, setDynamicLogoSrc] = useState('');
+  const [dynamicLogoSrc, setDynamicLogoSrc] = useState('');
   const [dynamicSchoolCode, setDynamicSchoolCode] = useState('');
 
-useEffect(() => {
-  const fetchSchoolLogo = async () => {
-    console.log('🚀 Starting logo fetch process...');
+  useEffect(() => {
+    const fetchSchoolLogo = async () => {
+      console.log('🚀 Starting logo fetch process...');
 
-    const code = localStorage.getItem('schoolCode');
-    console.log('🧾 localStorage.getItem("schoolCode") =', code, '| Type:', typeof code);
+      const code = localStorage.getItem('schoolCode');
+      console.log('🧾 localStorage.getItem("schoolCode") =', code, '| Type:', typeof code);
 
-    if (!code) {
-      console.warn('❌ No school code found in localStorage. Aborting fetch.');
-      return;
-    }
-
-    setDynamicSchoolCode(code);
-    console.log('📦 Set dynamic school code in state:', code);
-
-    try {
-      console.log('📡 Sending POST request to backend with secretecode...');
-      const response = await axios.post(
-        'https://cleezoclass.com:4000/api/schoollogodynamic',
-        { secretecode: code },
-        {
-          headers: {
-            'Content-Type': 'application/json'
-          }
-        }
-      );
-
-      console.log('📬 Response from backend:', response);
-      console.log('📬 Response.data:', response.data);
-
-      if (response.data.logoPath) {
-        console.log('✅ Logo fetched successfully from backend.');
-        setDynamicLogoSrc(response.data.logoPath);
-      } else {
-        console.warn('⚠️ No logo path found in backend response.');
+      if (!code) {
+        console.warn('❌ No school code found in localStorage. Aborting fetch.');
+        return;
       }
-    } catch (error) {
-      console.error('🔥 Error fetching school logo:', error.response?.data || error.message);
-    }
+
+      setDynamicSchoolCode(code);
+      console.log('📦 Set dynamic school code in state:', code);
+
+      try {
+        console.log('📡 Sending POST request to backend with secretecode...');
+        const response = await axios.post(
+          'https://cleezoclass.com:4000/api/schoollogodynamic',
+          { secretecode: code },
+          {
+            headers: {
+              'Content-Type': 'application/json'
+            }
+          }
+        );
+
+        console.log('📬 Response from backend:', response);
+        console.log('📬 Response.data:', response.data);
+
+        if (response.data.logoPath) {
+          console.log('✅ Logo fetched successfully from backend.');
+          setDynamicLogoSrc(response.data.logoPath);
+        } else {
+          console.warn('⚠️ No logo path found in backend response.');
+        }
+      } catch (error) {
+        console.error('🔥 Error fetching school logo:', error.response?.data || error.message);
+      }
+    };
+
+    fetchSchoolLogo();
+  }, []);
+  const linkStyle = {
+    margin: "0 10px",
+    textDecoration: "none",
+    display: "flex",
+    alignItems: "center"
   };
 
-  fetchSchoolLogo();
-}, []);
-const linkStyle = {
-  margin: "0 10px",
-  textDecoration: "none",
-  display: "flex",
-  alignItems: "center"
-};
-
-const iconStyle = {
-  padding: "10px",
-  borderRadius: "50%",
-  fontSize: "25px",
-  transition: "all 0.3s",
-  width: "40px",
-  height: "40px",
-  display: "flex",
-  justifyContent: "center",
-  alignItems: "center"
-};
+  const iconStyle = {
+    padding: "10px",
+    borderRadius: "50%",
+    fontSize: "25px",
+    transition: "all 0.3s",
+    width: "40px",
+    height: "40px",
+    display: "flex",
+    justifyContent: "center",
+    alignItems: "center"
+  };
   const userRole = localStorage.getItem('userRole');
   return (
     <>
-<header
-  className="top-bar"
-  style={{
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    padding: '0.5rem 1rem',
-    backgroundColor: 'white',
-    position: 'relative'
-  }}
->
-  {/* Logo on the left */}
-  <img
-    src={dynamicLogoSrc || "/default-logo.png"}
-    alt="School Logo"
-    className="header-logo"
-    style={{
-      height: '85px',   // increased size
-      width: 'auto',
-      borderRadius: '6px',
-      position: 'absolute',
-      left: '4rem',
-      top: '50%',
-      transform: 'translateY(-50%)'
-    }}
-  />
-
-  {/* Title in the center */}
-  <h1
-    className="header-title"
-    style={{
-      fontSize: '1.8rem',
-      fontWeight: '600',
-      margin: 0,
-      textAlign: 'center',
-      color: 'black'
-    }}
-  >
-    {dynamicSchoolCode.replace(/_/g, ' ')} SCHOOL
-  </h1>
-</header>
 
 
 
-      <div className="outer-container">
-     
-        <main className="main-content">
 
-<style>
-  {`
+      <main className="main-content">
+
+        <style>
+          {`
     @media (max-width: 768px) {
       /* --- Header Adjustments (Corrected) --- */
       .top-bar {
@@ -484,7 +486,7 @@ const iconStyle = {
 
       /* --- Main Content Card Adjustments (Unchanged) --- */
       main.main-content > section.dashboard-body > div[style*="maxWidth: 1000px"] {
-        width: 95% !important;
+        width: 25% !important;
         padding: 20px !important;
         margin: 30px auto !important;
       }
@@ -505,64 +507,97 @@ const iconStyle = {
       }
       
       /* --- Image Adjustments (Unchanged) --- */
-      div[style*="flex: 1"] > img {
+      div[style*="flex: 1"] > img 
+{showRadiusPopup && (
+  <div
+    onClick={() => setShowRadiusPopup(false)}
+    style={{
+      position: "fixed",
+      inset: 0,
+      background: "rgba(0,0,0,0.6)",
+  {
         max-height: 300px;
       }
     }
   `}
-</style>
-          
-          <section className="dashboard-body">
-          
-            <div ref={dashboardRef} style={{ overflowY: 'auto' }}></div>
+        </style>
 
-            <div
+        <section className="dashboard-body">
+
+
+          <div ref={dashboardRef} style={{ overflowY: 'auto' }}></div>
+
+          <div
+            style={{
+              position: "relative",
+              backgroundColor: "#ffffff",
+              padding: "40px",
+              maxWidth: "1000px",
+              // margin: "60px auto",
+              borderRadius: "16px",
+              boxShadow: "0 8px 25px rgba(0,0,0,0.1)",
+            }}
+          >
+            <button
+              type="button"
+              onClick={() => navigate(-1)}
               style={{
-                backgroundColor: "#ffffff",
-                padding: "40px",
-                maxWidth: "1000px",
-                margin: "60px auto",
-                borderRadius: "16px",
-                boxShadow: "0 8px 25px rgba(0,0,0,0.1)",
+                position: "absolute",
+                top: "20px",
+                left: "20px",
+                width: "42px",
+                height: "42px",
+                borderRadius: "50%",
+                border: "none",
+                background: "#f3f4f6",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                cursor: "pointer",
+                boxShadow: "0 2px 8px rgba(0,0,0,0.12)",
+                transition: "all 0.2s ease",
+                zIndex: 10,
               }}
             >
+              <ArrowLeft size={20} />
+            </button>
+            <div
+              style={{
+                display: "flex",
+                gap: "30px",
+                borderRadius: "12px",
+                overflow: "hidden",
+                fontFamily: "'Segoe UI', Tahoma, Geneva, Verdana, sans-serif",
+              }}
+            >
+              {/* Left Side - Form */}
               <div
                 style={{
-                  display: "flex",
-                  gap: "30px",
+                  flex: 1,
+                  backgroundColor: "#ffffff",
+                  padding: "40px 30px",
+                  boxShadow: "inset 0 0 10px rgba(0,0,0,0.05)",
                   borderRadius: "12px",
-                  overflow: "hidden",
-                  fontFamily: "'Segoe UI', Tahoma, Geneva, Verdana, sans-serif",
+                  display: "flex",
+                  flexDirection: "column",
+                  justifyContent: "center",
                 }}
               >
-                {/* Left Side - Form */}
-                <div
+                <h2
                   style={{
-                    flex: 1,
-                    backgroundColor: "#ffffff",
-                    padding: "40px 30px",
-                    boxShadow: "inset 0 0 10px rgba(0,0,0,0.05)",
-                    borderRadius: "12px",
-                    display: "flex",
-                    flexDirection: "column",
-                    justifyContent: "center",
+                    marginBottom: "30px",
+                    fontWeight: "700",
+                    fontSize: "38px",
+                    color: "#1a1a1a",
+                    letterSpacing: "1px",
+                    textAlign: "left",
                   }}
                 >
-                  <h2
-                    style={{
-                      marginBottom: "30px",
-                      fontWeight: "700",
-                      fontSize: "38px",
-                      color: "#1a1a1a",
-                      letterSpacing: "1px",
-                      textAlign: "left",
-                    }}
-                  >
-                    Set Radius (in meters)
-                  </h2>
+                  Set Radius (in meters)
+                </h2>
 
-                  <style>
-                    {`
+                <style>
+                  {`
                       .loader {
                         border: 4px solid rgba(0, 0, 0, 0.1);
                         border-radius: 50%;
@@ -578,130 +613,155 @@ const iconStyle = {
                         100% { transform: rotate(360deg); }
                       }
                     `}
-                  </style>
+                </style>
 
-                  <form onSubmit={handleSubmit}>
-                    <input
-                      type="number"
-                      value={radius}
-                      onChange={(e) => setRadius(Number(e.target.value))}
-                      placeholder="Radius in meters"
-                      style={{
-                        width: "100%",
-                        padding: "12px 15px",
-                        fontSize: "16px",
-                        borderRadius: "6px",
-                        border: "1px solid #ccc",
-                        outline: "none",
-                        marginBottom: "20px",
-                        transition: "border-color 0.3s",
-                      }}
-                      min="50"
-                      required
-                      onFocus={(e) => (e.target.style.borderColor = "#3a86ff")}
-                      onBlur={(e) => (e.target.style.borderColor = "#ccc")}
-                    />
+                <form onSubmit={handleSubmit}>
+                  <input
+                    type="number"
+                    value={radius}
+                    onChange={(e) => setRadius(Number(e.target.value))}
+                    placeholder="Radius in meters"
+                    style={{
+                      width: "100%",
+                      padding: "12px 15px",
+                      fontSize: "16px",
+                      borderRadius: "6px",
+                      border: "1px solid #ccc",
+                      outline: "none",
+                      marginBottom: "20px",
+                      transition: "border-color 0.3s",
+                    }}
 
-                    <button
-                      type="submit"
-                      style={{
-                        width: "100%",
-                        padding: "12px",
-                        backgroundColor: "#3a86ff",
-                        border: "none",
-                        borderRadius: "6px",
-                        color: "white",
-                        fontSize: "16px",
-                        fontWeight: "600",
-                        cursor: "pointer",
-                        boxShadow: "0 4px 8px rgba(58,134,255,0.3)",
-                        transition: "background-color 0.3s",
-                      }}
-                      onMouseEnter={(e) => (e.target.style.backgroundColor = "#2f6dcc")}
-                      onMouseLeave={(e) => (e.target.style.backgroundColor = "#3a86ff")}
-                      disabled={isLoading}
-                    >
-                      {isLoading ? 'Processing...' : 'Submit'}
-                    </button>
-
-                    {isLoading && <div className="loader"></div>}
-                  </form>
-                </div>
-
-                {/* Right Side - Image */}
-                <div
-                  style={{
-                    flex: 1,
-                    borderRadius: "12px",
-                    overflow: "hidden",
-                    boxShadow: "inset 0 0 10px rgba(0,0,0,0.05)",
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "center",
-                    backgroundColor: "#ffffff",
-                  }}
-                >
-                  <img
-                    src="https://i.pinimg.com/736x/03/33/64/033364440dbaef7d3ba27f5622cdb4d0.jpg"
-                    alt="Side Illustration"
-                    style={{ width: "100%", height: "100%", objectFit: "cover" }}
+                    required
+                    onFocus={(e) => (e.target.style.borderColor = "#3a86ff")}
+                    onBlur={(e) => (e.target.style.borderColor = "#ccc")}
                   />
-                </div>
-              </div>
-            </div>
 
-            {/* Map Popup */}
-            {showMapPopup && (
+                  <button
+                    type="submit"
+                    style={{
+                      width: "100%",
+                      padding: "12px",
+                      backgroundColor: "#3a86ff",
+                      border: "none",
+                      borderRadius: "6px",
+                      color: "white",
+                      fontSize: "16px",
+                      fontWeight: "600",
+                      cursor: "pointer",
+                      boxShadow: "0 4px 8px rgba(58,134,255,0.3)",
+                      transition: "background-color 0.3s",
+                    }}
+                    onMouseEnter={(e) => (e.target.style.backgroundColor = "#2f6dcc")}
+                    onMouseLeave={(e) => (e.target.style.backgroundColor = "#3a86ff")}
+                    disabled={isLoading}
+                  >
+                    {isLoading ? 'Processing...' : 'Submit'}
+                  </button>
+
+                  {isLoading && <div className="loader"></div>}
+                </form>
+              </div>
+
+              {/* Right Side - Image */}
               <div
                 style={{
-                  position: 'fixed',
-                  top: 0,
-                  left: 0,
-                  width: '100vw',
-                  height: '100vh',
-                  backgroundColor: 'rgba(0,0,0,0.5)',
-                  zIndex: 9999,
-                  display: 'flex',
-                  justifyContent: 'center',
-                  alignItems: 'center',
+                  flex: 1,
+                  borderRadius: "12px",
+                  overflow: "hidden",
+                  boxShadow: "inset 0 0 10px rgba(0,0,0,0.05)",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  backgroundColor: "#ffffff",
                 }}
               >
-                <div
+                <img
+                  src="https://i.pinimg.com/736x/03/33/64/033364440dbaef7d3ba27f5622cdb4d0.jpg"
+                  alt="Side Illustration"
+                  style={{ width: "100%", height: "100%", objectFit: "cover" }}
+                />
+              </div>
+            </div>
+          </div>
+
+          {/* Map Popup */}
+          {/* Map Popup */}
+          {showMapPopup && (
+            <div
+              style={{
+                position: "fixed",
+                inset: 0,
+                background: "rgba(0,0,0,0.7)",
+                zIndex: 999999999,
+                display: "flex",
+                justifyContent: "center",
+                alignItems: "center",
+              }}
+            >
+              <div
+                style={{
+                  width: "90%",
+                  maxWidth: "900px",
+                  background: "#fff",
+                  borderRadius: "12px",
+                  padding: "20px",
+                  position: "relative",
+                  zIndex: 1000000000,
+                  boxShadow: "0 10px 30px rgba(0,0,0,0.3)",
+                }}
+              >
+                <button
+                  onClick={() => setShowMapPopup(false)}
                   style={{
-                    background: '#fff',
-                    padding: 20,
-                    borderRadius: 8,
-                    width: '90%',
-                    maxWidth: 800,
-                    position: 'relative',
+                    position: "absolute",
+                    top: "10px",
+                    right: "15px",
+                    width: "35px",
+                    height: "35px",
+                    border: "none",
+                    borderRadius: "50%",
+                    background: "#f1f1f1",
+                    cursor: "pointer",
+                    fontSize: "22px",
                   }}
                 >
-                  <h1>Preview your radius</h1>
+                  ×
+                </button>
 
-                  <div
-                    ref={mapRef}
-                    style={{ height: 450, width: '100%', borderRadius: 10 }}
-                  ></div>
-                  <button
-                    onClick={() => setShowMapPopup(false)}
-                    style={{
-                      marginTop: 20,
-                      padding: '10px 20px',
-                      backgroundColor: '#3085d6',
-                      color: '#fff',
-                      border: 'none',
-                      borderRadius: 5,
-                      cursor: 'pointer',
-                    }}
-                  >
-                    Close
-                  </button>
-                </div>
+                <h2 style={{ marginBottom: "15px" }}>
+                  Preview your Radius
+                </h2>
+
+                <div
+                  ref={mapRef}
+                  style={{
+                    width: "100%",
+                    height: "500px",
+                    borderRadius: "10px",
+                  }}
+                />
+
+                <button
+                  onClick={() => setShowMapPopup(false)}
+                  style={{
+                    marginTop: "20px",
+                    padding: "10px 20px",
+                    background: "#3085d6",
+                    color: "#fff",
+                    border: "none",
+                    borderRadius: "5px",
+                    cursor: "pointer",
+                  }}
+                >
+                  Close
+                </button>
               </div>
-            )}
-          </section>
-        </main>
-      </div>
+            </div>
+          )}
+        </section>
+      </main>
+
     </>
   );
 }

@@ -72,6 +72,7 @@
   color: #31455b;
   padding: 0 0.9rem;
   font-weight: 600;
+  margin-top: 1px;
   cursor: pointer;
 }
 
@@ -564,17 +565,19 @@
   .accountant-expenses-page .accountant-fees-row-top > .accountant-welcome-block,
   .accountant-expenses-page .accountant-fees-row-top > .accountant-fees-summary-card,
   .accountant-expenses-page .accountant-fees-row-top > .accountant-mini-cards {
-    min-height: 10.8rem;
+    /* min-height: 10.8rem; */
   }
 
   .accountant-expenses-page .accountant-fees-main-left,
   .accountant-expenses-page .accountant-fees-main-right {
-    min-height: 25.5rem;
+    min-height: 35.5rem;
   }
+
+  /* syam */
 
   .accountant-expenses-page .accountant-fees-collection-card,
   .accountant-expenses-page .accountant-feetype-list-card {
-    min-height: 18.5rem;
+    min-height: 18.7rem;
     padding: 1rem 1.05rem;
   }
 
@@ -594,8 +597,38 @@
     padding: 0.88rem 0.9rem;
   }
 }
+
+.accountant-fees-row-top,
+.accountant-fees-main-section,
+.accountant-fees-bottom-left-row,
+.accountant-fees-right-mini-row {
+  display: grid;
+}
+
+
+
+@media (max-width: 1220px) {
+  .accountant-expenses-grid .accountant-fees-summary-card,
+  .accountant-expenses-grid .accountant-mini-cards {
+    min-height: auto !important;
+    max-height: 100px !important;
+  }
+
+  .accountant-expenses-grid .accountant-fees-collection-card.accountant-expenses-inline-card {
+    height: 520px !important;
+  }
+
+  .accountant-expenses-grid .accountant-feetype-list-card {
+    height: 280px !important;
+    min-height: 250px !important;
+  }
+
+  .accountant-expenses-grid .accountant-total-strip {
+    margin-top: 20px !important;
+  }
+}
 /* Accountant expenses page responsive css*/
-@media (max-width:1220px){
+/* @media (max-width:1220px){
  .accountant-expenses-grid > div.accountant-row.accountant-fees-row-top > div.accountant-fees-summary-card.accountant-card,
 .accountant-expenses-grid > div.accountant-row.accountant-fees-row-top > div.accountant-mini-cards
  {
@@ -613,4 +646,4 @@ min-height: 250px !important;
   margin-top: 20px !important;
 
  }
-}
+} */
