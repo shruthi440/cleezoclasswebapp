@@ -5469,7 +5469,7 @@ return (
     <button type="button" onClick={(event) => {
       event.stopPropagation();
       setPremiumPopupMessage(PREMIUM_SUPPORT_MESSAGE);
-    }}>Find out More</button>
+    }}>Working CTA</button>
   </div>
 
   <div className="accountant-bottom-right">
@@ -5616,8 +5616,8 @@ Student Overview        </button>
               { label: "Father Name", value: paymentPopupStudentRecord?.father_name || paymentPopupStudentRecord?.fatherName || paymentPopupStudentRecord?.father || "-" },
               { label: "Mobile Number", value: paymentPopupStudentRecord?.mobile_no || paymentPopupStudentRecord?.mobileNo || paymentPopupStudentRecord?.phone_no || paymentPopupStudentRecord?.phone || "-" },
               { label: "Admission No", value: paymentPopupStudentRecord?.admission_no || paymentPopupStudentRecord?.admissionNo || paymentPopupStudentRecord?.admission_number || "-" },
-              { label: "Gender", value: paymentPopupStudentRecord?.gender || "-" },
-              { label: "Email", value: paymentPopupStudentRecord?.email || "-" },
+              // { label: "Gender", value: paymentPopupStudentRecord?.gender || "-" },
+              // { label: "Email", value: paymentPopupStudentRecord?.email || "-" },
             ].map((item) => (
               <div key={item.label} className="accountant-payment-popup-info-card">
                 <span className="accountant-payment-popup-info-label">{item.label}</span>

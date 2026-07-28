@@ -4,6 +4,58 @@ import axios from 'axios';
 import html2canvas from 'html2canvas';
 import { jsPDF } from 'jspdf';
 import { useLocation, useNavigate } from 'react-router-dom';
+import { resolveInstituteDisplayName } from "../shared/instituteNameUtils";
+
+const normalizeInstituteLogo = (rawLogo) => {
+  if (!rawLogo) return "";
+
+  let logo = rawLogo;
+
+  if (typeof logo === "object" && logo?.type === "Buffer" && Array.isArray(logo?.data)) {
+    try {
+      logo = new Uint8Array(logo.data);
+    } catch {
+      return "";
+    }
+  }
+
+  if (logo instanceof Uint8Array) {
+    const binary = Array.from(logo, (byte) => String.fromCharCode(byte)).join("");
+    return `data:image/png;base64,${btoa(binary)}`;
+  }
+
+  if (typeof logo !== "string") return "";
+  logo = logo.trim();
+  if (!logo) return "";
+  if (logo.startsWith("data:image")) return logo;
+  if (logo.startsWith("http")) return logo;
+
+  if (logo.startsWith("0x")) {
+    try {
+      const hex = logo.slice(2);
+      let binary = "";
+      for (let i = 0; i < hex.length; i += 2) {
+        binary += String.fromCharCode(parseInt(hex.substring(i, i + 2), 16));
+      }
+      return `data:image/png;base64,${btoa(binary)}`;
+    } catch {
+      return "";
+    }
+  }
+
+  if (logo.startsWith("uploads/")) {
+    return `https://cleezoclass.com:4000/${logo}`;
+  }
+  if (logo.startsWith("/uploads/")) {
+    return `https://cleezoclass.com:4000${logo}`;
+  }
+
+  if (/^[A-Za-z0-9+/=]+$/.test(logo) && logo.length > 100) {
+    return `data:image/png;base64,${logo}`;
+  }
+
+  return "";
+};
 
 const GenerateBills = () => {
   // State variables
@@ -74,6 +126,8 @@ const GenerateBills = () => {
   const [lastReceipt, setLastReceipt] = useState(null);
   const [isReceiptLookup, setIsReceiptLookup] = useState(false);
   const [receiptFeeDetails, setReceiptFeeDetails] = useState([]);
+  const [isStudentBillLoading, setIsStudentBillLoading] = useState(false);
+  const [isReceiptNumberEditorOpen, setIsReceiptNumberEditorOpen] = useState(false);
   const receiptFeeDetailsRef = useRef([]);
 
   const readNumericField = useCallback((source, keys) => {
@@ -215,10 +269,45 @@ const GenerateBills = () => {
     return /fee/i.test(label) ? label : `${label} Fee`;
   }, [getDynamicFeeBaseKey]);
 
-  const filteredStudents = students.filter(student =>
-    student.name.toLowerCase().includes(studentSearchTerm.toLowerCase())
-  );
+  const hasFeeData = useCallback((source = {}) => {
+    const directFeeKeys = [
+      "total_paid",
+      "totalPaid",
+      "total_due",
+      "totalRemaining",
+      "CompleteFee",
+      "completeFee",
+      "Final_Amount",
+      "Paid_Amount",
+      "paidAmount",
+      "admissionFee",
+      "Admission_fees",
+      "examFee",
+      "Exam_fees",
+      "busFee",
+      "Bus_fees",
+      "bookFee",
+      "Book_Fees",
+      "uniformFee",
+      "Uniform_fees",
+      "othersFee",
+      "Others",
+      "residentialFee",
+      "ResidentialCompleteFee",
+    ];
 
+    if (directFeeKeys.some((key) => readNumericField(source, [key]) > 0)) {
+      return true;
+    }
+
+    return Object.entries(source || {}).some(([key, value]) => {
+      const numericValue = Number(value);
+      if (!Number.isFinite(numericValue) || numericValue <= 0) return false;
+      return /(_paid|_due|_total|fee|fees|amount|completefee)$/i.test(key);
+    });
+  }, [readNumericField]);
+
+ 
   const fetchMetadata = useCallback(async () => {
     setDropdownLoading(true);
     const schoolCode = localStorage.getItem("schoolCode") || "TAGSOLNOVALLP";
@@ -257,33 +346,48 @@ const GenerateBills = () => {
     othersPaid: false,
   });
 
-  // Fetch school logo
+  // Fetch school identity the same way dashboard pages do
   useEffect(() => {
-    const fetchSchoolLogo = async () => {
-      const code = localStorage.getItem('schoolCode');
-      if (!code) {
-        console.warn('No school code found in localStorage. Aborting fetch.');
+    const fetchSchoolIdentity = async () => {
+      const schoolCode = String(localStorage.getItem('schoolCode') || '').trim();
+      if (!schoolCode) {
+        console.warn('No school code found in localStorage. Aborting school identity fetch.');
         return;
       }
-      setDynamicSchoolCode(code);
+
+      setDynamicSchoolCode(schoolCode);
       try {
-        const response = await axios.post(
-          'https://cleezoclass.com:4000/api/schoollogodynamic',
-          { secretecode: code },
-          {
-            headers: {
-              'Content-Type': 'application/json'
-            }
-          }
+        const response = await axios.get(
+          `https://cleezoclass.com:4000/api/institute?dbName=${encodeURIComponent(schoolCode)}`
         );
-        if (response.data.logoPath) {
-          setDynamicLogoSrc(response.data.logoPath);
-        }
+        const data = response.data || {};
+        const resolvedSchoolName = resolveInstituteDisplayName({
+          apiInstituteName: data?.institute_name || data?.instituteName || data?.school_name || data?.schoolName || data?.name,
+          storedSchoolName: localStorage.getItem("schoolName"),
+          storedInstituteName: localStorage.getItem("instituteName"),
+          schoolCode,
+          fallback: "School",
+        });
+        const normalizedLogo = normalizeInstituteLogo(data?.logo) || localStorage.getItem("schoolLogo") || "/default-logo.png";
+
+        setSchoolName(resolvedSchoolName);
+        setDynamicLogoSrc(normalizedLogo);
+        localStorage.setItem("schoolName", resolvedSchoolName);
+        localStorage.setItem("instituteName", resolvedSchoolName);
+        localStorage.setItem("schoolLogo", normalizedLogo);
       } catch (error) {
-        console.error('Error fetching school logo:', error.response?.data || error.message);
+        console.error('Error fetching school identity:', error.response?.data || error.message);
+        const fallbackSchoolName = resolveInstituteDisplayName({
+          storedSchoolName: localStorage.getItem("schoolName"),
+          storedInstituteName: localStorage.getItem("instituteName"),
+          schoolCode,
+          fallback: "School",
+        });
+        setSchoolName(fallbackSchoolName);
+        setDynamicLogoSrc(localStorage.getItem("schoolLogo") || "/default-logo.png");
       }
     };
-    fetchSchoolLogo();
+    fetchSchoolIdentity();
   }, []);
 
   // Load stored bills and school name
@@ -292,13 +396,13 @@ const GenerateBills = () => {
     if (storedBills) {
       setGeneratedBills(JSON.parse(storedBills));
     }
-    const storedSchoolName = localStorage.getItem('schoolCode');
+    const storedSchoolName = localStorage.getItem('schoolName') || localStorage.getItem('instituteName');
     if (storedSchoolName) {
-      let formattedName = storedSchoolName.replace(/_/g, ' ').trim();
-      if (!/school$/i.test(formattedName)) {
-        formattedName += ' School';
-      }
-      setSchoolName(formattedName);
+      setSchoolName(storedSchoolName);
+    }
+    const storedSchoolLogo = localStorage.getItem('schoolLogo');
+    if (storedSchoolLogo) {
+      setDynamicLogoSrc(storedSchoolLogo);
     }
     const lastReceipt = localStorage.getItem('lastReceiptNumber');
     if (lastReceipt) {
@@ -312,9 +416,45 @@ const GenerateBills = () => {
     if (!selectedStudentId || isReceiptLookup || !selectedClass) return;
     const selected = students.find(s => s.id === selectedStudentId);
     if (!selected) return;
+    setIsStudentBillLoading(true);
+    setPayments(null);
+    setReceiptFeeDetails([]);
+    receiptFeeDetailsRef.current = [];
+    setStudentReceipts([]);
+    setLastReceipt(null);
+    setFeeStructure({
+      academicFee: 0,
+      uniformFee: 0,
+      bookFee: 0,
+      transportFee: 0,
+      labFee: 0,
+      miscellaneousFee: 0,
+      hostelFee: 0,
+      messFee: 0,
+      completeFee: 0
+    });
+    setTotalAmount(0);
+    setPaidAmount(0);
+    setRemainingAmount(0);
+    setTuitionFee(0);
+    setExamFee(0);
+    setBusFee(0);
+    setBookFee(0);
+    setUniformFee(0);
+    setOthersFee(0);
+    setResidentialFee(0);
+    setAdmissionFee(0);
+    setTuitionPaid(0);
+    setExamPaid(0);
+    setBusPaid(0);
+    setBookPaid(0);
+    setUniformPaid(0);
+    setOthersPaid(0);
+    setResidentialPaid(0);
+    setAdmissionPaid(0);
     setStudentData({
       name: selected.name,
-      fatherName: selected.fatherName || '-',
+      fatherName: selected.fatherName || selected.father_name || '-',
       class: selectedClass,
       section: selectedSection|| 'A',
       rollNumber: selected.id.toString(),
@@ -384,7 +524,11 @@ const GenerateBills = () => {
           paymentMode: paymentData.paymentMode || ''
         });
       })
-      .catch(err => console.error("Error fetching payment history:", err));
+      .catch(err => {
+        console.error("Error fetching payment history:", err);
+        setPayments(null);
+      })
+      .finally(() => setIsStudentBillLoading(false));
   }, [selectedStudentId, students, selectedClass]);
 
   const mergedFeeSource = useMemo(() => ({
@@ -448,6 +592,32 @@ const GenerateBills = () => {
 
   const receiptPaidRows = useMemo(() => {
     const rows = Array.isArray(receiptFeeDetails) ? receiptFeeDetails : [];
+    const paidFieldKeys = [
+      "amount_paid",
+      "Paid_Amount",
+      "paidAmount",
+      "paid_amount",
+      "tuition_paid_this_transaction",
+      "Installment1_Paid",
+      "Installment2_Paid",
+      "Installment3_Paid",
+      "Installment4_Paid",
+      "Installment5_Paid",
+      "stationary_paid",
+      "sports_paid",
+      "guides_paid",
+      "belt_paid",
+      "tie_fee_paid",
+      "book_paid",
+      "books_paid",
+      "bus_paid",
+      "uniform_paid",
+      "exam_paid",
+      "Admission_paid",
+      "admission_paid",
+      "others_paid",
+      "residential_paid",
+    ];
     return rows
       .map((row) => {
         const feeType = readStringField(row, ["fee_type", "feeType", "feeName", "type"]);
@@ -455,7 +625,7 @@ const GenerateBills = () => {
           .toLowerCase()
           .replace(/[^a-z0-9]+/g, "_")
           .replace(/^_+|_+$/g, "");
-        const amount = readNumericField(row, [
+        const directAmount = readNumericField(row, [
           "amount_paid",
           "Paid_Amount",
           "paidAmount",
@@ -490,6 +660,11 @@ const GenerateBills = () => {
           `${normalizedFeeKey}_fee`,
           `${normalizedFeeKey}Fee`
         ]);
+        const summedPaidAmount = paidFieldKeys.reduce(
+          (sum, key) => sum + readNumericField(row, [key]),
+          0
+        );
+        const amount = directAmount > 0 ? directAmount : summedPaidAmount;
         const description = readStringField(row, ["others_description", "othersDescription", "description"]);
         if (!feeType && amount <= 0) return null;
         return {
@@ -526,12 +701,13 @@ const GenerateBills = () => {
                 ? response.data
                 : [];
 
-        setStudentReceipts(receipts);
         const sortedReceipts = [...receipts].sort((a, b) => {
           const aDate = new Date(a?.created_at || a?.date || 0).getTime();
           const bDate = new Date(b?.created_at || b?.date || 0).getTime();
-          return bDate - aDate;
+          if (bDate !== aDate) return bDate - aDate;
+          return Number(b?.receiptNumber || 0) - Number(a?.receiptNumber || 0);
         });
+        setStudentReceipts(sortedReceipts);
         setLastReceipt(sortedReceipts[0] || null);
       } catch (error) {
         console.error('Error fetching student receipts:', error);
@@ -541,6 +717,19 @@ const GenerateBills = () => {
     };
     fetchStudentReceipts();
   }, [selectedStudentId, studentData]);
+const [onlyWithReceipts, setOnlyWithReceipts] = useState(true);
+
+const hasFeeSummaryFromStudents = useMemo(() => {
+  return students.some((student) => hasFeeData(student));
+}, [hasFeeData, students]);
+
+const filteredStudents = useMemo(() => {
+  return students.filter(student => {
+    const matchesSearch = String(student.name || '').toLowerCase().includes(studentSearchTerm.toLowerCase());
+    const matchesFeeFilter = onlyWithReceipts && hasFeeSummaryFromStudents ? hasFeeData(student) : true;
+    return matchesSearch && matchesFeeFilter;
+  });
+}, [hasFeeData, hasFeeSummaryFromStudents, students, studentSearchTerm, onlyWithReceipts]);
 
   // Toggle edit mode
   const toggleEditMode = () => {
@@ -680,6 +869,33 @@ const GenerateBills = () => {
         setPaymentMode(readStringField(firstRow, ["paymentMode", "payment_mode"]) || '');
         setOthersDescription(readStringField(firstRow, ["others_description", "othersDescription"]) || '');
         setPaidAmount(readNumericField(firstRow, ["Paid_Amount", "paidAmount", "totalPaid", "amount_paid"]) || 0);
+        const receiptPaidTotals = rows.reduce((totals, row) => ({
+          tuition: totals.tuition + readNumericField(row, ["Paid_Amount", "paidAmount", "paid_amount", "tuition_paid_this_transaction", "Installment1_Paid", "Installment2_Paid", "Installment3_Paid", "Installment4_Paid", "Installment5_Paid"]),
+          admission: totals.admission + readNumericField(row, ["Admission_paid", "admission_paid"]),
+          exam: totals.exam + readNumericField(row, ["exam_paid", "examPaid"]),
+          bus: totals.bus + readNumericField(row, ["bus_paid", "busPaid"]),
+          book: totals.book + readNumericField(row, ["books_paid", "book_paid", "bookPaid"]),
+          uniform: totals.uniform + readNumericField(row, ["uniform_paid", "uniformPaid"]),
+          others: totals.others + readNumericField(row, ["others_paid", "othersPaid"]),
+          residential: totals.residential + readNumericField(row, ["residential_paid", "residentialPaid"]),
+        }), {
+          tuition: 0,
+          admission: 0,
+          exam: 0,
+          bus: 0,
+          book: 0,
+          uniform: 0,
+          others: 0,
+          residential: 0,
+        });
+        setTuitionPaid(receiptPaidTotals.tuition);
+        setAdmissionPaid(receiptPaidTotals.admission);
+        setExamPaid(receiptPaidTotals.exam);
+        setBusPaid(receiptPaidTotals.bus);
+        setBookPaid(receiptPaidTotals.book);
+        setUniformPaid(receiptPaidTotals.uniform);
+        setOthersPaid(receiptPaidTotals.others);
+        setResidentialPaid(receiptPaidTotals.residential);
 
         try {
           const feeRes = await axios.get(
@@ -713,6 +929,7 @@ const GenerateBills = () => {
         }
 
         setIsReceiptLookup(true);
+        setIsPreviewPopupOpen(true);
         return true;
       }
 
@@ -854,6 +1071,7 @@ const GenerateBills = () => {
           console.error("Error fetching payment history totals:", err);
         }
         setIsReceiptLookup(true);
+        setIsPreviewPopupOpen(true);
         return true;
       }
 
@@ -900,6 +1118,19 @@ const GenerateBills = () => {
     setOthersDescription('');
   };
 
+  const clearFilters = () => {
+    setSelectedClass("");
+    setSelectedSection("");
+    setSelectedStudentId(null);
+    setStudentSearchTerm("");
+    setStudents([]);
+    setStudentReceipts([]);
+    setLastReceipt(null);
+    setSearchTerm("");
+    setIsPreviewPopupOpen(false);
+    resetFormFields();
+  };
+
   // Increment receipt number
   const incrementReceiptNumber = () => {
     const newNumber = parseInt(receiptNumber) + 1;
@@ -915,6 +1146,7 @@ const GenerateBills = () => {
     }
     setInitialReceiptSet(true);
     localStorage.setItem('lastReceiptNumber', receiptNumber);
+    setIsReceiptNumberEditorOpen(false);
   };
 
   // Format date
@@ -1389,6 +1621,49 @@ const GenerateBills = () => {
                     printData.residentialPaid +
                     dynamicPaidTotal;
                   const totalRemainingAmount = Math.max(totalAmountDue - totalPaidAmount, 0);
+                  const printFeeTotalRows = [
+                    { label: 'Tuition Fee', value: Math.max((printData.tuitionFee || 0) - tuitionDiscount, 0) },
+                    { label: 'Admission Fee', value: printData.admissionFee || 0 },
+                    { label: 'Residential Fee', value: printData.residentialFee || 0 },
+                    { label: 'Exam Fee', value: printData.examFee || 0 },
+                    { label: 'Book Fee', value: Math.max((printData.bookFee || 0) - bookDiscount, 0) },
+                    { label: 'Bus Fee', value: printData.busFee || 0 },
+                    { label: 'Uniform Fee', value: printData.uniformFee || 0 },
+                    { label: 'Other Fees', value: printData.othersFee || 0, description: printData.othersDescription },
+                    ...dynamicRows.map((row) => ({ label: row.label, value: row.total })),
+                  ].filter((fee) => fee.value > 0);
+                  const printReceiptRowsByLabel = new Map();
+                  printFeeTotalRows.forEach((fee) => {
+                    printReceiptRowsByLabel.set(fee.label, {
+                      label: fee.label,
+                      description: fee.description || '',
+                      total: Number(fee.value || 0),
+                      paidNow: 0,
+                    });
+                  });
+                  receiptDisplayRows.forEach((paidRow) => {
+                    const existing = printReceiptRowsByLabel.get(paidRow.label) || {
+                      label: paidRow.label,
+                      description: '',
+                      total: 0,
+                      paidNow: 0,
+                    };
+                    const paidNow = Number(paidRow.amount || 0);
+                    printReceiptRowsByLabel.set(paidRow.label, {
+                      ...existing,
+                      description: existing.description || paidRow.description || '',
+                      total: existing.total > 0 ? existing.total : paidNow,
+                      paidNow: existing.paidNow + paidNow,
+                    });
+                  });
+                  const printReceiptTableRows = Array.from(printReceiptRowsByLabel.values())
+                    .map((row) => ({
+                      ...row,
+                      balance: Math.max((Number(row.total) || 0) - (Number(row.paidNow) || 0), 0),
+                    }))
+                    .filter((row) => row.total > 0 || row.paidNow > 0);
+                  const printReceiptPaidNowTotal = printReceiptTableRows.reduce((sum, row) => sum + row.paidNow, 0);
+                  const printReceiptTotalAmount = printReceiptTableRows.reduce((sum, row) => sum + row.total, 0);
                   return `
                     <div class="bill-copy">
                       <div style="display: flex; align-items: center; margin-bottom: 4px;">
@@ -1427,81 +1702,38 @@ const GenerateBills = () => {
                           </tr>
                         </tbody>
                       </table>
-                      <table style="width: 100%; border-collapse: collapse; margin-top: 6px; margin-bottom: 8px;">
-                        <thead>
-                          <tr>
-                            <th style="text-align: left; font-size: 10px; border-bottom: 1px solid #ccc; padding-bottom: 2px;">Fee Type</th>
-                            <th style="text-align: right; font-size: 10px; border-bottom: 1px solid #ccc; padding-bottom: 2px;">Amount</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          ${[
-                            { label: 'Tuition Fee', value: Math.max((printData.tuitionFee || 0) - tuitionDiscount, 0) },
-                            { label: 'Admission Fee', value: printData.admissionFee || 0 },
-                            { label: 'Residential Fee', value: printData.residentialFee || 0 },
-                            { label: 'Exam Fee', value: printData.examFee || 0 },
-                            { label: 'Book Fee', value: Math.max((printData.bookFee || 0) - bookDiscount, 0) },
-                            { label: 'Bus Fee', value: printData.busFee || 0 },
-                            { label: 'Uniform Fee', value: printData.uniformFee || 0 },
-                            { label: 'Other Fees', value: printData.othersFee || 0, description: printData.othersDescription },
-                            ...dynamicRows.map((row) => ({ label: row.label, value: row.total })),
-                          ].filter((fee) => fee.value > 0).map((fee) => `
-                            <tr>
-                              <td style="text-align: left; font-size: 10px; padding: 2px 0;">
-                                ${fee.label}${fee.description ? `<br/><span style="font-size: 9px;">${fee.description}</span>` : ""}
-                              </td>
-                              <td style="text-align: right; font-size: 10px; padding: 2px 0;">₹${fee.value.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
-                            </tr>
-                          `).join('')}
-                        </tbody>
-                      </table>
-                      ${receiptRows.length > 0 ? `
-                        <div style="margin-bottom: 0.5rem;">
-                          <div style="font-size: 10px; font-weight: bold; margin-bottom: 0.25rem;">Fees Paid in This Receipt</div>
-                          <table style="width: 100%; border-collapse: collapse; font-size: 10px;">
-                            <thead>
-                              <tr style="background-color: #f7f7f7;">
-                                <th style="border: 1px solid black; padding: 2px; text-align: left;">Fee</th>
-                                <th style="border: 1px solid black; padding: 2px; text-align: right;">Paid</th>
-                              </tr>
-                            </thead>
-                            <tbody>
-                              ${receiptRows.map((item, receiptIndex) => `
-                                <tr>
-                                  <td style="border: 1px solid black; padding: 2px; text-align: left;">
-                                    ${item.label}${item.description ? `<div style="font-size: 9px;">${item.description}</div>` : ""}
-                                  </td>
-                                  <td style="border: 1px solid black; padding: 2px; text-align: right; color: green;">
-                                    ₹${Number(item.amount || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                                  </td>
-                                </tr>
-                              `).join('')}
-                            </tbody>
-                          </table>
-                        </div>
-                      ` : ''}
                       <table style="width: 100%; border-collapse: collapse; font-size: 10px;">
                         <thead>
                           <tr style="background-color: #f0f0f0; font-weight: bold;">
                             <th style="border: 1px solid black; padding: 3px; text-align: left;">S.NO</th>
                             <th style="border: 1px solid black; padding: 3px; text-align: left;">Fee Details</th>
-                            <th style="border: 1px solid black; padding: 3px; text-align: right;">Amount (₹)</th>
+                            <th style="border: 1px solid black; padding: 3px; text-align: right;">Total (₹)</th>
+                            <th style="border: 1px solid black; padding: 3px; text-align: right;">Paid Now (₹)</th>
+                            <th style="border: 1px solid black; padding: 3px; text-align: right;">Balance (₹)</th>
                           </tr>
                         </thead>
                       <tbody>
-                        ${receiptDisplayRows.map((item, idx) => `
+                        ${printReceiptTableRows.map((item, idx) => `
                             <tr>
                               <td style="border: 1px solid black; padding: 3px; text-align: left;">${idx + 1}</td>
                               <td style="border: 1px solid black; padding: 3px; text-align: left;">
                                 ${item.label}${item.description ? `<div style="font-size: 9px;">${item.description}</div>` : ""}
                               </td>
-                              <td style="border: 1px solid black; padding: 3px; text-align: right; color: green;">₹${item.amount.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+                              <td style="border: 1px solid black; padding: 3px; text-align: right;">₹${item.total.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+                              <td style="border: 1px solid black; padding: 3px; text-align: right; color: green;">₹${item.paidNow.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+                              <td style="border: 1px solid black; padding: 3px; text-align: right;">₹${item.balance.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
                             </tr>
                           `).join('')}
+                          <tr style="background-color: #f9fafb; font-weight: bold;">
+                            <td colspan="2" style="border: 1px solid black; padding: 3px; text-align: right;">Total</td>
+                            <td style="border: 1px solid black; padding: 3px; text-align: right;">₹${printReceiptTotalAmount.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+                            <td style="border: 1px solid black; padding: 3px; text-align: right; color: green;">₹${printReceiptPaidNowTotal.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+                            <td style="border: 1px solid black; padding: 3px; text-align: right;">₹${Math.max(printReceiptTotalAmount - printReceiptPaidNowTotal, 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+                          </tr>
                         </tbody>
                       </table>
                       <p style="font-style: italic; margin-top: 3px; font-size: 10px;">
-                        <strong>Paid Amount (in words):</strong> ${convertAmountToWords(receiptPaidTotal > 0 ? receiptPaidTotal : totalPaidAmount)}
+                        <strong>Paid Amount (in words):</strong> ${convertAmountToWords(printReceiptPaidNowTotal || totalPaidAmount)}
                       </p>
                       <div style="display:flex;justify-content:flex-end;font-weight:bold;padding:5px 10px;">
                         <div style="display:flex;gap:20px;">
@@ -1887,52 +2119,74 @@ const GenerateBills = () => {
   };
 
   const deleteBill = async (receiptNumber) => {
-    if (!window.confirm('Are you sure you want to delete this bill?')) return;
+    const comments = window.prompt('Enter comments for principal approval before deleting this receipt:');
+    if (comments === null) return;
+    if (!comments.trim()) {
+      alert('Comments are required to request deletion.');
+      return;
+    }
     try {
       const schoolCode = localStorage.getItem('schoolCode');
-      const response = await axios.delete(
-        `https://cleezoclass.com:4000/api/bill/delete/${receiptNumber}`,
+      const response = await axios.post(
+        `https://cleezoclass.com:4000/api/bill/delete-request/${receiptNumber}`,
+        {
+          comments,
+          requestedBy: localStorage.getItem('name') || localStorage.getItem('username') || 'Accountant',
+          studentName: studentData?.name || ''
+        },
         { params: { schoolCode } }
       );
-      if (response.status === 200) {
-        setStudentReceipts(prev => prev.filter(r => r.receiptNumber !== receiptNumber));
-        alert('Bill deleted successfully!');
+      if (response.status === 200 || response.status === 201) {
+        alert('Deletion request sent to principal/admin for approval.');
       }
     } catch (error) {
-      console.error('Error deleting bill:', error);
-      alert('Failed to delete bill. Please try again.');
+      console.error('Error requesting bill deletion:', error);
+      alert(error.response?.data?.message || 'Failed to request bill deletion. Please try again.');
     }
   };
 
   const handlePrintReceipt = async (receipt) => {
     const loaded = await searchBillsByReceiptNumber(receipt.receiptNumber);
     if (loaded) {
-      handlePrint();
+      setTimeout(() => confirmPrint(1), 350);
     }
   };
+// 1. Add state for the toggle
+
+// 2. Filter the students array based on the toggle and receipt data
 
   const fetchStudents = async (className, section) => {
-    if (!className) {
-      console.warn("[fetchStudents] className is missing. Aborting fetch.");
+    if (!className || !section) {
+      console.warn("[fetchStudents] className or section is missing. Aborting fetch.");
       return;
     }
     const schoolCode = localStorage.getItem('schoolCode');
     console.log(`[fetchStudents] Using schoolCode: ${schoolCode}`);
-    let url = `https://cleezoclass.com:4000/api/studentsName/${className}?schoolCode=${schoolCode}`;
-    if (section) {
-      url += `&section=${section}`;
-    }
+    const primaryUrl = `https://cleezoclass.com:4000/api/studentsNameAccountant/${className}?schoolCode=${schoolCode}&section=${section}`;
+    const fallbackUrl = `https://cleezoclass.com:4000/api/studentsName/${className}?schoolCode=${schoolCode}&section=${section}`;
+    let url = primaryUrl;
     console.log(`[fetchStudents] API Request URL: ${url}`);
     try {
-      const res = await axios.get(url);
+      let res;
+      try {
+        res = await axios.get(primaryUrl);
+      } catch (primaryErr) {
+        console.warn("[fetchStudents] Accountant student API failed, trying basic student API:", primaryErr.message);
+        url = fallbackUrl;
+        res = await axios.get(fallbackUrl);
+      }
       console.log("[fetchStudents] Full API Response:", res.data);
       if (res.data && res.data.students) {
         console.log(`[fetchStudents] Success! Found ${res.data.students.length} students.`);
-        setStudents(res.data.students);
-        if (res.data.students.length > 0) {
-          const defaultId = res.data.students[0].id;
+        const fetchedStudents = res.data.students;
+        const feeStudents = fetchedStudents.filter((student) => hasFeeData(student));
+        const displayStudents = feeStudents.length > 0 ? feeStudents : fetchedStudents;
+        setStudents(fetchedStudents);
+        if (displayStudents.length > 0) {
+          const defaultId = displayStudents[0].id;
           console.log(`[fetchStudents] Auto-selecting first student (ID: ${defaultId})`);
           setSelectedStudentId(defaultId);
+          setIsPreviewPopupOpen(true);
         } else {
           console.warn("[fetchStudents] List is empty for this class/section.");
           setStudents([]);
@@ -1951,6 +2205,11 @@ const GenerateBills = () => {
       fetchStudents(selectedClass, selectedSection);
     }
   }, [selectedClass, selectedSection]);
+
+  const selectedStudent = useMemo(() => {
+    if (!selectedStudentId) return null;
+    return students.find((student) => String(student.id) === String(selectedStudentId)) || null;
+  }, [selectedStudentId, students]);
 
   const tuitionDiscount = payments?.discounts?.tuitionDiscount || 0;
   const feeDiscount = payments?.discounts?.feeDiscount || 0;
@@ -1997,7 +2256,43 @@ const GenerateBills = () => {
         (payments.othersFee || 0) +
         (payments.admissionFee || 0))
     : 0;
-  const feeTypeRows = [
+  const selectedStudentFeeRows = useMemo(() => {
+    if (!selectedStudent || !hasFeeData(selectedStudent)) return [];
+
+    const dynamicRowsFromStudent = Object.entries(selectedStudent)
+      .filter(([key, value]) => {
+        const numericValue = Number(value);
+        return Number.isFinite(numericValue) && numericValue > 0 && /_total$/i.test(key);
+      })
+      .map(([key, value]) => {
+        const baseKey = key.replace(/_total$/i, "");
+        const paid = readNumericField(selectedStudent, [
+          `${baseKey}_paid`,
+          `${baseKey}Paid`,
+          `${baseKey}_paid_amount`,
+        ]);
+        return {
+          label: getDynamicFeeLabel(baseKey),
+          value: Number(value) || 0,
+          paid,
+        };
+      });
+
+    if (dynamicRowsFromStudent.length > 0) {
+      return dynamicRowsFromStudent;
+    }
+
+    const totalPaidFromStudent = readNumericField(selectedStudent, ["total_paid", "totalPaid", "Paid_Amount", "paidAmount"]);
+    const totalDueFromStudent = readNumericField(selectedStudent, ["total_due", "totalDue", "totalRemaining"]);
+    const totalFromStudent = readNumericField(selectedStudent, ["CompleteFee", "completeFee", "Final_Amount", "totalAmount"]);
+    const summaryTotal = totalFromStudent > 0 ? totalFromStudent : totalPaidFromStudent + totalDueFromStudent;
+
+    return summaryTotal > 0
+      ? [{ label: "Fee Bill", value: summaryTotal, paid: totalPaidFromStudent }]
+      : [];
+  }, [getDynamicFeeLabel, hasFeeData, readNumericField, selectedStudent]);
+
+  const baseFeeTypeRows = [
     { label: 'Tuition Fee', value: Math.max((paymentTuitionFee || tuitionFee || 0) - tuitionDiscount, 0) },
     { label: 'Admission Fee', value: payments?.admissionFee || admissionFee || 0 },
     { label: 'Residential Fee', value: payments?.residentialFee || residentialFee || 0 },
@@ -2008,8 +2303,9 @@ const GenerateBills = () => {
     { label: 'Other Fees', value: payments?.othersFee || othersFee || 0, description: otherDescription },
     ...dynamicFeeRows.map((row) => ({ label: row.label, value: row.total })),
   ].filter((fee) => fee.value > 0);
+  const feeTypeRows = baseFeeTypeRows.length > 0 ? baseFeeTypeRows : selectedStudentFeeRows;
   const currentReceiptPaidTotal = receiptPaidRows.reduce((sum, row) => sum + (Number(row.amount) || 0), 0);
-  const feeDetailRows = (isReceiptLookup && receiptPaidRows.length > 0 ? receiptPaidRows : [
+  const baseFeeDetailRows = (isReceiptLookup && receiptPaidRows.length > 0 ? receiptPaidRows : [
     { label: 'Tuition Fee', amount: previewTuitionPaid },
     { label: 'Admission Fee', amount: admissionPaid || 0 },
     { label: 'Residential Fee', amount: residentialPaid || 0 },
@@ -2020,6 +2316,48 @@ const GenerateBills = () => {
     { label: 'Other Fees', amount: previewOthersPaid, description: otherDescription },
     ...dynamicFeeRows.map((row) => ({ label: row.label, amount: row.paid })),
   ]).filter((fee) => fee.amount > 0);
+  const feeDetailRows = baseFeeDetailRows.length > 0
+    ? baseFeeDetailRows
+    : selectedStudentFeeRows
+        .filter((row) => Number(row.paid || 0) > 0)
+        .map((row) => ({ label: row.label, amount: Number(row.paid || 0) }));
+  const receiptTableRows = (() => {
+    const rowsByLabel = new Map();
+
+    feeTypeRows.forEach((fee) => {
+      rowsByLabel.set(fee.label, {
+        label: fee.label,
+        description: fee.description || "",
+        total: Number(fee.value || 0),
+        paidNow: 0,
+      });
+    });
+
+    feeDetailRows.forEach((paidRow) => {
+      const existing = rowsByLabel.get(paidRow.label) || {
+        label: paidRow.label,
+        description: "",
+        total: 0,
+        paidNow: 0,
+      };
+      const paidNow = Number(paidRow.amount || 0);
+      rowsByLabel.set(paidRow.label, {
+        ...existing,
+        description: existing.description || paidRow.description || "",
+        total: existing.total > 0 ? existing.total : paidNow,
+        paidNow: existing.paidNow + paidNow,
+      });
+    });
+
+    return Array.from(rowsByLabel.values())
+      .map((row) => ({
+        ...row,
+        balance: Math.max((Number(row.total) || 0) - (Number(row.paidNow) || 0), 0),
+      }))
+      .filter((row) => row.total > 0 || row.paidNow > 0);
+  })();
+  const receiptPaidNowTotal = receiptTableRows.reduce((sum, row) => sum + row.paidNow, 0);
+  const receiptTotalAmount = receiptTableRows.reduce((sum, row) => sum + row.total, 0);
 
   // Render component
   return (
@@ -2027,24 +2365,19 @@ const GenerateBills = () => {
       <div style={{ maxWidth: '1500px', margin: '0 auto', padding: '1rem' }}>
         <div style={{ maxWidth: '1200px', margin: '0 auto', padding: '1rem' }}>
           <div style={{ backgroundColor: 'white', borderRadius: '0.5rem', boxShadow: '0 4px 6px rgba(0, 0, 0, 0.1)', padding: '1.5rem', marginBottom: '1.5rem' }}>
-            {!localStorage.getItem('lastReceiptNumber') && (
+            {(!localStorage.getItem('lastReceiptNumber') || isReceiptNumberEditorOpen) && (
               <div style={{ display: 'flex', gap: '1rem', marginBottom: '1rem', alignItems: 'flex-end' }}>
-                <div style={{ flex: 1 }}>
-                  <label style={{ display: 'block', marginBottom: '0.5rem', fontWeight: '500', fontSize: '0.875rem' }}>
-                    Enter Starting Receipt Number
-                  </label>
-                  <input
-                    type="number"
-                    value={receiptNumber}
-                    onChange={(e) => setReceiptNumber(e.target.value)}
-                    style={{ width: '100%', padding: '0.5rem', borderRadius: '0.375rem', border: '1px solid #d1d5db', fontSize: '0.875rem' }}
-                    placeholder="Enter starting receipt number"
-                  />
-                </div>
-                <button
-                  onClick={handleSetReceiptNumber}
-className='btn-solid1'   >               Set Receipt Number
-                </button>
+                
+             
+                {localStorage.getItem('lastReceiptNumber') && (
+                  <button
+                    onClick={() => setIsReceiptNumberEditorOpen(false)}
+                    className='btn-solid1'
+                    style={{ backgroundColor: '#6b7280' }}
+                  >
+                    Cancel
+                  </button>
+                )}
               </div>
             )}
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: '1rem', marginBottom: '1rem', alignItems: 'flex-end' }}>
@@ -2069,16 +2402,15 @@ className='btn-solid1'   >               Set Receipt Number
                   </button>
                 </div>
               </div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', padding: '0.5rem', backgroundColor: '#f3f4f6', borderRadius: '0.375rem', minWidth: '200px', fontSize: '14px' }}>
-                <span style={{ fontWeight: '500', fontSize: '14px' }}>Receipt No:</span>
-                <span style={{ fontWeight: 'bold' }}>
-                  {localStorage.getItem('yearPosition') === 'before' && localStorage.getItem('receiptYear')}
-                  {localStorage.getItem('receiptPrefix') || ''}
-                  {receiptNumber}
-                  {localStorage.getItem('receiptSuffix') || ''}
-                  {localStorage.getItem('yearPosition') === 'after' && localStorage.getItem('receiptYear')}
-                </span>
-              </div>
+     
+              <button
+                type="button"
+                onClick={clearFilters}
+                className='btn-solid1'
+                style={{ backgroundColor: '#6b7280' }}
+              >
+                Clear Filters
+              </button>
             </div>
 
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: '1rem', marginBottom: '1rem', alignItems: 'flex-end' }}>
@@ -2094,17 +2426,10 @@ className='btn-solid1'   >               Set Receipt Number
 
   setIsPreviewPopupOpen(false);
 
-  const classValue =
-    ["Nursery", "LKG", "UKG"].includes(value)
-      ? value
-      : `class${value}`;
-
   setIsReceiptLookup(false);
   setSelectedClass(value);
   setSelectedSection("");
   setSelectedStudentId(null);
-
-  fetchStudents(classValue, selectedSection);
 }}
                     style={{ width: '100%', padding: '0.5rem', borderRadius: '0.375rem', border: '1px solid #d1d5db', fontSize: '0.875rem' }}
                     disabled={dropdownLoading || isEditing}
@@ -2153,6 +2478,21 @@ className='btn-solid1'   >               Set Receipt Number
                     style={{ width: '100%', padding: '0.5rem', borderRadius: '0.375rem', border: '1px solid #d1d5db', fontSize: '0.875rem' }}
                   />
                 </div>
+                <div style={{ minWidth: '200px', paddingBottom: '0.5rem' }}>
+                  <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.875rem', fontWeight: '500', color: '#374151' }}>
+                    <input
+                      type="checkbox"
+                      checked={onlyWithReceipts}
+                      onChange={(e) => {
+                        setOnlyWithReceipts(e.target.checked);
+                        setSelectedStudentId(null);
+                        setIsPreviewPopupOpen(false);
+                      }}
+                      disabled={isEditing}
+                    />
+                    Show only students with fees
+                  </label>
+                </div>
                 <div style={{ flex: 1, minWidth: '200px' }}>
                   <label style={{ display: 'block', marginBottom: '0.5rem', fontWeight: '500', fontSize: '0.875rem' }}>
                     Select Student
@@ -2160,14 +2500,11 @@ className='btn-solid1'   >               Set Receipt Number
                   <select
                     value={selectedStudentId || ''}
                  onChange={(e) => {
-  const studentId = parseInt(e.target.value);
+  const studentId = e.target.value ? parseInt(e.target.value, 10) : null;
 
   setIsReceiptLookup(false);
   setSelectedStudentId(studentId);
-
-  if (studentId) {
-    setIsPreviewPopupOpen(true);
-  }
+  setIsPreviewPopupOpen(!!studentId);
 }}
                     style={{ width: '100%', padding: '0.5rem', borderRadius: '0.375rem', border: '1px solid #d1d5db', fontSize: '0.875rem' }}
                     disabled={!selectedClass || !selectedSection || dropdownLoading || isEditing}
@@ -2179,6 +2516,11 @@ className='btn-solid1'   >               Set Receipt Number
                       </option>
                     ))}
                   </select>
+                  {selectedClass && selectedSection && students.length > 0 && filteredStudents.length === 0 && (
+                    <p style={{ marginTop: '0.5rem', fontSize: '0.8rem', color: '#b45309' }}>
+                      No students with fee bills found for this class and section.
+                    </p>
+                  )}
                 </div>
               </div>
             </div>
@@ -2188,7 +2530,7 @@ className='btn-solid1'   >               Set Receipt Number
         {/* {lastReceipt && (
           <div style={{ marginTop: '1.5rem', padding: '1rem', border: '1px solid #e5e7eb', borderRadius: '0.5rem' }}>
             <h3 style={{ fontSize: '1.125rem', fontWeight: '600', marginBottom: '1rem', color: '#111827' }}>
-              Last Previous Receipt
+              Last Payment Receipt
             </h3>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
               <p><strong>Receipt No:</strong> {lastReceipt.receiptNumber}</p>
@@ -2242,6 +2584,7 @@ className='btn-solid1'   >               Set Receipt Number
             <h3 style={{ fontSize: '1.125rem', fontWeight: '600', marginBottom: '1rem', color: '#111827' }}>
               Previous Receipts for {studentData?.name}
             </h3>
+            <div style={{ maxHeight: '320px', overflowY: 'auto', border: '1px solid #e5e7eb', borderRadius: '0.375rem' }}>
             <table style={{ width: '100%', borderCollapse: 'collapse' }}>
               <thead>
                 <tr>
@@ -2300,6 +2643,7 @@ className='btn-solid1'   >               Set Receipt Number
                 ))}
               </tbody>
             </table>
+            </div>
           </div>
         )}
 
@@ -2316,25 +2660,8 @@ onClose={() => setIsPreviewPopupOpen(false)}
     
    >
           <div style={{ textAlign: 'center', padding: '1rem' }}>
-            <svg
-              xmlns="http://www.w3.org/2000/svg"
-              width="48"
-              height="48"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="green"
-              strokeWidth="2"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              style={{ margin: '0 auto 1rem' }}
-            >
-              <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path>
-              <polyline points="22 4 12 14.01 9 11.01"></polyline>
-            </svg>
-            <h2 style={{ fontSize: '1.5rem', fontWeight: '600', marginBottom: '0.5rem' }}>Success!</h2>
-            <p style={{ color: '#374151' }}>{successMessage}</p>
              <div style={{ backgroundColor: 'white', borderRadius: '0.5rem', boxShadow: '0 4px 6px rgba(0, 0, 0, 0.1)', padding: '1.5rem' }}>
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '1.5rem' }}>
+            {/* <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '1.5rem' }}>
               <h2 style={{ fontSize: '1.25rem', fontWeight: '600', color: '#111827' }}>Preview</h2>
               {studentData?.name && (
                 <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
@@ -2418,8 +2745,13 @@ onClose={() => setIsPreviewPopupOpen(false)}
                   )}
                 </div>
               )}
-            </div>
-            {studentData?.name ? (
+            </div> */}
+            {isStudentBillLoading ? (
+              <div style={{ textAlign: 'center', padding: '3rem 0', color: '#6b7280', backgroundColor: '#f9fafb', borderRadius: '0.5rem' }}>
+                <FileText style={{ width: '3rem', height: '3rem', margin: '0 auto 1rem', opacity: '0.5' }} />
+                <p style={{ fontSize: '1rem' }}>Loading fee bill...</p>
+              </div>
+            ) : studentData?.name && receiptTableRows.length > 0 ? (
               <div id="bill-preview-content" style={{ display: 'flex', justifyContent: 'center', padding: '0.5rem', fontFamily: 'Arial, sans-serif', fontSize: '10px' }}>
                 <div style={{ border: '1px solid black', padding: '10px', width: '300px', position: 'relative', backgroundColor: 'white', color: '#000000', fontWeight: '900' }}>
                   {isEditing && (
@@ -2494,65 +2826,18 @@ onClose={() => setIsPreviewPopupOpen(false)}
                       </tr>
                     </tbody>
                   </table>
-                  <table style={{ width: '100%', borderCollapse: 'collapse', marginTop: '0.5rem', marginBottom: '0.75rem' }}>
-                    <thead>
-                      <tr>
-                        <th style={{ textAlign: 'left', fontSize: '10px', borderBottom: '1px solid #ccc', paddingBottom: '2px' }}>Fee Type</th>
-                        <th style={{ textAlign: 'right', fontSize: '10px', borderBottom: '1px solid #ccc', paddingBottom: '2px' }}>Amount</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {feeTypeRows.map((fee, idx) => (
-                        <tr key={idx}>
-                          <td style={{ textAlign: 'left', fontSize: '10px', padding: '2px 0' }}>
-                            {fee.label}
-                            {fee.description ? (
-                              <div style={{ fontSize: '9px' }}>{fee.description}</div>
-                            ) : null}
-                          </td>
-                          <td style={{ textAlign: 'right', fontSize: '10px', padding: '2px 0' }}>
-                            ₹{fee.value.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                  {isReceiptLookup && receiptPaidRows.length > 0 && (
-                    <div style={{ marginBottom: '0.5rem' }}>
-                      <div style={{ fontSize: '10px', fontWeight: 'bold', marginBottom: '0.25rem' }}>Fees Paid in This Receipt</div>
-                      <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '10px' }}>
-                        <thead>
-                          <tr style={{ backgroundColor: '#f7f7f7' }}>
-                            <th style={{ border: '1px solid black', padding: '2px', textAlign: 'left' }}>Fee</th>
-                            <th style={{ border: '1px solid black', padding: '2px', textAlign: 'right' }}>Paid</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {receiptPaidRows.map((item, index) => (
-                            <tr key={`${item.label}-${index}`}>
-                              <td style={{ border: '1px solid black', padding: '2px', textAlign: 'left' }}>
-                                {item.label}
-                                {item.description ? <div style={{ fontSize: '9px' }}>{item.description}</div> : null}
-                              </td>
-                              <td style={{ border: '1px solid black', padding: '2px', textAlign: 'right', color: 'green' }}>
-                                ₹{item.amount.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                              </td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                    </div>
-                  )}
-                  <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '10px' }}>
+                  <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '10px', marginTop: '0.5rem' }}>
                     <thead>
                       <tr style={{ backgroundColor: '#f0f0f0', fontWeight: 'bold' }}>
                         <th style={{ border: '1px solid black', padding: '3px', textAlign: 'left' }}>S.NO</th>
                         <th style={{ border: '1px solid black', padding: '3px', textAlign: 'left' }}>Fee Details</th>
-                        <th style={{ border: '1px solid black', padding: '3px', textAlign: 'right' }}>Amount (₹)</th>
+                        <th style={{ border: '1px solid black', padding: '3px', textAlign: 'right' }}>Total (₹)</th>
+                        <th style={{ border: '1px solid black', padding: '3px', textAlign: 'right' }}>Paid Now (₹)</th>
+                        <th style={{ border: '1px solid black', padding: '3px', textAlign: 'right' }}>Balance (₹)</th>
                       </tr>
                     </thead>
                     <tbody>
-                      {feeDetailRows.map((item, index) => (
+                      {receiptTableRows.map((item, index) => (
                         <tr key={index}>
                           <td style={{ border: '1px solid black', padding: '3px', textAlign: 'left' }}>
                             {index + 1}
@@ -2563,15 +2848,27 @@ onClose={() => setIsPreviewPopupOpen(false)}
                               <div style={{ fontSize: '9px' }}>{item.description}</div>
                             ) : null}
                           </td>
+                          <td style={{ border: '1px solid black', padding: '3px', textAlign: 'right' }}>
+                            ₹{item.total.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                          </td>
                           <td style={{ border: '1px solid black', padding: '3px', textAlign: 'right', color: 'green' }}>
-                            ₹{item.amount.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                            ₹{item.paidNow.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                          </td>
+                          <td style={{ border: '1px solid black', padding: '3px', textAlign: 'right' }}>
+                            ₹{item.balance.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                           </td>
                         </tr>
                       ))}
+                      <tr style={{ backgroundColor: '#f9fafb', fontWeight: 'bold' }}>
+                        <td colSpan="2" style={{ border: '1px solid black', padding: '3px', textAlign: 'right' }}>Total</td>
+                        <td style={{ border: '1px solid black', padding: '3px', textAlign: 'right' }}>₹{receiptTotalAmount.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+                        <td style={{ border: '1px solid black', padding: '3px', textAlign: 'right', color: 'green' }}>₹{receiptPaidNowTotal.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+                        <td style={{ border: '1px solid black', padding: '3px', textAlign: 'right' }}>₹{Math.max(receiptTotalAmount - receiptPaidNowTotal, 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+                      </tr>
                     </tbody>
                   </table>
                   <p style={{ fontStyle: 'italic', marginTop: '3px', fontSize: '10px' }}>
-                    <strong>Paid Amount (in words):</strong> {convertAmountToWords(isReceiptLookup && receiptPaidRows.length > 0 ? currentReceiptPaidTotal : totalPaidAmount)}
+                    <strong>Paid Amount (in words):</strong> {convertAmountToWords(receiptPaidNowTotal || totalPaidAmount)}
                   </p>
                   <div style={{ display: 'flex', justifyContent: 'flex-end', fontWeight: 'bold', padding: '5px 10px' }}>
                     <div style={{ display: 'flex', gap: '20px' }}>
@@ -2638,6 +2935,14 @@ onClose={() => setIsPreviewPopupOpen(false)}
                     </div>
                   </div>
                 </div>
+              </div>
+            ) : studentData?.name ? (
+              <div style={{ textAlign: 'center', padding: '3rem 1rem', color: '#6b7280', backgroundColor: '#f9fafb', borderRadius: '0.5rem' }}>
+                <FileText style={{ width: '3rem', height: '3rem', margin: '0 auto 1rem', opacity: '0.5' }} />
+                <p style={{ fontSize: '1rem', fontWeight: '600', color: '#374151' }}>No fee bill found for this student</p>
+                <p style={{ fontSize: '0.875rem', marginTop: '0.5rem' }}>
+                  Please select another student or create/assign fees for this student first.
+                </p>
               </div>
             ) : (
               <div style={{ textAlign: 'center', padding: '3rem 0', color: '#6b7280', backgroundColor: '#f9fafb', borderRadius: '0.5rem' }}>

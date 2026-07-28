@@ -88,22 +88,22 @@ const normalizeReportTemplateName = (value) => {
 };
 
 const reportCardFormats = [
-  { id: "report1.html", label: "Progress Report Card 1" },
-  { id: "report2.html", label: "Progress Report Card 2" },
-  { id: "report3.html", label: "Progress Report Card 3" },
-  { id: "report4.html", label: "Progress Report Card 4" },
-  { id: "report5.html", label: "Progress Report Card 5" },
-  { id: "report6.html", label: "Progress Report Card 6" },
+  { id: "report1.html", label: " Report Card 1" },
+  { id: "report2.html", label: " Report Card 2" },
+  { id: "report3.html", label: " Report Card 3" },
+  { id: "report4.html", label: " Report Card 4" },
+  { id: "report5.html", label: " Report Card 5" },
+  { id: "report6.html", label: " Report Card 6" },
 ];
 
 const normalizeIdCardTemplateName = (value) => {
   const template = String(value || "").trim().toLowerCase();
-  return /^idcard(?:[1-9]|1[0-9]|2[0-4])\.html$/.test(template) ? template : DEFAULT_ID_CARD_TEMPLATE;
+  return /^idcard(?:[1-9]|1[0-9]|2[0-6])\.html$/.test(template) ? template : DEFAULT_ID_CARD_TEMPLATE;
 };
 
-const idCardFormats = Array.from({ length: 24 }, (_, index) => {
+const idCardFormats = Array.from({ length: 20 }, (_, index) => {
   const cardNumber = index + 1
-  return { id: `idcard${cardNumber}.html`, label: `Student ID Card ${cardNumber}` };
+  return { id: `idcard${cardNumber}.html`, label: ` ID Card Template ${cardNumber}` };
 });
 
 const generationTemplates = [
@@ -356,7 +356,7 @@ const resolveIdCardPhotoUrl = (rawPhoto) => {
 
   let photoPath = rawPhoto;
 
-  if (rawPhoto && typeof rawPhoto === "object" && rawPhoto.type === "Buffer" && Array.isArray(rawPhoto.data)) {
+  if (rawPhoto && typeof rawPhoto === "object" && rawPhoto.data) {
     try {
       const byteArray = new Uint8Array(rawPhoto.data);
       photoPath = new TextDecoder().decode(byteArray);
@@ -396,20 +396,15 @@ const resolveIdCardPhotoUrl = (rawPhoto) => {
   if (trimmed.startsWith("data:")) return trimmed;
   if (trimmed.startsWith("http")) return trimmed;
   if (trimmed.startsWith("/public/uploads/")) {
-    trimmed = trimmed.replace("/public", "");
+    return `https://cleezoclass.com:4000${trimmed.replace("/public", "")}`;
   }
   if (trimmed.startsWith("public/uploads/")) {
-    trimmed = `/${trimmed.replace(/^public\//, "")}`;
-  }
-  if (trimmed.startsWith("uploads/")) {
-    trimmed = `/${trimmed}`;
+    return `https://cleezoclass.com:4000/${trimmed.replace(/^public\//, "")}`;
   }
   if (/^[A-Za-z0-9+/=]+$/.test(trimmed) && trimmed.length > 100) {
     return `data:image/png;base64,${trimmed}`;
   }
-  if (!trimmed.startsWith("/uploads/")) {
-    trimmed = `/uploads/${trimmed.replace(/^\/+/, "")}`;
-  }
+  if (!trimmed.startsWith("/")) return `https://cleezoclass.com:4000/${trimmed}`;
   return `https://cleezoclass.com:4000${trimmed}`;
 };
 
@@ -499,11 +494,117 @@ const filterStudentsByClassRange = (students, fromClass, toClass) => {
   });
 };
 
+// const buildIdCardPreviewUrl = (templateId, student, schoolName, schoolLogoValue = "", schoolAddressValue = "") => {
+//   const storage =
+//     typeof window !== "undefined" && window?.localStorage ? window.localStorage : { getItem: () => "" };
+
+//   // const stashLargeMediaValue = (value, keyPrefix) => {
+//   //   const raw = String(value || "").trim();
+//   //   if (!raw) return "";
+//   //   const isLikelyLarge = raw.startsWith("data:image") || raw.length > 1800;
+//   //   if (!isLikelyLarge) return raw;
+
+//   //   try {
+//   //     const studentKeyPart = String(
+//   //       student?.id || student?.student_id || student?.admission_no || student?.admissionNo || student?.name || "student"
+//   //     )
+//   //       .replace(/[^a-zA-Z0-9_-]/g, "_")
+//   //       .slice(0, 40);
+//   //     const key = `idcard_${keyPrefix}_${studentKeyPart}`;
+//   //     storage.setItem(key, raw);
+//   //     return `storage:${key}`;
+//   //   } catch {
+//   //     return raw;
+//   //   }
+//   // };
+
+//   const stashLargeMediaValue = (value, keyPrefix, sharedKey = null) => {
+//   const raw = String(value || "").trim();
+//   if (!raw) return "";
+//   const isLikelyLarge = raw.startsWith("data:image") || raw.length > 1800;
+//   if (!isLikelyLarge) return raw;
+
+//   try {
+//     const key = sharedKey || `idcard_${keyPrefix}_${studentKeyPart}`;
+//     storage.setItem(key, raw);
+//     return `storage:${key}`;
+//   } catch {
+//     return "";  // don't leak the full payload into the URL
+//   }
+// };
+
+// // logo is the same for the whole batch — one shared key:
+
+//   const storedSchoolLogo = String(storage.getItem("schoolLogo") || "").trim();
+//   const storedSchoolName = String(
+//     storage.getItem("schoolName") || storage.getItem("school") || storage.getItem("institute_name") || ""
+//   ).trim();
+//   const storedSchoolAddress = String(storage.getItem("schoolAddress") || "").trim();
+//   const resolvedSchoolName = String(
+//     schoolName && schoolName !== "Unknown School" ? schoolName : storedSchoolName || schoolName || "ABC School"
+//   ).trim();
+//   const resolvedSchoolLogo = String(
+//     schoolLogoValue && schoolLogoValue !== "/default-logo.png" ? schoolLogoValue : storedSchoolLogo || schoolLogoValue || ""
+//   ).trim();
+//   const resolvedSchoolAddress = String(schoolAddressValue || storedSchoolAddress || "").trim();
+//   const resolvedPhoto = resolveIdCardPhotoUrl(
+//     student?.photo ||
+//       student?.student_photo ||
+//       student?.studentPhoto ||
+//       student?.photo_url ||
+//       student?.photoUrl ||
+//       student?.student_photo_url ||
+//       student?.profile_photo ||
+//       student?.profilePhoto ||
+//       student?.image ||
+//       student?.image_url ||
+//       student?.student_image ||
+//       student?.studentImage ||
+//       ""
+//   );
+
+//   // const safeSchoolLogo = stashLargeMediaValue(resolvedSchoolLogo, "school_logo");
+
+//   const safeStudentPhoto = stashLargeMediaValue(resolvedPhoto, "student_photo");
+// const safeSchoolLogo = stashLargeMediaValue(resolvedSchoolLogo, "school_logo", "idcard_shared_school_logo");
+
+
+//   const params = new URLSearchParams({
+//     school: resolvedSchoolName,
+//     schoolName: resolvedSchoolName,
+//     schoolLogo: safeSchoolLogo,
+//     logo: safeSchoolLogo,
+//     schoolAddress: resolvedSchoolAddress,
+//     name: String(student?.name || student?.student_name || student?.studentName || "Student"),
+//     className: String(
+//       student?.class_name || student?.class || student?.className || student?.classname || student?.standard || "-"
+//     ),
+//     section: String(student?.section || student?.section_name || student?.sectionName || student?.sec || "-"),
+//     admissionNo: String(
+//       student?.admission_number || student?.admissionNo || student?.admission_no || student?.admno || student?.id || "-"
+//     ),
+//     rollNo: String(student?.roll_no || student?.rollNo || student?.student_id || student?.id || "-"),
+//     phone: String(student?.phone || student?.mobile || student?.student_mobile || student?.contact || "-"),
+//     emergency: String(
+//       student?.emergency_contact || student?.parent_mobile || student?.father_mobile || student?.mother_mobile || "-"
+//     ),
+//     bloodGroup: String(student?.blood_group || student?.bloodGroup || "-"),
+//     dob: formatDobValue(student?.dob || student?.date_of_birth || student?.dateOfBirth || "-"),
+//     address: String(student?.address || student?.current_address || student?.permanent_address || "-"),
+//     parent: String(student?.father_name || student?.parent_name || student?.guardian_name || "-"),
+//     route: String(student?.route || student?.bus_route || "-"),
+//     photo: safeStudentPhoto,
+//     studentPhoto: safeStudentPhoto,
+//   });
+
+//   return `${import.meta.env.BASE_URL}idcards/${templateId}?${params.toString()}`;
+// };
+
 const buildIdCardPreviewUrl = (templateId, student, schoolName, schoolLogoValue = "", schoolAddressValue = "") => {
   const storage =
     typeof window !== "undefined" && window?.localStorage ? window.localStorage : { getItem: () => "" };
 
-  const stashLargeMediaValue = (value, keyPrefix) => {
+  const stashLargeMediaValue = (value, keyPrefix, sharedKey = null) => {
     const raw = String(value || "").trim();
     if (!raw) return "";
     const isLikelyLarge = raw.startsWith("data:image") || raw.length > 1800;
@@ -515,13 +616,14 @@ const buildIdCardPreviewUrl = (templateId, student, schoolName, schoolLogoValue 
       )
         .replace(/[^a-zA-Z0-9_-]/g, "_")
         .slice(0, 40);
-      const key = `idcard_${keyPrefix}_${studentKeyPart}`;
+      const key = sharedKey || `idcard_${keyPrefix}_${studentKeyPart}`;
       storage.setItem(key, raw);
       return `storage:${key}`;
     } catch {
-      return raw;
+      return ""; // don't leak the full payload into the URL on quota failure
     }
   };
+
   const storedSchoolLogo = String(storage.getItem("schoolLogo") || "").trim();
   const storedSchoolName = String(
     storage.getItem("schoolName") || storage.getItem("school") || storage.getItem("institute_name") || ""
@@ -534,6 +636,7 @@ const buildIdCardPreviewUrl = (templateId, student, schoolName, schoolLogoValue 
     schoolLogoValue && schoolLogoValue !== "/default-logo.png" ? schoolLogoValue : storedSchoolLogo || schoolLogoValue || ""
   ).trim();
   const resolvedSchoolAddress = String(schoolAddressValue || storedSchoolAddress || "").trim();
+
   const resolvedPhoto = resolveIdCardPhotoUrl(
     student?.photo ||
       student?.student_photo ||
@@ -549,7 +652,10 @@ const buildIdCardPreviewUrl = (templateId, student, schoolName, schoolLogoValue 
       student?.studentImage ||
       ""
   );
-  const safeSchoolLogo = stashLargeMediaValue(resolvedSchoolLogo, "school_logo");
+
+  // Logo is identical for every student in a batch — cache it once under a shared key
+  // instead of once per student, so localStorage doesn't fill up on large class ranges.
+  const safeSchoolLogo = stashLargeMediaValue(resolvedSchoolLogo, "school_logo", "idcard_shared_school_logo");
   const safeStudentPhoto = stashLargeMediaValue(resolvedPhoto, "student_photo");
 
   const params = new URLSearchParams({
@@ -1432,7 +1538,54 @@ const handlePrintSelectedClassIdCards = async () => {
     }
   };
 
-  const handleOpenIdCardGeneration = async (templateOverride) => {
+  // const handleOpenIdCardGeneration = async (templateOverride) => {
+
+  //   const templateToUse = normalizeIdCardTemplateName(templateOverride || selectedIdCardTemplate);
+  //   const fromClass = String(generationRange.fromClass || "").trim();
+  //   const toClass = String(generationRange.toClass || "").trim();
+
+  //   if (!fromClass && !toClass) {
+  //     setIdCardRangeError("Please select From class or To class.");
+  //     return;
+  //   }
+
+  //   setIdCardRangeLoading(true);
+  //   setIdCardRangeError("");
+  //   setIdCardRangeStudents([]);
+  //   setAllIdCardsPopupOpen(false);
+
+  //   try {
+  //     const students = await fetchStudentsForReportRange();
+  //     const filtered = filterStudentsByClassRange(students, fromClass, toClass);
+
+  //     if (filtered.length === 0) {
+  //       const availableClasses = uniqueSortedValues(
+  //         (Array.isArray(students) ? students : []).map(
+  //           (item) => item?.class_name || item?.class || item?.className || item?.classname || item?.standard || ""
+  //         )
+  //       );
+  //       setIdCardRangeError(
+  //         availableClasses.length > 0
+  //           ? `No students found for selected class range. Available classes: ${availableClasses.join(", ")}`
+  //           : "No students found for the selected class range."
+  //       );
+  //       return;
+  //     }
+
+  //     const enrichedStudents = await enrichStudentsForReports(filtered);
+  //     setSelectedIdCardTemplate(templateToUse);
+  //     localStorage.setItem(ID_CARD_TEMPLATE_STORAGE_KEY, templateToUse);
+  //     setIdCardRangeStudents(enrichedStudents);
+  //     setAllIdCardsPopupOpen(true);
+  //   } catch (error) {
+  //     setIdCardRangeError(error?.message || "Failed to load students for ID card generation.");
+  //   } finally {
+  //     setIdCardRangeLoading(false);
+  //   }
+  // };
+
+
+const handleOpenIdCardGeneration = async (templateOverride) => {
     const templateToUse = normalizeIdCardTemplateName(templateOverride || selectedIdCardTemplate);
     const fromClass = String(generationRange.fromClass || "").trim();
     const toClass = String(generationRange.toClass || "").trim();
@@ -1446,6 +1599,17 @@ const handlePrintSelectedClassIdCards = async () => {
     setIdCardRangeError("");
     setIdCardRangeStudents([]);
     setAllIdCardsPopupOpen(false);
+
+    // 🔥 Clear stale ID-card media cache before generating a new batch,
+    // otherwise localStorage fills up across sessions/classes and later
+    // students silently fail to render (blank cards / missing photos).
+    try {
+      Object.keys(localStorage)
+        .filter((k) => k.startsWith("idcard_"))
+        .forEach((k) => localStorage.removeItem(k));
+    } catch (error) {
+      console.warn("Failed to clear stale ID card cache", error);
+    }
 
     try {
       const students = await fetchStudentsForReportRange();
@@ -1476,7 +1640,10 @@ const handlePrintSelectedClassIdCards = async () => {
       setIdCardRangeLoading(false);
     }
   };
+
 // 1. Add these states inside your AdminGenerations component
+
+
 const [teachers, setTeachers] = useState([]);
 const [loadingTeachers, setLoadingTeachers] = useState(false);
 const [selectedCardTeacher, setSelectedCardTeacher] = useState("");
@@ -1530,8 +1697,6 @@ const buildTeacherIdCardPreviewUrl = (templateId, teacher, schoolName, schoolLog
   
   const resolvedPhoto = resolveIdCardPhotoUrl(
     teacher?.photo ||
-      teacher?.photoPath ||
-      teacher?.photo_path ||
       teacher?.teacher_photo ||
       teacher?.teacherPhoto ||
       teacher?.photo_url ||
@@ -1545,8 +1710,6 @@ const buildTeacherIdCardPreviewUrl = (templateId, teacher, schoolName, schoolLog
       teacher?.image ||
       teacher?.image_url ||
       teacher?.imageUrl ||
-      teacher?.profile_picture ||
-      teacher?.profilePicture ||
       teacher?.avatar ||
       ""
   );
@@ -2116,7 +2279,7 @@ const renderGenerationCard = (title, kind = "generic") => (
                     aria-label={`${title} ${template.label}`}
                     onClick={() => openTemplatePreview("reportCard", template.id, template.label)}
                   >
-                    <span className="admin-events-template-art" />
+                    {/* <span className="admin-events-template-art" /> */}
                     <small className="admin-events-template-label">{template.label}</small>
                   </button>
                 );
@@ -2132,7 +2295,7 @@ const renderGenerationCard = (title, kind = "generic") => (
                       aria-label={`${title} ${template.label}`}
                       onClick={() => openTemplatePreview("idCard", template.id, template.label)}
                     >
-                      <span className="admin-events-template-art" />
+                      {/* <span className="admin-events-template-art" /> */}
                       <small className="admin-events-template-label">{template.label}</small>
                     </button>
                   );
@@ -2669,21 +2832,98 @@ const readIdCardStoredMedia = (doc, value) => {
   }
 };
 
+// const syncIdCardPhotoBeforeCapture = (doc) => {
+//   if (!doc?.defaultView?.location) return;
+//   const params = new URLSearchParams(doc.defaultView.location.search || "");
+//   const photo = resolveIdCardPhotoUrl(readIdCardStoredMedia(doc, params.get("photo") || params.get("studentPhoto")));
+//   if (!photo) return;
+
+//   doc.querySelectorAll("img[data-photo], img[data-student-photo]").forEach((img) => {
+//     img.crossOrigin = "anonymous";
+//     img.src = photo;
+//     img.hidden = false;
+//     img.style.width = "100%";
+//     img.style.height = "100%";
+//     img.style.objectFit = "cover";
+//     img.style.display = "block";
+//   });
+// };
+
+
+// const syncIdCardPhotoBeforeCapture = (doc) => {
+//   if (!doc?.defaultView?.location) return;
+//   const params = new URLSearchParams(doc.defaultView.location.search || "");
+
+//   // Student / teacher photo
+//   const photo = resolveIdCardPhotoUrl(readIdCardStoredMedia(doc, params.get("photo") || params.get("studentPhoto")));
+//   if (photo) {
+//     doc.querySelectorAll("img[data-photo], img[data-student-photo]").forEach((img) => {
+//       img.crossOrigin = "anonymous";
+//       img.src = photo;
+//       img.hidden = false;
+//       img.style.width = "100%";
+//       img.style.height = "100%";
+//       img.style.objectFit = "cover";
+//       img.style.display = "block";
+//     });
+//   }
+
+//   // 🔥 School logo — was never being resolved from its storage: reference before capture
+//   const logoRaw = readIdCardStoredMedia(doc, params.get("schoolLogo") || params.get("logo"));
+//   const logo = logoRaw && logoRaw.startsWith("storage:") ? "" : logoRaw; // readIdCardStoredMedia already unwraps storage:, this is just a safety net
+//   if (logo) {
+//     doc.querySelectorAll("img[data-logo], img[data-school-logo], .school-logo img, img.school-logo").forEach((img) => {
+//       img.crossOrigin = "anonymous";
+//       img.src = logo;
+//       img.hidden = false;
+//       img.style.display = "block";
+//     });
+//   }
+// };
+
 const syncIdCardPhotoBeforeCapture = (doc) => {
   if (!doc?.defaultView?.location) return;
   const params = new URLSearchParams(doc.defaultView.location.search || "");
-  const photo = resolveIdCardPhotoUrl(readIdCardStoredMedia(doc, params.get("photo") || params.get("studentPhoto")));
-  if (!photo) return;
 
-  doc.querySelectorAll("img[data-photo], img[data-student-photo]").forEach((img) => {
+  // Resolve every <img> whose src literally starts with "storage:" — this works
+  // for BOTH the student/teacher photo and the school logo, regardless of what
+  // class/attribute the template markup happens to use for each image.
+  const storageImages = Array.from(doc.querySelectorAll("img")).filter((img) => {
+    const rawSrc = img.getAttribute("src") || "";
+    return rawSrc.trim().startsWith("storage:");
+  });
+
+  storageImages.forEach((img) => {
+    const rawSrc = img.getAttribute("src") || "";
+    const resolved = readIdCardStoredMedia(doc, rawSrc);
+    if (!resolved) return;
+
+    // Photos should be run through resolveIdCardPhotoUrl (handles hex/relative paths);
+    // the logo is already a clean data: URL / http URL, so use it as-is.
+    const isPhotoLike = rawSrc.includes("_student_photo_") || rawSrc.includes("_teacher_photo_");
+    const finalSrc = isPhotoLike ? resolveIdCardPhotoUrl(resolved) : resolved;
+    if (!finalSrc) return;
+
     img.crossOrigin = "anonymous";
-    img.src = photo;
+    img.src = finalSrc;
     img.hidden = false;
-    img.style.width = "100%";
-    img.style.height = "100%";
-    img.style.objectFit = "cover";
     img.style.display = "block";
   });
+
+  // Fallback: also handle the explicit data-photo / data-student-photo markers
+  // in case the template doesn't put the raw storage: string directly in src.
+  const photo = resolveIdCardPhotoUrl(readIdCardStoredMedia(doc, params.get("photo") || params.get("studentPhoto")));
+  if (photo) {
+    doc.querySelectorAll("img[data-photo], img[data-student-photo]").forEach((img) => {
+      img.crossOrigin = "anonymous";
+      img.src = photo;
+      img.hidden = false;
+      img.style.width = "100%";
+      img.style.height = "100%";
+      img.style.objectFit = "cover";
+      img.style.display = "block";
+    });
+  }
 };
 
 const waitForIdCardImages = async (doc) => {

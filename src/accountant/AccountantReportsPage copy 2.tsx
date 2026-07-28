@@ -34,7 +34,6 @@ import feesSearchIcon from "../assets/user (1).png";
 import HelpCenter from "../shared/HelpCenter.jsx";
 import { FiHelpCircle } from "react-icons/fi";
 import { FileSpreadsheet, FileText, Printer } from "lucide-react";
-
 type ReportView = "main" | "ledger" | "previous" | "complete" | "bus" | "studentTransactions" | "paid" | "unpaid" | "discounts" | "referrals" | "feeType" | "collectionSummary";
 type ReportRow = Record<string, any>;
 
@@ -97,6 +96,7 @@ const normalizePreviousItem = (row: ReportRow) => ({
 });
 
 const normalizeCompleteItem = (row: ReportRow) => {
+  // Get all keys from the row that are fees (exclude system fields)
   const feeKeys = Object.keys(row || {}).filter(key => {
     const lowerKey = key.toLowerCase();
     return ![
@@ -109,7 +109,9 @@ const normalizeCompleteItem = (row: ReportRow) => {
     ].includes(lowerKey);
   });
 
+  // Calculate complete fee from all fee columns only when backend does not send one.
   const calculatedCompleteFee = feeKeys.reduce((sum, key) => {
+    // Skip _paid and _due columns
     const lowerKey = key.toLowerCase();
     if (
       lowerKey.endsWith('_paid') ||
@@ -134,6 +136,7 @@ const normalizeCompleteItem = (row: ReportRow) => {
   );
   const completeFee = backendCompleteFee > 0 ? backendCompleteFee : calculatedCompleteFee;
 
+  // Extract individual fee values
   const getFeeValue = (possibleKeys: string[]) => {
     for (const key of possibleKeys) {
       const value = row[key];
@@ -150,17 +153,29 @@ const normalizeCompleteItem = (row: ReportRow) => {
     Class_name: getAny(row, ["Class_name", "class_name", "className"], ""),
     section: getAny(row, ["section", "Section"], ""),
     CompleteFee: completeFee,
+    // Get values from the actual fee columns returned by backend
+    
     BusFee: getFeeValue(['BusFee', 'Bus_fees', 'busFee', 'bus_fees']),
     PreviousDue: toAmount(getAny(row, ["PreviousDue", "Previous_Fee_Due", "previousDue", "previous_fee_due"])),
     ResidentialCompleteFee: toAmount(
       getAny(row, ["ResidentialCompleteFee", "residentialCompleteFee", "residential_complete_fee"])
     ),
     OtherFee: getFeeValue(['OtherFee', 'Others', 'otherFee', 'others']),
+    // Add all other dynamic fees
     ...Object.fromEntries(
       feeKeys.map(key => [key, toAmount(row[key])])
     )
   };
 };
+
+const normalizeUnpaidItem = (row: ReportRow) => ({
+  ...row,
+  StudentName: getAny(row, ["StudentName", "student_name", "studentName"], ""),
+  Class_name: getAny(row, ["Class_name", "class_name", "className"], ""),
+  section: getAny(row, ["section", "Section"], ""),
+  unpaidAmount: toAmount(getAny(row, ["unpaidAmount", "Due", "due", "Pending", "pending"])),
+  paidDate: getAny(row, ["paidDate", "paid_date", "Payment_Date", "created_at"], ""),
+});
 
 const getFinancialYearFromDate = (rawDate: any) => {
   if (!rawDate) return "";
@@ -220,13 +235,20 @@ const collectionMonthOptions = [
 const reportCards = [
   { key: "ledger", title: "Day-wise", subtitle: " Ledger", icon: DaywiseIcon },
   { key: "collectionSummary", title: "Collection Report", subtitle: "Month & Year", icon: transactionsIcon },
-  { key: "studentTransactions", title: "Transactions Report", subtitle: "Student Report", icon: TransactionIcon },
+    { key: "studentTransactions", title: "Transactions", subtitle: "Student Report", icon: TransactionIcon },
+
+  // { key: "previous", title: "Previous Due", subtitle: "Pending Report", icon: reportIcon },
   { key: "complete", title: "Fees ", subtitle: "Total Fee & Installments", icon: FeesReportIcon },
+  // { key: "bus", title: "Bus/Residential", subtitle: "Payment Report", icon: campaignStaffIcon },
+  // { key: "paid", title: "Paid", subtitle: "Collection Report", icon: transactionsIcon },
   { key: "main", title: "Dues", subtitle: "Current & previous", icon: DueReportIcon },
-  { key: "feeType", title: "Fee Type", subtitle: "Tuition,books...etc", icon: FeeTypeIcon },
-  { key: "discounts", title: "Discounts", subtitle: "Fees and closings", icon: DiscountsIcon },
-  { key: "referrals", title: "Referrals", subtitle: " Reference", icon: ReferralsIcon },
-  { key: "FeesSearch", title: "Fees Search", subtitle: "Student transactions", icon: FeesSearchIcon },
+    { key: "feeType", title: "Fee Type", subtitle: "Tuition,books...etc", icon: FeeTypeIcon },
+    { key: "discounts", title: "Discounts", subtitle: "Fees and closings", icon: DiscountsIcon },
+
+            { key: "referrals", title: "Referrals", subtitle: " Reference", icon: ReferralsIcon },
+                { key: "FeesSearch", title: "Fees Search", subtitle: "Student transactions", icon: FeesSearchIcon },
+
+
 ] as const;
 
 const STATIC_TRANSACTION_PAID_KEYS = new Set([
@@ -255,6 +277,28 @@ const STATIC_FEE_BASE_KEYS = new Set([
   "previous",
   "saving",
   "savings",
+]);
+
+const DISCOUNT_REPORT_KEYS = new Set([
+  "discount",
+  "Discount",
+  "tuition_discount",
+  "fee_discount",
+  "bus_discount",
+  "uniform_discount",
+  "exam_discount",
+  "stationary_discount",
+  "sports_discount",
+  "guides_discount",
+  "belt_discount",
+  "tie_discount",
+  "cultural_activities_discount",
+  "anual_discount",
+  "library_discount",
+  "transportation_discount",
+  "xyz_discount",
+  "abc_discount",
+  "Admission_Discount",
 ]);
 
 const NON_FEE_REPORT_KEYS = new Set([
@@ -304,7 +348,7 @@ const formatHeaderLabel = (value: string) =>
     .replace(/\b\w/g, (char) => char.toUpperCase());
 
 const formatDueReportHeaderLabel = (header: string) => {
-  if (header === "class_name") return "Class";
+  if (header === "Class_name") return "Class";
   if (header === "StudentName") return "Student Name";
   if (header === "Total_Expected") return "Total Fee";
 
@@ -340,9 +384,8 @@ const getDynamicTransactionPaidKeys = (rows: ReportRow[]) => {
 
 const getDynamicTransactionPaidLabel = (key: string) => {
   const withoutSuffix = key.replace(/_paid$/i, "");
-  return formatHeaderLabel(withoutSuffix);
+  return `${formatHeaderLabel(withoutSuffix)} Paid`;
 };
-
 const normalizeFeeBaseKey = (key: string) =>
   String(key || "")
     .trim()
@@ -408,7 +451,6 @@ const getDynamicFeeValue = (row: ReportRow, baseKey: string) => {
   }
   return toAmount(getAny(row, [baseKey, `${baseKey}_fee`, `${baseKey}_fees`, `${baseKey}_amount`], 0));
 };
-
 const getDynamicDiscountColumns = (rows: ReportRow[]) => {
   const columns = new Set<string>();
 
@@ -448,6 +490,20 @@ const getDiscountReason = (row: ReportRow) =>
 const getDiscountRecordDate = (row: ReportRow) =>
   getAny(row, ["Discount_Date", "discount_date", "record_date", "created_at", "updated_at"], "");
 
+const getReportStudentKey = (row: ReportRow) =>
+  [
+    getAny(row, ["StudentName", "student_name", "studentName", "name"], ""),
+    getAny(row, ["Class_name", "class_name", "className", "class"], ""),
+    getAny(row, ["section", "Section"], ""),
+  ]
+    .map((value) =>
+      String(value || "")
+        .trim()
+        .toLowerCase()
+        .replace(/\s+/g, " ")
+    )
+    .join("|");
+
 const getRowDiscountTotal = (row: ReportRow) => {
   const directDiscount = toAmount(
     getAny(row, ["Discount", "discount", "discount_amount", "Discount_Amount", "Concession", "Total_Discount"], 0)
@@ -483,6 +539,18 @@ const normalizeDiscountItem = (row: ReportRow) => ({
   discount_reason: getDiscountReason(row),
   Discount: getRowDiscountTotal(row),
 });
+
+const normalizeMainDueItem = (row: ReportRow, mergedDiscount = 0) => {
+  const discount = mergedDiscount || getRowDiscountTotal(row);
+  const originalDue = toAmount(getAny(row, ["Total_Due", "Due_Amount", "Due", "due", "unpaidAmount"], 0));
+  const adjustedDue = Math.max(originalDue - discount, 0);
+
+  return {
+    ...row,
+    Discount: discount,
+    Total_Due: adjustedDue,
+  };
+};
 
 const isReferralDiscountRow = (row: ReportRow) => {
   const reason = String(getDiscountReason(row) || "").trim().toLowerCase();
@@ -550,7 +618,6 @@ const buildActiveFeeTypeKeySet = (rows: ReportRow[]) => {
 
   return keys;
 };
-
 const getDynamicPaidValue = (row: ReportRow, baseKey: string) => {
   const targetNormalized = normalizeFeeBaseKey(baseKey);
   for (const [key, value] of Object.entries(row || {})) {
@@ -622,9 +689,9 @@ const AccountantReportsPage: React.FC = () => {
   const [summaryPreviousPaid, setSummaryPreviousPaid] = useState(0);
   const [isAddFeesPopupOpen, setIsAddFeesPopupOpen] = useState(false);
   const [isStudentManagementPopupOpen, setIsStudentManagementPopupOpen] = useState(false);
-  const [isHelpOpen, setIsHelpOpen] = useState(false);
+        const [isHelpOpen, setIsHelpOpen] = useState(false);
   const [openHelpSection, setOpenHelpSection] = useState(null);
-
+  
   const userRole = localStorage.getItem("userRole");
   const [addFeePreview, setAddFeePreview] = useState({
     className: "",
@@ -892,6 +959,7 @@ const AccountantReportsPage: React.FC = () => {
       }),
     []
   );
+  
 
   const handleCollectionSummaryReport = useCallback(async (type: "month" | "year") => {
     setLoadingCardKey("collectionSummary");
@@ -1168,122 +1236,112 @@ const AccountantReportsPage: React.FC = () => {
       setLoadingCardKey("");
     }
   };
+const handleStudentTransactions = useCallback(async (sourceCardKey: string = "studentTransactions") => {
+  setLoadingCardKey("studentTransactions");
+  setStudentTransactionsLoading(true);
+  setCurrentPage(1);
+  setActiveCardKey(sourceCardKey);
+  try {
+    const schoolCode = localStorage.getItem("schoolCode");
+    if (!schoolCode) throw new Error("School code missing");
 
-  const handleStudentTransactions = useCallback(async (sourceCardKey: string = "studentTransactions") => {
-    setLoadingCardKey("studentTransactions");
-    setStudentTransactionsLoading(true);
-    setCurrentPage(1);
-    setActiveCardKey(sourceCardKey);
+    const className = filters.className === "All" ? "" : filters.className || "";
+    const section = filters.section === "All" ? "" : filters.section || "";
+    const studentName = filters.studentName || "";
+
+    const queryParams = {
+      schoolCode,
+      studentName,
+      className,
+      section,
+    };
+
+    const parseRows = (payload: any): ReportRow[] => {
+      if (Array.isArray(payload)) return payload;
+      if (Array.isArray(payload?.data)) return payload.data;
+      if (Array.isArray(payload?.rows)) return payload.rows;
+      return [];
+    };
+
+    let result: ReportRow[] = [];
     try {
-      const schoolCode = localStorage.getItem("schoolCode");
-      if (!schoolCode) throw new Error("School code missing");
+      const response = await axios.get(`${API_BASE_URL}/api/student-transactions-dynamic`, {
+        params: queryParams,
+      });
+      result = parseRows(response.data);
+    } catch (dynamicError) {
+      console.warn("Dynamic student-transactions endpoint failed, trying legacy fallback:", dynamicError);
+      const fallbackResponse = await axios.get(`${API_BASE_URL}/api/student-transactions`, {
+        params: queryParams,
+      });
+      result = parseRows(fallbackResponse.data);
+    }
 
-      const className = filters.className === "All" ? "" : filters.className || "";
-      const section = filters.section === "All" ? "" : filters.section || "";
-      const studentName = filters.studentName || "";
-
-      const queryParams = {
-        schoolCode,
-        studentName,
-        className,
-        section,
-      };
-
-      const parseRows = (payload: any): ReportRow[] => {
-        if (Array.isArray(payload)) return payload;
-        if (Array.isArray(payload?.data)) return payload.data;
-        if (Array.isArray(payload?.rows)) return payload.rows;
-        return [];
-      };
-
-      let result: ReportRow[] = [];
-      try {
-        const response = await axios.get(`${API_BASE_URL}/api/student-transactions-dynamic`, {
-          params: queryParams,
-        });
-        result = parseRows(response.data);
-      } catch (dynamicError) {
-        console.warn("Dynamic student-transactions endpoint failed, trying legacy fallback:", dynamicError);
-        const fallbackResponse = await axios.get(`${API_BASE_URL}/api/student-transactions`, {
-          params: queryParams,
-        });
-        result = parseRows(fallbackResponse.data);
+    // Filter rows where any "paid" field is > 0
+    const filteredResult = result.filter((row) => {
+      for (const key in row) {
+        if (key.toLowerCase().includes("paid") && toAmount(row[key]) > 0) {
+          return true;
+        }
       }
+      return false;
+    });
 
-      const filteredResult = result.filter((row) => {
-        for (const key in row) {
-          if (key.toLowerCase().includes("paid") && toAmount(row[key]) > 0) {
-            return true;
-          }
-        }
-        return false;
-      });
+    // Remove grouping logic (display each transaction separately)
+    setStudentTransactions(filteredResult);
+    setActiveView("studentTransactions");
+    setActiveCardKey(sourceCardKey);
+    studentTransactionsQueryRef.current = getStudentTransactionsQueryKey(filters);
+  } catch (error) {
+    console.error(error);
+    studentTransactionsQueryRef.current = "";
+    alert("Failed to fetch student transactions");
+  } finally {
+    setStudentTransactionsLoading(false);
+    setLoadingCardKey("");
+  }
+}, [filters, getStudentTransactionsQueryKey]);
 
-      // Group records by receipt/transaction key so single transaction per receipt is generated
-      const groupedMap = new Map<string, ReportRow>();
-      filteredResult.forEach((row) => {
-        const receiptNo = row.receiptNumber || row.receipt_number || row.transaction_id || "NO_RECEIPT";
-        const student = getAny(row, ["StudentName", "student_name", "studentName"], "");
-        const groupKey = `${receiptNo}__${student}__${row.paidDate || row.Payment_Date || row.paid_date || ""}`;
+const handleDiscountsReport = useCallback(async () => {
+  setLoadingCardKey("discounts");
+  setExtraLoading(true);
+  setCurrentPage(1);
+  try {
+    const schoolCode = localStorage.getItem("schoolCode");
+    if (!schoolCode) throw new Error("School code missing");
 
-        if (!groupedMap.has(groupKey)) {
-          groupedMap.set(groupKey, { ...row });
-        } else {
-          const existing = groupedMap.get(groupKey)!;
-          Object.keys(row).forEach((k) => {
-            if (k.toLowerCase().includes("paid")) {
-              existing[k] = toAmount(existing[k]) + toAmount(row[k]);
-            }
-          });
-        }
-      });
+    const params = new URLSearchParams({
+      schoolCode,
+      className: filters.className || "All",
+      section: filters.section || "All",
+      fromDate: "",
+      toDate: "",
+    });
 
-      setStudentTransactions(Array.from(groupedMap.values()));
-      setActiveView("studentTransactions");
-      setActiveCardKey(sourceCardKey);
-      studentTransactionsQueryRef.current = getStudentTransactionsQueryKey(filters);
-    } catch (error) {
-      console.error(error);
-      studentTransactionsQueryRef.current = "";
-      alert("Failed to fetch student transactions");
-    } finally {
-      setStudentTransactionsLoading(false);
-      setLoadingCardKey("");
-    }
-  }, [filters, getStudentTransactionsQueryKey]);
+    console.groupCollapsed("[Reports][Discounts] fetch");
+    console.log("request params", Object.fromEntries(params.entries()));
 
-  const handleDiscountsReport = useCallback(async () => {
-    setLoadingCardKey("discounts");
-    setExtraLoading(true);
-    setCurrentPage(1);
-    try {
-      const schoolCode = localStorage.getItem("schoolCode");
-      if (!schoolCode) throw new Error("School code missing");
+    const response = await axios.get(`https://cleezoclass.com:4000/api/discounts-report?${params.toString()}`);
+    const result = Array.isArray(response.data) ? response.data : response.data?.data || [];
+    const normalizedResult = result.map(normalizeDiscountItem);
 
-      const params = new URLSearchParams({
-        schoolCode,
-        className: filters.className || "All",
-        section: filters.section || "All",
-        fromDate: "",
-        toDate: "",
-      });
+    console.log("raw count", result.length);
+    console.log("raw sample", result.slice(0, 3));
+    console.log("normalized count", normalizedResult.length);
+    console.log("normalized sample", normalizedResult.slice(0, 3));
+    console.groupEnd();
 
-      const response = await axios.get(`https://cleezoclass.com:4000/api/discounts-report?${params.toString()}`);
-      const result = Array.isArray(response.data) ? response.data : response.data?.data || [];
-      const normalizedResult = result.map(normalizeDiscountItem);
-
-      setDiscountsData(normalizedResult);
-      setActiveView("discounts");
-      setActiveCardKey("discounts");
-    } catch (error) {
-      console.error(error);
-      alert("Failed to fetch discounts report");
-    } finally {
-      setExtraLoading(false);
-      setLoadingCardKey("");
-    }
-  }, [filters.className, filters.section]);
-
+    setDiscountsData(normalizedResult);
+    setActiveView("discounts");
+    setActiveCardKey("discounts");
+  } catch (error) {
+    console.error(error);
+    alert("Failed to fetch discounts report");
+  } finally {
+    setExtraLoading(false);
+    setLoadingCardKey("");
+  }
+}, [filters.className, filters.section]);
   useEffect(() => {
     const view = new URLSearchParams(location.search).get("view");
     if (view === "discounts") {
@@ -1307,10 +1365,20 @@ const AccountantReportsPage: React.FC = () => {
         toDate: "",
       });
 
+      console.groupCollapsed("[Reports][Referrals] fetch");
+      console.log("request params", Object.fromEntries(params.entries()));
+
       const response = await axios.get(`https://cleezoclass.com:4000/api/discounts-report?${params.toString()}`);
       const result = Array.isArray(response.data) ? response.data : response.data?.data || [];
       const normalizedResult = result.map(normalizeDiscountItem);
       const referralRows = normalizedResult.filter(isReferralDiscountRow);
+
+      console.log("raw count", result.length);
+      console.log("raw sample", result.slice(0, 3));
+      console.log("normalized count", normalizedResult.length);
+      console.log("referral count", referralRows.length);
+      console.log("referral sample", referralRows.slice(0, 3));
+      console.groupEnd();
 
       setReferralsData(referralRows);
       setActiveView("referrals");
@@ -1383,6 +1451,36 @@ const AccountantReportsPage: React.FC = () => {
       setLoadingCardKey("");
     }
   }, [filters.fromDate, filters.toDate, firstDay, lastDay]);
+
+  const handleUnpaidListReport = useCallback(async () => {
+    setLoadingCardKey("unpaid");
+    setExtraLoading(true);
+    setCurrentPage(1);
+    try {
+      const schoolCode = localStorage.getItem("schoolCode");
+      if (!schoolCode) throw new Error("School code missing");
+
+      const params = new URLSearchParams({
+        schoolCode,
+        fromDate: filters.fromDate || "",
+        toDate: filters.toDate || "",
+        className: filters.className || "All",
+        section: filters.section || "All",
+      });
+
+      const response = await axios.get(`https://cleezoclass.com:4000/api/unpaid-list?${params.toString()}`);
+      const result = Array.isArray(response.data) ? response.data : response.data?.data || [];
+      setUnpaidListData(result.map(normalizeUnpaidItem));
+      setActiveView("unpaid");
+      setActiveCardKey("main");
+    } catch (error) {
+      console.error(error);
+      alert("Failed to fetch unpaid list");
+    } finally {
+      setExtraLoading(false);
+      setLoadingCardKey("");
+    }
+  }, [filters.className, filters.fromDate, filters.section, filters.toDate]);
 
   useEffect(() => {
     if (activeView !== "studentTransactions") return;
@@ -1475,32 +1573,42 @@ const AccountantReportsPage: React.FC = () => {
         return [];
     }
   }, [activeView, applyFilters, busData, collectionData, completeFeeData, discountsData, feeTypeData, ledgerData, mainData, paidListData, previousData, referralsData, studentTransactions, unpaidListData]);
+const totalPaidToday = useMemo(() => {
+  if (activeView !== "ledger") return 0;
+  return activeRows.reduce((sum, row) => sum + toAmount(row.amount_paid), 0);
+}, [activeView, activeRows]);
+  useEffect(() => {
+    if (activeView !== "discounts" && activeView !== "referrals") return;
+
+    console.groupCollapsed(`[Reports][${activeView}] filtered rows`);
+    console.log("filters", filters);
+    console.log("stored count", activeView === "discounts" ? discountsData.length : referralsData.length);
+    console.log("visible count", activeRows.length);
+    console.log("visible sample", activeRows.slice(0, 3));
+    console.groupEnd();
+  }, [activeRows, activeView, discountsData.length, filters, referralsData.length]);
 
   const totalPages = Math.max(1, Math.ceil(activeRows.length / rowsPerPage));
   const paginatedRows = activeRows.slice((currentPage - 1) * rowsPerPage, currentPage * rowsPerPage);
-  
   const dynamicTransactionPaidKeys = useMemo(
     () => (activeView === "studentTransactions" ? getDynamicTransactionPaidKeys(activeRows) : []),
     [activeRows, activeView]
   );
-  
   const dynamicCompleteFeeBases = useMemo(
     () => (activeView === "complete" ? (completeFeeTypeBases.length ? completeFeeTypeBases : getDynamicFeeBases(activeRows)) : []),
     [activeRows, activeView, completeFeeTypeBases]
   );
-  
   const dynamicDiscountColumns = useMemo(
     () => (activeView === "discounts" || activeView === "referrals" ? getDynamicDiscountColumns(activeRows) : []),
     [activeRows, activeView]
   );
-
-  const visibleCompleteStaticColumns = useMemo(() => {
-    if (activeView !== "complete") return [];
-    return [
-      { key: "CompleteFee", label: "Complete Fee", getValue: (row: ReportRow) => toAmount(row.CompleteFee) },
-    ].filter((column) => hasAnyAmount(activeRows, column.getValue));
-  }, [activeRows, activeView]);
-
+const visibleCompleteStaticColumns = useMemo(() => {
+  if (activeView !== "complete") return [];
+  return [
+    { key: "CompleteFee", label: "Complete Fee", getValue: (row: ReportRow) => toAmount(row.CompleteFee) },
+   
+  ].filter((column) => hasAnyAmount(activeRows, column.getValue));
+}, [activeRows, activeView]);
   const visibleTransactionStaticColumns = useMemo(() => {
     if (activeView !== "studentTransactions") return [];
 
@@ -1513,21 +1621,27 @@ const AccountantReportsPage: React.FC = () => {
       { key: "others_paid", label: "Others Paid", getValue: (row: ReportRow) => toAmount(row.others_paid) },
       { key: "RES_INST_1", label: "Residential Paid", getValue: (row: ReportRow) => toAmount(row.RES_INST_1) },
       { key: "Previous_Paid", label: "Previous Paid", getValue: (row: ReportRow) => toAmount(row.Previous_Paid) },
+      {
+        key: "TuitionFee",
+        label: "Tuition Fee",
+        getValue: (row: ReportRow) => toAmount(normalizeCompleteItem(row).TuitionFee),
+      },
+      {
+        key: "StudentBooksFee",
+        label: "Books Fee",
+        getValue: (row: ReportRow) => toAmount(normalizeCompleteItem(row).StudentBooksFee),
+      },
+      {
+        key: "ResidentialCompleteFee",
+        label: "Residential Fee",
+        getValue: (row: ReportRow) => toAmount(normalizeCompleteItem(row).ResidentialCompleteFee),
+      },
+      { key: "BusFee", label: "Bus Fee", getValue: (row: ReportRow) => toAmount(normalizeCompleteItem(row).BusFee) },
+      { key: "Previous_Fee_Due", label: "Previous Due", getValue: (row: ReportRow) => toAmount(row.Previous_Fee_Due) },
     ];
 
     return columns.filter((column) => hasAnyAmount(activeRows, column.getValue));
   }, [activeRows, activeView]);
-
-  const getTransactionRowTotal = (row: ReportRow) => {
-    let sum = 0;
-    visibleTransactionStaticColumns.forEach((col) => {
-      sum += toAmount(col.getValue(row));
-    });
-    dynamicTransactionPaidKeys.forEach((key) => {
-      sum += toAmount(row[key]);
-    });
-    return sum;
-  };
 
   const renderedSummaryValue = isPreviousFinancialYearSelected ? summaryPreviousDue : summaryDue;
   const currentReportCard = activeCardKey === "FeesSearch" ? "FeesSearch" : activeCardKey === "unpaid" ? "main" : activeCardKey;
@@ -1539,11 +1653,11 @@ const AccountantReportsPage: React.FC = () => {
       case "previous":
         return "Previous Due";
       case "complete":
-        return " Fees";
+        return "Complete Fee";
       case "bus":
         return "Bus Residential";
       case "studentTransactions":
-        return "Transactions ";
+        return "Transactions";
       case "paid":
         return "Paid";
       case "discounts":
@@ -1606,40 +1720,27 @@ const AccountantReportsPage: React.FC = () => {
         ];
       }
 
- if (view === "complete") {
-  const cols = [
-    { key: "Class_name", label: "Class", getValue: (row: ReportRow) => row.Class_name },
-    { key: "section", label: "Section", getValue: (row: ReportRow) => row.section },
-    { key: "StudentName", label: "Student", getValue: (row: ReportRow) => row.StudentName },
-    ...visibleCompleteStaticColumns.map((column) => ({
-      key: column.key,
-      label: column.label,
-      getValue: (row: ReportRow) => formatMoney(column.getValue(row)),
-    })),
-    // ADD THIS NEW COLUMN DEFINITION FOR TOTAL PAID:
-    {
-      key: "TotalPaid",
-      label: "Total Paid",
-      getValue: (row: ReportRow) => {
-        // Calculate sum of all paid fields dynamically
-        const sumPaid = dynamicCompleteFeeBases.reduce(
-          (acc, baseKey) => acc + getDynamicPaidValue(row, baseKey),
-          0
-        );
-        return formatMoney(sumPaid);
-      },
-    },
-  ];
+      if (view === "complete") {
+        const cols = [
+          { key: "Class_name", label: "Class", getValue: (row: ReportRow) => row.Class_name },
+          { key: "section", label: "Section", getValue: (row: ReportRow) => row.section },
+          { key: "StudentName", label: "Student", getValue: (row: ReportRow) => row.StudentName },
+          ...visibleCompleteStaticColumns.map((column) => ({
+            key: column.key,
+            label: column.label,
+            getValue: (row: ReportRow) => formatMoney(column.getValue(row)),
+          })),
+        ];
 
-  dynamicCompleteFeeBases.forEach((baseKey) => {
-    cols.push(
-      { key: `${baseKey}_fee`, label: formatHeaderLabel(baseKey), getValue: (row: ReportRow) => formatMoney(getDynamicFeeValue(row, baseKey)) },
-      { key: `${baseKey}_paid`, label: `${formatHeaderLabel(baseKey)} Paid`, getValue: (row: ReportRow) => formatMoney(getDynamicPaidValue(row, baseKey)) }
-    );
-  });
+        dynamicCompleteFeeBases.forEach((baseKey) => {
+          cols.push(
+            { key: `${baseKey}_fee`, label: formatHeaderLabel(baseKey), getValue: (row: ReportRow) => formatMoney(getDynamicFeeValue(row, baseKey)) },
+            { key: `${baseKey}_paid`, label: `${formatHeaderLabel(baseKey)} Paid`, getValue: (row: ReportRow) => formatMoney(getDynamicPaidValue(row, baseKey)) }
+          );
+        });
 
-  return cols;
-}
+        return cols;
+      }
 
       if (view === "bus") {
         return [
@@ -1673,7 +1774,6 @@ const AccountantReportsPage: React.FC = () => {
         });
 
         cols.push(
-          { key: "Total", label: "Total", getValue: (row: ReportRow) => formatMoney(getTransactionRowTotal(row)) },
           { key: "paidDate", label: "Paid Date", getValue: (row: ReportRow) => formatDate(row.paidDate) },
           { key: "paymentMode", label: "Payment Mode", getValue: (row: ReportRow) => row.paymentMode || "-" },
           { key: "transaction_id", label: "Txn ID", getValue: (row: ReportRow) => row.transaction_id || "-" },
@@ -1683,34 +1783,33 @@ const AccountantReportsPage: React.FC = () => {
         return cols;
       }
 
-      if (view === "discounts") {
-        const cols = [
-          { key: "StudentName", label: "Student", getValue: (row: ReportRow) => row.StudentName || row.student_name || row.studentName || "-" },
-          { key: "Class_name", label: "Class", getValue: (row: ReportRow) => row.Class_name || row.class_name || row.className || "-" },
-          { key: "section", label: "Section", getValue: (row: ReportRow) => row.section || row.Section || "-" },
-          { key: "fee_type", label: "Fee Type", getValue: (row: ReportRow) => row.fee_type || "-" },
-          { key: "discount_reason", label: "Reason", getValue: (row: ReportRow) => getDiscountReason(row) },
-          { key: "Discount", label: "Total Discount", getValue: (row: ReportRow) => formatMoney(getRowDiscountTotal(row)) },
-        ];
+  if (view === "discounts") {
+      const cols = [
+        { key: "StudentName", label: "Student", getValue: (row: ReportRow) => row.StudentName || row.student_name || row.studentName || "-" },
+        { key: "Class_name", label: "Class", getValue: (row: ReportRow) => row.Class_name || row.class_name || row.className || "-" },
+        { key: "section", label: "Section", getValue: (row: ReportRow) => row.section || row.Section || "-" },
+        { key: "fee_type", label: "Fee Type", getValue: (row: ReportRow) => row.fee_type || "-" },
+        { key: "discount_reason", label: "Reason", getValue: (row: ReportRow) => getDiscountReason(row) },
+        { key: "Discount", label: "Total Discount", getValue: (row: ReportRow) => formatMoney(getRowDiscountTotal(row)) },
+      ];
 
-        dynamicDiscountColumns.forEach((key) => {
-          if (key === "Discount") return;
-          cols.push({
-            key,
-            label: formatHeaderLabel(key),
-            getValue: (row: ReportRow) => formatMoney(row[key] || 0),
-          });
+      dynamicDiscountColumns.forEach((key) => {
+        if (key === "Discount") return;
+        cols.push({
+          key,
+          label: formatHeaderLabel(key),
+          getValue: (row: ReportRow) => formatMoney(row[key] || 0),
         });
+      });
 
-        cols.push(
-          { key: "record_date", label: "Record Date", getValue: (row: ReportRow) => formatDate(getDiscountRecordDate(row)) },
-          { key: "created_at", label: "Created At", getValue: (row: ReportRow) => formatDate(row.created_at) },
-          { key: "updated_at", label: "Updated At", getValue: (row: ReportRow) => formatDate(row.updated_at) }
-        );
+      cols.push(
+        { key: "record_date", label: "Record Date", getValue: (row: ReportRow) => formatDate(getDiscountRecordDate(row)) },
+        { key: "created_at", label: "Created At", getValue: (row: ReportRow) => formatDate(row.created_at) },
+        { key: "updated_at", label: "Updated At", getValue: (row: ReportRow) => formatDate(row.updated_at) }
+      );
 
-        return cols;
-      }
-
+      return cols;
+    }
       if (view === "referrals") {
         const cols = [
           { key: "StudentName", label: "Student", getValue: (row: ReportRow) => row.StudentName || row.student_name || row.studentName || "-" },
@@ -1774,123 +1873,132 @@ const AccountantReportsPage: React.FC = () => {
       visibleTransactionStaticColumns,
     ]
   );
+const handleDownloadPDF = useCallback(() => {
+  const columns = getTableColumns(activeView, activeRows);
+  if (!columns.length) return;
 
-  const handleDownloadPDF = useCallback(() => {
-    const columns = getTableColumns(activeView, activeRows);
-    if (!columns.length) return;
+  // Create a new jsPDF instance in landscape mode for standard tables
+  const doc = new jsPDF({
+    orientation: "landscape",
+    unit: "mm",
+    format: "a4",
+  });
 
-    const doc = new jsPDF({
-      orientation: "landscape",
-      unit: "mm",
-      format: "a4",
-    });
+  // Extract table column headers and formatted cell data
+  const tableHeaders = columns.map((col) => col.label);
+  const tableData = activeRows.map((row) =>
+    columns.map((col) => {
+      const val = col.getValue(row);
+      return val !== null && val !== undefined ? String(val) : "-";
+    })
+  );
 
-    const tableHeaders = columns.map((col) => col.label);
-    const tableData = activeRows.map((row) =>
-      columns.map((col) => {
-        const val = col.getValue(row);
-        return val !== null && val !== undefined ? String(val) : "-";
-      })
-    );
+  // Title and Meta Information
+  doc.setFontSize(16);
+  doc.text(`${activeReportTitle} Report`, 14, 15);
 
-    doc.setFontSize(16);
-    doc.text(`${activeReportTitle} Report`, 14, 15);
+  doc.setFontSize(10);
+  doc.setTextColor(100);
+  doc.text(
+    `Rows: ${activeRows.length} | Generated on: ${new Date().toLocaleString()}`,
+    14,
+    22
+  );
 
-    doc.setFontSize(10);
-    doc.setTextColor(100);
-    doc.text(
-      `Rows: ${activeRows.length} | Generated on: ${new Date().toLocaleString()}`,
-      14,
-      22
-    );
+  // Render AutoTable
+  autoTable(doc, {
+    startY: 26,
+    head: [tableHeaders],
+    body: tableData,
+    theme: "grid",
+    headStyles: { fillColor: [15, 76, 129], textColor: [255, 255, 255] },
+    styles: { fontSize: 8, cellPadding: 2 },
+    margin: { top: 25, left: 14, right: 14, bottom: 15 },
+  });
 
-    autoTable(doc, {
-      startY: 26,
-      head: [tableHeaders],
-      body: tableData,
-      theme: "grid",
-      headStyles: { fillColor: [15, 76, 129], textColor: [255, 255, 255] },
-      styles: { fontSize: 8, cellPadding: 2 },
-      margin: { top: 25, left: 14, right: 14, bottom: 15 },
-    });
+  // Generate date string for filename (e.g., "24-07-2026")
+  const todayDateStr = new Date().toLocaleDateString("en-GB").replace(/\//g, "-");
 
-    const todayDateStr = new Date().toLocaleDateString("en-GB").replace(/\//g, "-");
-    const filename = `accountant-${activeReportTitle.toLowerCase().replace(/\s+/g, "-")}-report-${todayDateStr}.pdf`;
-    doc.save(filename);
-  }, [activeReportTitle, activeRows, activeView, getTableColumns]);
+  // Save the PDF locally with date in the filename
+  const filename = `accountant-${activeReportTitle.toLowerCase().replace(/\s+/g, "-")}-${todayDateStr}-report.pdf`;
+  doc.save(filename);
+}, [activeReportTitle, activeRows, activeView, getTableColumns]);
+const handleDownloadReport = useCallback(() => {
+  const columns = getTableColumns(activeView, activeRows);
+  if (!columns.length) return;
 
-  const handleDownloadReport = useCallback(() => {
-    const columns = getTableColumns(activeView, activeRows);
-    if (!columns.length) return;
+  const todayDateStr = new Date().toLocaleDateString("en-GB"); // e.g., "24/07/2026"
 
-    const todayDateStr = new Date().toLocaleDateString("en-GB");
+  const worksheet = XLSX.utils.aoa_to_sheet([
+    // Row 1: Report Title
+    [activeReportTitle, ...Array(Math.max(columns.length - 1, 0)).fill("")],
+    // Row 2: Date
+    [`Date: ${todayDateStr}`, ...Array(Math.max(columns.length - 1, 0)).fill("")],
+    // Row 3: Blank spacing row
+    [],
+    // Row 4: Column Headers
+    columns.map((column) => column.label),
+    // Row 5+: Data Rows
+    ...activeRows.map((row) => columns.map((column) => column.getValue(row))),
+  ]);
 
-    const worksheet = XLSX.utils.aoa_to_sheet([
-      [activeReportTitle, ...Array(Math.max(columns.length - 1, 0)).fill("")],
-      [`Date: ${todayDateStr}`, ...Array(Math.max(columns.length - 1, 0)).fill("")],
-      [],
-      columns.map((column) => column.label),
-      ...activeRows.map((row) => columns.map((column) => column.getValue(row))),
-    ]);
+  const workbook = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(workbook, worksheet, "Report");
+  XLSX.writeFile(
+    workbook,
+    `accountant-${activeReportTitle.toLowerCase().replace(/\s+/g, "-")}-${todayDateStr.replace(/\//g, "-")}-report.xlsx`
+  );
+}, [activeReportTitle, activeRows, activeView, getTableColumns]);
+const handlePrintReport = useCallback(() => {
+  const columns = getTableColumns(activeView, activeRows);
+  if (!columns.length) return;
 
-    const workbook = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(workbook, worksheet, "Report");
-    XLSX.writeFile(
-      workbook,
-      `accountant-${activeReportTitle.toLowerCase().replace(/\s+/g, "-")}-report-${todayDateStr.replace(/\//g, "-")}.xlsx`
-    );
-  }, [activeReportTitle, activeRows, activeView, getTableColumns]);
+  const tableRows = activeRows
+    .map(
+      (row) => `
+        <tr>
+          ${columns
+            .map((column) => `<td>${escapeHtml(column.getValue(row))}</td>`)
+            .join("")}
+        </tr>`
+    )
+    .join("");
 
-  const handlePrintReport = useCallback(() => {
-    const columns = getTableColumns(activeView, activeRows);
-    if (!columns.length) return;
+  const printWindow = window.open("", "_blank", "width=1200,height=800");
+  if (!printWindow) return;
 
-    const tableRows = activeRows
-      .map(
-        (row) => `
-          <tr>
-            ${columns
-              .map((column) => `<td>${escapeHtml(column.getValue(row))}</td>`)
-              .join("")}
-          </tr>`
-      )
-      .join("");
+  const currentFormattedDateTime = new Date().toLocaleString();
 
-    const printWindow = window.open("", "_blank", "width=1200,height=800");
-    if (!printWindow) return;
-
-    const currentFormattedDateTime = new Date().toLocaleString();
-
-    printWindow.document.write(`
-      <html>
-        <head>
-          <title>${escapeHtml(activeReportTitle)} Report</title>
-          <style>
-            @page { size: landscape; margin: 8mm; }
-            body { font-family: Arial, sans-serif; padding: 20px; color: #1f2937; }
-            h1 { font-size: 20px; margin: 0 0 14px; }
-            .print-meta { font-size: 16px; margin: 0 0 10px; color: #000; }
-            table { width: 100%; border-collapse: collapse; }
-            th, td { border: 1px solid #cfd6dd; padding: 8px; font-size: 12px; text-align: left; vertical-align: top; }
-            th { background: #0f4c81; color: #fff; }
-          </style>
-        </head>
-        <body>
-          <h1>${escapeHtml(activeReportTitle)} Report</h1>
-          <div class="print-meta">Records: ${activeRows.length} | Printed on: <b>${escapeHtml(currentFormattedDateTime)}</b></div>
-          <table>
-            <thead>
-              <tr>${columns.map((column) => `<th>${escapeHtml(column.label)}</th>`).join("")}</tr>
-            </thead>
-            <tbody>${tableRows}</tbody>
-          </table>
-        </body>
-      </html>
-    `);
-    printWindow.document.close();
-    printWindow.focus();
-    printWindow.print();
-  }, [activeReportTitle, activeRows, activeView, getTableColumns]);
+  printWindow.document.write(`
+    <html>
+      <head>
+        <title>${escapeHtml(activeReportTitle)} Report</title>
+        <style>
+          @page { size: landscape; margin: 8mm; }
+          body { font-family: Arial, sans-serif; padding: 20px; color: #1f2937; }
+          h1 { font-size: 20px; margin: 0 0 14px; }
+          .print-meta { font-size: 16px; margin: 0 0 10px; color: #000; }
+          table { width: 100%; border-collapse: collapse; }
+          th, td { border: 1px solid #cfd6dd; padding: 8px; font-size: 12px; text-align: left; vertical-align: top; }
+          th { background: #0f4c81; color: #fff; }
+        </style>
+      </head>
+      <body>
+        <h1>${escapeHtml(activeReportTitle)} Report</h1>
+        <div class="print-meta">Records: ${activeRows.length} | Printed on: <b>${escapeHtml(currentFormattedDateTime)}</b></div>
+        <table>
+          <thead>
+            <tr>${columns.map((column) => `<th>${escapeHtml(column.label)}</th>`).join("")}</tr>
+          </thead>
+          <tbody>${tableRows}</tbody>
+        </table>
+      </body>
+    </html>
+  `);
+  printWindow.document.close();
+  printWindow.focus();
+  printWindow.print();
+}, [activeReportTitle, activeRows, activeView, getTableColumns]);
 
   const renderTable = () => {
     if (activeView === "collectionSummary") {
@@ -1967,81 +2075,31 @@ const AccountantReportsPage: React.FC = () => {
       );
     }
 
-if (activeView === "main") {
-  const headers = activeRows.length ? Object.keys(activeRows[0]) : [];
+    if (activeView === "main") {
+      const headers = activeRows.length ? Object.keys(activeRows[0]) : [];
+      const headerLabels = headers.map(formatDueReportHeaderLabel);
 
-  return (
-    <table className="accountant-reports-table">
-      <thead>
-        <tr>
-          <th>S.NO.</th>
-          {headers.map((header, index) => {
-            const label = formatDueReportHeaderLabel(header);
-            
-            // Insert Total Fee & Total Discounts before Total Paid
-            if (label === "Total Paid") {
-              return (
-                <React.Fragment key={`summary-headers-${index}`}>
-                  <th>Total Fee</th>
-                  <th>Total Discounts</th>
-                  <th>{label}</th>
-                </React.Fragment>
-              );
-            }
-
-            return <th key={`${label}-${index}`}>{label}</th>;
-          })}
-        </tr>
-      </thead>
-      <tbody>
-        {paginatedRows.map((row, rowIndex) => {
-          // Calculate Total Fee dynamically across fee keys
-          const totalFee = Object.entries(row).reduce((sum, [key, val]) => {
-            const lower = key.toLowerCase();
-            if (
-              !lower.includes("paid") &&
-              !lower.includes("discount") &&
-              !lower.includes("due") &&
-              !NON_FEE_REPORT_KEYS.has(lower)
-            ) {
-              return sum + toAmount(val);
-            }
-            return sum;
-          }, 0);
-
-          // Calculate Total Discounts dynamically across discount keys
-          const totalDiscounts = getRowDiscountTotal(row);
-
-          return (
-            <tr key={`${row.StudentName || "row"}-${rowIndex}`}>
-              <td>{(currentPage - 1) * rowsPerPage + rowIndex + 1}</td>
-              {headers.map((header) => {
-                const label = formatDueReportHeaderLabel(header);
-                const cellVal =
-                  typeof row[header] === "object" && row[header] !== null
-                    ? "-"
-                    : row[header];
-
-                // Render Total Fee and Total Discounts right before the Total Paid cell
-                if (label === "Total Paid") {
-                  return (
-                    <React.Fragment key={`summary-cells-${header}`}>
-                      <td>{formatMoney(totalFee)}</td>
-                      <td>{formatMoney(totalDiscounts)}</td>
-                      <td>{cellVal}</td>
-                    </React.Fragment>
-                  );
-                }
-
-                return <td key={header}>{cellVal}</td>;
-              })}
+      return (
+        <table className="accountant-reports-table">
+          <thead>
+            <tr>
+              {headerLabels.map((label, index) => (
+                <th key={`${label}-${index}`}>{label}</th>
+              ))}
             </tr>
-          );
-        })}
-      </tbody>
-    </table>
-  );
-}
+          </thead>
+          <tbody>
+            {paginatedRows.map((row, rowIndex) => (
+              <tr key={`${row.StudentName || "row"}-${rowIndex}`}>
+                {headers.map((header) => (
+                  <td key={header}>{typeof row[header] === "object" && row[header] !== null ? "-" : row[header]}</td>
+                ))}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      );
+    }
 
     if (activeView === "paid") {
       const headers = activeRows.length ? Object.keys(activeRows[0]) : [];
@@ -2118,7 +2176,7 @@ if (activeView === "main") {
         <table className="accountant-reports-table">
           <thead>
             <tr>
-              <th>Student Name</th>
+              <th>Student</th>
               <th>Class</th>
               <th>Section</th>
               <th>Previous Fee Due</th>
@@ -2142,73 +2200,55 @@ if (activeView === "main") {
       );
     }
 
-if (activeView === "complete") {
-  return (
-    <table className="accountant-reports-table">
-      <thead>
-        <tr>
-          <th>S.NO.</th>
-                    <th>Student Name</th>
-
-          <th>Class</th>
-          <th>Section</th>
-          {visibleCompleteStaticColumns.map((column) => (
-            <th key={column.key}>{column.label}</th>
-          ))}
-          {/* ADD TOTAL PAID HEADER HERE */}
-          {dynamicCompleteFeeBases.map((baseKey) => (
-            <React.Fragment key={baseKey}>
-              <th>{formatHeaderLabel(baseKey)}</th>
-              <th>{formatHeaderLabel(baseKey)} Paid</th>
-            </React.Fragment>
-          ))}
-                    <th>Total Paid</th>
-
-          <th>Action</th>
-        </tr>
-      </thead>
-      <tbody>
-        {paginatedRows.map((row, index) => {
-          // Calculate Total Paid for each row
-          const totalPaid = dynamicCompleteFeeBases.reduce(
-            (acc, baseKey) => acc + getDynamicPaidValue(row, baseKey),
-            0
-          );
-
-          return (
-            <tr key={`${row.StudentName}-${index}`}>
-                            <td>{(currentPage - 1) * rowsPerPage + index + 1}</td>  
-                            <td>{row.StudentName}</td>
-
-              <td>{row.Class_name}</td>
-              <td>{row.section}</td>
+    if (activeView === "complete") {
+      return (
+        <table className="accountant-reports-table">
+          <thead>
+            <tr>
+              <th>Class</th>
+              <th>Section</th>
+              <th>Student</th>
               {visibleCompleteStaticColumns.map((column) => (
-                <td key={column.key}>{formatMoney(column.getValue(row))}</td>
+                <th key={column.key}>{column.label}</th>
               ))}
-              {/* ADD TOTAL PAID CELL HERE */}
               {dynamicCompleteFeeBases.map((baseKey) => (
                 <React.Fragment key={baseKey}>
-                  <td>{formatMoney(getDynamicFeeValue(row, baseKey))}</td>
-                  <td>{formatMoney(getDynamicPaidValue(row, baseKey))}</td>
+                  <th>{formatHeaderLabel(baseKey)}</th>
+                  <th>{formatHeaderLabel(baseKey)} Paid</th>
                 </React.Fragment>
               ))}
-                            <td>{formatMoney(totalPaid)}</td>
-
-              <td>-</td>
+              <th>Action</th>
             </tr>
-          );
-        })}
-      </tbody>
-    </table>
-  );
-}
+          </thead>
+          <tbody>
+            {paginatedRows.map((row, index) => (
+              <tr key={`${row.StudentName}-${index}`}>
+                <td>{row.Class_name}</td>
+                <td>{row.section}</td>
+                <td>{row.StudentName}</td>
+                {visibleCompleteStaticColumns.map((column) => (
+                  <td key={column.key}>{formatMoney(column.getValue(row))}</td>
+                ))}
+                {dynamicCompleteFeeBases.map((baseKey) => (
+                  <React.Fragment key={baseKey}>
+                    <td>{formatMoney(getDynamicFeeValue(row, baseKey))}</td>
+                    <td>{formatMoney(getDynamicPaidValue(row, baseKey))}</td>
+                  </React.Fragment>
+                ))}
+                <td>-</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      );
+    }
 
     if (activeView === "bus") {
       return (
         <table className="accountant-reports-table">
           <thead>
             <tr>
-              <th>Student Name</th>
+              <th>Student</th>
               <th>Class</th>
               <th>Section</th>
               <th>Bus Fee</th>
@@ -2245,7 +2285,7 @@ if (activeView === "complete") {
         <table className="accountant-reports-table">
           <thead>
             <tr>
-              <th>Student Name</th>
+              <th>Student</th>
               <th>Unpaid</th>
               <th>Class</th>
               <th>Section</th>
@@ -2265,50 +2305,50 @@ if (activeView === "complete") {
       );
     }
 
-    if (activeView === "discounts" || activeView === "referrals") {
-      return (
-        <table className="accountant-reports-table">
-          <thead>
-            <tr>
-              <th>Student Name</th>
-              <th>Class</th>
-              <th>Section</th>
-              <th>Fee Type</th>
-              <th>Reason</th>
-              <th>Total Discount</th>
+if (activeView === "discounts" || activeView === "referrals") {
+  return (
+    <table className="accountant-reports-table">
+      <thead>
+        <tr>
+          <th>Student</th>
+          <th>Class</th>
+          <th>Section</th>
+          <th>Fee Type</th>
+          <th>Reason</th>
+          <th>Total Discount</th>
+          {dynamicDiscountColumns
+            .filter((column) => column !== "Discount")
+            .map((column) => (
+              <th key={column}>{formatHeaderLabel(column)}</th>
+            ))}
+          <th>Record Date</th>
+          <th>Created At</th>
+          <th>Updated At</th>
+        </tr>
+      </thead>
+      <tbody>
+        {paginatedRows.map((row, index) => (
+            <tr key={`${row.id || row.StudentName || "discount"}-${index}`}>
+              <td>{row.StudentName || row.student_name || row.studentName || "-"}</td>
+              <td>{row.Class_name || row.class_name || row.className || "-"}</td>
+              <td>{row.section || row.Section || "-"}</td>
+              <td>{row.fee_type || "-"}</td>
+              <td>{getDiscountReason(row)}</td>
+              <td>{formatMoney(getRowDiscountTotal(row))}</td>
               {dynamicDiscountColumns
                 .filter((column) => column !== "Discount")
                 .map((column) => (
-                  <th key={column}>{formatHeaderLabel(column)}</th>
+                  <td key={column}>{formatMoney(row[column] || 0)}</td>
                 ))}
-              <th>Record Date</th>
-              <th>Created At</th>
-              <th>Updated At</th>
+              <td>{formatDate(getDiscountRecordDate(row))}</td>
+              <td>{formatDate(row.created_at)}</td>
+              <td>{formatDate(row.updated_at)}</td>
             </tr>
-          </thead>
-          <tbody>
-            {paginatedRows.map((row, index) => (
-                <tr key={`${row.id || row.StudentName || "discount"}-${index}`}>
-                  <td>{row.StudentName || row.student_name || row.studentName || "-"}</td>
-                  <td>{row.Class_name || row.class_name || row.className || "-"}</td>
-                  <td>{row.section || row.Section || "-"}</td>
-                  <td>{row.fee_type || "-"}</td>
-                  <td>{getDiscountReason(row)}</td>
-                  <td>{formatMoney(getRowDiscountTotal(row))}</td>
-                  {dynamicDiscountColumns
-                    .filter((column) => column !== "Discount")
-                    .map((column) => (
-                      <td key={column}>{formatMoney(row[column] || 0)}</td>
-                    ))}
-                  <td>{formatDate(getDiscountRecordDate(row))}</td>
-                  <td>{formatDate(row.created_at)}</td>
-                  <td>{formatDate(row.updated_at)}</td>
-                </tr>
-            ))}
-          </tbody>
-        </table>
-      );
-    }
+        ))}
+      </tbody>
+    </table>
+  );
+}
 
     if (activeView === "feeType") {
       return (
@@ -2341,8 +2381,7 @@ if (activeView === "complete") {
       <table className="accountant-reports-table">
         <thead>
           <tr>
-            <th>S.NO.</th>
-            <th>Student Name</th>
+            <th>Student</th>
             <th>Class</th>
             <th>Section</th>
             {visibleTransactionStaticColumns.map((column) => (
@@ -2351,19 +2390,17 @@ if (activeView === "complete") {
             {dynamicTransactionPaidKeys.map((key) => (
               <th key={key}>{getDynamicTransactionPaidLabel(key)}</th>
             ))}
-            <th>Total</th>
             <th>Paid Date</th>
             <th>Payment Mode</th>
             <th>Txn ID</th>
-            <th>Receipt No.</th>
-            <th>Receipt Date</th>
+            <th>Receipt No</th>
+            <th>Action</th>
           </tr>
         </thead>
         <tbody>
           {paginatedRows.map((row, index) => {
             return (
               <tr key={`${row.StudentName}-${index}`}>
-                <td>{(currentPage - 1) * rowsPerPage + index + 1}</td>
                 <td>{row.StudentName}</td>
                 <td>{row.Class_name}</td>
                 <td>{row.section}</td>
@@ -2373,12 +2410,11 @@ if (activeView === "complete") {
                 {dynamicTransactionPaidKeys.map((key) => (
                   <td key={key}>{formatMoney(row[key])}</td>
                 ))}
-                <td>{formatMoney(getTransactionRowTotal(row))}</td>
                 <td>{formatDate(row.paidDate)}</td>
                 <td>{row.paymentMode || "-"}</td>
                 <td>{row.transaction_id || "-"}</td>
                 <td>{row.receiptNumber || "-"}</td>
-                <td>{formatDate(row.paidDate || "-")}</td>
+                <td>-</td>
               </tr>
             );
           })}
@@ -2386,47 +2422,6 @@ if (activeView === "complete") {
       </table>
     );
   };
-
-const cumulativeActiveAmount = useMemo(() => {
-  if (!activeRows.length) return 0;
-
-  return activeRows.reduce((sum, row) => {
-    switch (activeView) {
-      case "ledger":
-        return sum + toAmount(row.amount_paid);
-
-      case "collectionSummary":
-        return sum + toAmount(row.Total_Collection);
-
-      case "previous":
-        return sum + toAmount(row.Previous_Paid);
-
-      case "complete":
-        return sum + toAmount(row.CompleteFee);
-
-      case "bus":
-        return sum + (toAmount(row.Bus_Paid) + toAmount(row.Residential_Paid));
-
-      case "studentTransactions":
-        return sum + getTransactionRowTotal(row);
-
-      case "discounts":
-      case "referrals":
-        return sum + getRowDiscountTotal(row);
-
-      case "paid":
-        return (
-          sum +
-          toAmount(
-            getAny(row, ["paid_amount", "amount_paid", "Total_Paid", "paid"], 0)
-          )
-        );
-
-      default:
-        return sum;
-    }
-  }, 0);
-}, [activeRows, activeView, dynamicTransactionPaidKeys, visibleTransactionStaticColumns]);
 
   return (
     <div className="accountant-dashboard-page accountant-reports-page">
@@ -2510,7 +2505,7 @@ const cumulativeActiveAmount = useMemo(() => {
             </div>
 
             <div className="accountant-topbar-right">
-              <button
+                                                 <button
                 className="accountant-help-icon-btn"
                 onClick={() => setIsHelpOpen(true)}
               >
@@ -2667,12 +2662,16 @@ const cumulativeActiveAmount = useMemo(() => {
                   value={filters.studentName}
                   onChange={handleFilterChange}
                   placeholder="Search student name"
-                />
-              <div className="accountant-reports-toolbar-meta">
-  {activeView === "main" ? (
+                  />
+          <div className="accountant-reports-toolbar-meta">
+  {activeView === "ledger" ? (
+    <span>
+      Total Amount Paid Today: ₹ {formatMoney(totalPaidToday)}
+    </span>
+  ) : (
     <>
       <span>
-        {isPreviousFinancialYearSelected ? "Previous Due" : "Total Due"} (
+        {isPreviousFinancialYearSelected ? "Previous Due" : "Complete Due"} (
         {filters.year === "All" ? "All Years" : filters.year}): ₹{" "}
         {summaryDueLoading ? "0.00" : formatMoney(renderedSummaryValue)}
       </span>
@@ -2683,44 +2682,43 @@ const cumulativeActiveAmount = useMemo(() => {
         </span>
       )}
     </>
-  ) : (
-    <span>
-       Total Amount: ₹ {formatMoney(cumulativeActiveAmount)}
-    </span>
   )}
   <span>{activeRows.length} records</span>
 </div>
-           <div className="accountant-reports-toolbar-actions">
-  <select 
-    onChange={(e) => {
-      const value = e.target.value;
-      if (value === "excel") {
-        handleDownloadReport();
-      } else if (value === "pdf") {
-        handleDownloadPDF();
-      }
-      e.target.value = ""; // Reset dropdown selection
-    }}
-    disabled={!activeRows.length}
-    defaultValue=""
-    aria-label="Export options"
-    style={{ padding: "6px 10px", borderRadius: "4px", border: "1px solid #cfd6dd", background: "#fff" }}
-  >
-    <option value="" disabled>Export Options</option>
-    <option value="excel">Download Excel</option>
-    <option value="pdf">Download PDF</option>
-  </select>
+                <div className="accountant-reports-toolbar-actions"><button 
+  type="button" 
+  onClick={handleDownloadReport} 
+  disabled={!activeRows.length}
+  title="Download Excel"
+  aria-label="Download Excel"
+>
+  <FileSpreadsheet size={18} />
+</button>
 
-  <button 
-    type="button" 
-    onClick={handlePrintReport} 
-    disabled={!activeRows.length}
-    title="Print"
-    aria-label="Print"
-  >
-    <Printer size={18} />
-  </button>         
-</div>
+<button 
+  type="button" 
+  onClick={handleDownloadPDF} 
+  disabled={!activeRows.length}
+  title="Download PDF"
+  aria-label="Download PDF"
+>
+  <FileText size={18} />
+</button>
+
+<button 
+  type="button" 
+  onClick={handlePrintReport} 
+  disabled={!activeRows.length}
+  title="Print"
+  aria-label="Print"
+>
+  <Printer size={18} />
+</button>         
+                  {/* <button type="button" onClick={handlePrintReport} disabled={!activeRows.length}>
+                    Excel
+                  </button> */}
+
+                </div>
                 {activeRows.length > 0 && (
                   <div className="accountant-reports-pagination accountant-reports-pagination-inline">
                     <button type="button" onClick={() => setCurrentPage((prev) => Math.max(prev - 1, 1))} disabled={currentPage === 1}>
@@ -2822,7 +2820,7 @@ const cumulativeActiveAmount = useMemo(() => {
           </div>
         </div>
       )}
-      {isHelpOpen && (
+                         {isHelpOpen && (
         <HelpCenter
           userRole={userRole}
           openHelpSection={openHelpSection}

@@ -295,8 +295,6 @@ const NotificationBridge = () => {
   return null;
 };
 
-
-
 function App() {
   return (
         <GuideProvider>

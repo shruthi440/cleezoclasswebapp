@@ -821,6 +821,27 @@ console.log("attenance percentage",attendanceWithPercentage);
         });
       }
 
+      const billDeleteRes = await fetch(
+        `https://cleezoclass.com:4000/api/bill/delete-requests?schoolCode=${encodeURIComponent(schoolCode)}&status=pending`
+      );
+      if (billDeleteRes.ok) {
+        const billDeleteBody = await billDeleteRes.json().catch(() => ({}));
+        const billDeleteRequests = Array.isArray(billDeleteBody?.requests)
+          ? billDeleteBody.requests
+          : Array.isArray(billDeleteBody?.data)
+            ? billDeleteBody.data
+            : Array.isArray(billDeleteBody)
+              ? billDeleteBody
+              : [];
+
+        billDeleteRequests.forEach((item: any) => {
+          const key = `bill-delete-${item?.id || item?.receiptNumber || ""}`;
+          if (seenKeys.has(key)) return;
+          seenKeys.add(key);
+          mergedChats.push({ ...item, requestType: "bill-delete" });
+        });
+      }
+
       setPendingChats(mergedChats);
     } catch (err) {
       console.error("Failed to fetch pending chat approvals:", err);
@@ -834,6 +855,64 @@ console.log("attenance percentage",attendanceWithPercentage);
   useEffect(() => {
     loadPendingChats();
   }, []);
+
+  const handleBillDeleteApproval = async (request: any, action: "approve" | "reject") => {
+    const schoolCode = localStorage.getItem("schoolCode") || "NOVA";
+    const requestId = request?.id;
+    if (!requestId) {
+      setPopupMessage("Delete request id is missing.");
+      return;
+    }
+
+    const promptMessage =
+      action === "approve"
+        ? "Optional principal comments for approving this receipt deletion:"
+        : "Enter principal comments for rejecting this receipt deletion:";
+    const adminComments = window.prompt(promptMessage, "");
+
+    if (adminComments === null) return;
+    if (action === "reject" && !adminComments.trim()) {
+      setPopupMessage("Comments are required to reject a delete request.");
+      return;
+    }
+
+    const reviewerName =
+      getUserDisplayName("Principal") ||
+      localStorage.getItem("name") ||
+      localStorage.getItem("username") ||
+      "Principal";
+
+    try {
+      const endpoint =
+        action === "approve"
+          ? `${ADMIN_API_BASE}/bill/delete-request/${requestId}/approve`
+          : `${ADMIN_API_BASE}/bill/delete-request/${requestId}/reject`;
+
+      await axios.put(
+        endpoint,
+        {
+          adminComments: adminComments.trim(),
+          approvedBy: action === "approve" ? reviewerName : undefined,
+          rejectedBy: action === "reject" ? reviewerName : undefined,
+        },
+        { params: { schoolCode } }
+      );
+
+      setPopupMessage(
+        action === "approve"
+          ? `Receipt ${request.receiptNumber} deleted after principal approval.`
+          : `Receipt ${request.receiptNumber} delete request rejected.`
+      );
+      await loadPendingChats();
+    } catch (error: any) {
+      console.error("Failed to update bill delete request:", error);
+      setPopupMessage(
+        error?.response?.data?.message ||
+        error?.response?.data?.error ||
+        "Failed to update bill delete request."
+      );
+    }
+  };
 
   const openLiveChatPopup = () => {
     setPopupType("liveChat");
@@ -1625,7 +1704,7 @@ const progressAngle = `${(academicPercentage / 100) * 360}deg`;
                       <div style={{ fontSize: "0.74rem", color: "#c0392b" }}>{pendingChatsError}</div>
                     )}
                     {!pendingChatsLoading && !pendingChatsError && pendingChats.length === 0 && (
-                      <div style={{ fontSize: "0.74rem", color: "#777" }}>No chat requests found.</div>
+                      <div style={{ fontSize: "0.74rem", color: "#777" }}>No approval requests found.</div>
                     )}
                     {!pendingChatsLoading && !pendingChatsError && pendingChats.length > 0 && (
                       <>
@@ -1646,9 +1725,53 @@ const progressAngle = `${(academicPercentage / 100) * 360}deg`;
                                   color: "#666",
                                 }}
                               >
-                                <span>
-                                  Live Chat (P - T) - {formatChatDateTime(chat.date, chat.time)} - {chat.party1_name || "Staff"} to {chat.party2_student || "Student"}, {chat.party2_class || "-"}{chat.party2_section || ""}
-                                </span>
+                                {chat.requestType === "bill-delete" ? (
+                                  <>
+                                    <span>
+                                      Bill Delete - Receipt {chat.receiptNumber || "-"} - {chat.studentName || "Student"} requested by {chat.requestedBy || "Accountant"}
+                                      <br />
+                                      <small style={{ color: "#777" }}>Comments: {chat.comments || "-"}</small>
+                                    </span>
+                                    <div style={{ display: "flex", gap: "0.35rem", flexWrap: "wrap", justifyContent: "flex-end" }}>
+                                      <button
+                                        type="button"
+                                        onClick={() => handleBillDeleteApproval(chat, "approve")}
+                                        style={{
+                                          border: 0,
+                                          borderRadius: "999px",
+                                          background: "#e8f8ef",
+                                          color: "#16884a",
+                                          padding: "0.35rem 0.55rem",
+                                          fontSize: "0.62rem",
+                                          fontWeight: 700,
+                                          cursor: "pointer",
+                                        }}
+                                      >
+                                        Approve
+                                      </button>
+                                      <button
+                                        type="button"
+                                        onClick={() => handleBillDeleteApproval(chat, "reject")}
+                                        style={{
+                                          border: 0,
+                                          borderRadius: "999px",
+                                          background: "#fff0f0",
+                                          color: "#c0392b",
+                                          padding: "0.35rem 0.55rem",
+                                          fontSize: "0.62rem",
+                                          fontWeight: 700,
+                                          cursor: "pointer",
+                                        }}
+                                      >
+                                        Reject
+                                      </button>
+                                    </div>
+                                  </>
+                                ) : (
+                                  <span>
+                                    Live Chat (P - T) - {formatChatDateTime(chat.date, chat.time)} - {chat.party1_name || "Staff"} to {chat.party2_student || "Student"}, {chat.party2_class || "-"}{chat.party2_section || ""}
+                                  </span>
+                                )}
                               </div>
                             ))
                           )}

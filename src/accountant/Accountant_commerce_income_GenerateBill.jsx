@@ -1344,6 +1344,44 @@ const overallTotalPaid = Number(popupData?.paidAmount || 0);
     description: fee.description || "",
     installmentId: fee.installmentId || null,
   })).filter(item => item.data.paidThisTransaction > 0);
+  const receiptRows = paidFees.map((fee) => {
+    const label = fee.label || fee.key || "Fee";
+    const key = String(fee.key || label || "").toLowerCase();
+    const staticTotals = {
+      tuition: tuitionFeeDue,
+      admission: admissionFee,
+      exam: examFee,
+      bus: busFeeDue,
+      book: bookFeeDue,
+      books: bookFeeDue,
+      uniform: uniformFee,
+      other: othersFee,
+      others: othersFee,
+      residential: residentialFee,
+    };
+    const staticTotal = staticTotals[key] ?? staticTotals[label.toLowerCase().replace(/\s+fee$/i, "")];
+    const dynamicMatch = dynamicFeeRows.find((row) => {
+      const rowLabel = String(row.label || "").toLowerCase();
+      const rowKey = String(row.key || "").toLowerCase();
+      return rowLabel === String(label).toLowerCase() || rowKey === key;
+    });
+    const total = Number(staticTotal ?? dynamicMatch?.total ?? fee.total ?? 0);
+    const paidNow = Number(fee.paidThisTransaction || 0);
+    const totalPaid = Number(fee.totalPaid || dynamicMatch?.paid || paidNow);
+    return {
+      label,
+      total,
+      paidNow,
+      totalPaid,
+      balance: Math.max(total - totalPaid, 0),
+      description: fee.description || "",
+      installmentId: fee.installmentId || null,
+    };
+  }).filter((row) => row.total > 0 || row.paidNow > 0);
+  const receiptTotalAmount = receiptRows.reduce((sum, row) => sum + row.total, 0);
+  const receiptPaidNowTotal = receiptRows.reduce((sum, row) => sum + row.paidNow, 0);
+  const receiptTotalPaidAmount = receiptRows.reduce((sum, row) => sum + row.totalPaid, 0);
+  const receiptBalanceAmount = receiptRows.reduce((sum, row) => sum + row.balance, 0);
   return (
     <div style={{ minHeight: '100vh', padding: '1rem', backgroundColor: 'white' }}>
       <div style={{ maxWidth: '1200px', margin: '0 auto', padding: '1rem' }}>
@@ -1505,98 +1543,73 @@ const overallTotalPaid = Number(popupData?.paidAmount || 0);
                         </tr>
                       </tbody>
                     </table>
-                    <h4 style={{ marginTop: "10px" }}>
-  Fee Summary
-</h4>
+                    <h4 style={{ marginTop: "10px", marginBottom: "4px", fontSize: "11px" }}>
+                      Fee Receipt Details
+                    </h4>
 
-<table
-  style={{
-    width: "100%",
-    borderCollapse: "collapse",
-    marginTop: "5px",
-    fontSize: "10px",
-  }}
->
-  <thead>
-    <tr>
-      <th style={{ border: "1px solid #000" }}>Fee Type</th>
-      <th style={{ border: "1px solid #000" }}>Total</th>
-      <th style={{ border: "1px solid #000" }}>Paid</th>
-      {/* <th style={{ border: "1px solid #000" }}>Due</th> */}
-    </tr>
-  </thead>
-
-<tbody>
-  {dynamicFeeRows.map((row, index) => (
-    <tr key={index}>
-      <td style={{ border: "1px solid #000", padding: "4px" }}>
-        {row.label}
-      </td>
-      <td style={{ border: "1px solid #000", padding: "4px", textAlign: "right" }}>
-        ₹{Number(row.total || 0).toLocaleString("en-IN")}
-      </td>
-      <td style={{ border: "1px solid #000", padding: "4px", textAlign: "right" }}>
-        ₹{Number(row.paid || 0).toLocaleString("en-IN")}
-      </td>
-    </tr>
-  ))}
-</tbody>
-</table>
-<table
-  style={{
-    width: "100%",
-    borderCollapse: "collapse",
-    marginBottom: "10px",
-  }}
->
-  <thead>
-    <tr>
-      <th style={{ border: "1px solid #000" }}>Fee Type</th>
-      <th style={{ border: "1px solid #000" }}>Paid Now</th>
-    </tr>
-  </thead>
-
-<tbody>
-  {paidFees.map((fee, index) => (
-    <tr key={index}>
-      <td style={{ border: "1px solid #000", padding: "4px" }}>
-        {fee.label}
-
-        {fee.installmentId && (
-          <div style={{ fontSize: "11px", color: "#666" }}>
-            Installment : {fee.installmentId}
-          </div>
-        )}
-
-        {fee.description && (
-          <div style={{ fontSize: "11px", color: "#666" }}>
-            {fee.description}
-          </div>
-        )}
-      </td>
-
-      <td
-        style={{
-          border: "1px solid #000",
-          padding: "4px",
-          textAlign: "right",
-        }}
-      >
-        ₹{Number(fee.paidThisTransaction || 0).toLocaleString("en-IN")}
-      </td>
-    </tr>
-  ))}
-</tbody>
-</table>
+                    <table
+                      style={{
+                        width: "100%",
+                        borderCollapse: "collapse",
+                        marginBottom: "10px",
+                        fontSize: "9px",
+                      }}
+                    >
+                      <thead>
+                        <tr style={{ backgroundColor: "#f0f0f0" }}>
+                          <th style={{ border: "1px solid #000", padding: "3px", textAlign: "left" }}>S.No</th>
+                          <th style={{ border: "1px solid #000", padding: "3px", textAlign: "left" }}>Fee Type</th>
+                          <th style={{ border: "1px solid #000", padding: "3px", textAlign: "right" }}>Total</th>
+                          <th style={{ border: "1px solid #000", padding: "3px", textAlign: "right" }}>Paid Now</th>
+                          <th style={{ border: "1px solid #000", padding: "3px", textAlign: "right" }}>Total Paid</th>
+                          <th style={{ border: "1px solid #000", padding: "3px", textAlign: "right" }}>Balance</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {receiptRows.map((row, index) => (
+                          <tr key={`${row.label}-${index}`}>
+                            <td style={{ border: "1px solid #000", padding: "3px" }}>{index + 1}</td>
+                            <td style={{ border: "1px solid #000", padding: "3px", textAlign: "left" }}>
+                              {row.label}
+                              {row.installmentId && (
+                                <div style={{ fontSize: "8px", color: "#555" }}>Installment: {row.installmentId}</div>
+                              )}
+                              {row.description && (
+                                <div style={{ fontSize: "8px", color: "#555" }}>{row.description}</div>
+                              )}
+                            </td>
+                            <td style={{ border: "1px solid #000", padding: "3px", textAlign: "right" }}>
+                              ₹{row.total.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                            </td>
+                            <td style={{ border: "1px solid #000", padding: "3px", textAlign: "right", color: "green" }}>
+                              ₹{row.paidNow.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                            </td>
+                            <td style={{ border: "1px solid #000", padding: "3px", textAlign: "right" }}>
+                              ₹{row.totalPaid.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                            </td>
+                            <td style={{ border: "1px solid #000", padding: "3px", textAlign: "right" }}>
+                              ₹{row.balance.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                            </td>
+                          </tr>
+                        ))}
+                        <tr style={{ backgroundColor: "#f9fafb", fontWeight: "bold" }}>
+                          <td colSpan="2" style={{ border: "1px solid #000", padding: "3px", textAlign: "right" }}>Total</td>
+                          <td style={{ border: "1px solid #000", padding: "3px", textAlign: "right" }}>₹{receiptTotalAmount.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+                          <td style={{ border: "1px solid #000", padding: "3px", textAlign: "right", color: "green" }}>₹{receiptPaidNowTotal.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+                          <td style={{ border: "1px solid #000", padding: "3px", textAlign: "right" }}>₹{receiptTotalPaidAmount.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+                          <td style={{ border: "1px solid #000", padding: "3px", textAlign: "right" }}>₹{receiptBalanceAmount.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+                        </tr>
+                      </tbody>
+                    </table>
 <p style={{ fontStyle: 'italic', marginTop: '3px', fontSize: '10px' }}>
   <strong>Paid Amount (in words):</strong>
-  {convertAmountToWords(totalPaidNow)}
+  {convertAmountToWords(receiptPaidNowTotal)}
 </p>
 <div style={{ display: 'flex', justifyContent: 'flex-end', fontWeight: 'bold',  padding: '5px 10px' }}>
   <div style={{ display: 'flex', gap: '20px' }}>
 <div>
   Total Paid by Student : ₹
-  {totalPaidNow.toLocaleString("en-IN", {
+  {receiptPaidNowTotal.toLocaleString("en-IN", {
     minimumFractionDigits: 2,
     maximumFractionDigits: 2
   })}

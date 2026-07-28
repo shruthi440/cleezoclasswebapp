@@ -152,7 +152,7 @@
 }
 
 .accountant-payment-popup-table-wrap {
-  height: calc(64vh - 190px);
+  height: calc(64vh - 200px);
   overflow: auto;
   border: 1px solid #d9d9d9;
 }

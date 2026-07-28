@@ -2566,32 +2566,38 @@ const installmentRowsToRender = Array.isArray(installments) && installments.leng
     <div>
       <label className="footprintsinner">Section</label>
       <div className="expense-input-field">
-        <select
-          value={section}
-          onChange={(e) => {
-            setSection(e.target.value);
-            // 🔄 REFRESH: Clear all fee amounts and overrides when section changes
-            setDynamicFeeValues({});
-            if (localDynamicFeeValueOverridesRef && localDynamicFeeValueOverridesRef.current) {
-              localDynamicFeeValueOverridesRef.current = {};
-            }
-          }}
-          disabled={!className}
-          className="btn-dropdown-FeesManagement"
-        >
-          <option value="">
-            {className
-              ? metadataLoading && availableSectionOptions.length === 0
-                ? 'Loading Sections...'
-                : 'Select Section'
-              : 'Select Class First'}
-          </option>
-          {sectionSelectOptions.map((item) => (
-            <option key={item} value={item}>
-              {item}
-            </option>
-          ))}
-        </select>
+    <select
+  value={section}
+  onChange={(e) => {
+    setSection(e.target.value);
+    setDynamicFeeValues({});
+    if (localDynamicFeeValueOverridesRef?.current) {
+      localDynamicFeeValueOverridesRef.current = {};
+    }
+  }}
+  disabled={!className}
+  className="btn-dropdown-FeesManagement"
+  style={{
+    backgroundColor: !className ? "#e9ecef" : "#fff",
+    color: !className ? "#6c757d" : "#000",
+    cursor: !className ? "not-allowed" : "pointer",
+    opacity: 1, // keeps the gray color instead of browser's faded disabled style
+  }}
+>
+  <option value="">
+    {className
+      ? metadataLoading && availableSectionOptions.length === 0
+        ? "Loading Sections..."
+        : "Select Section"
+      : "Select Class First"}
+  </option>
+
+  {sectionSelectOptions.map((item) => (
+    <option key={item} value={item}>
+      {item}
+    </option>
+  ))}
+</select>
       </div>
     </div>
   </div>

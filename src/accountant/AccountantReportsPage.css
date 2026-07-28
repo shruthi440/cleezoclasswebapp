@@ -242,8 +242,9 @@
 
 .accountant-reports-table {
   width: 100%;
-  border-collapse: collapse;
+border-collapse: separate; /* Required for clean sticky borders */
   min-width: 1050px;
+  border-spacing: 0;
 }
 
 .accountant-reports-table th {
@@ -565,10 +566,7 @@
     overflow: auto;
   }
 
-  .accountant-reports-table th {
-    font-size: 0.68rem;
-    padding: 0.38rem 0.38rem;
-  }
+
 
   .accountant-reports-table td {
     font-size: 0.72rem;
@@ -614,10 +612,7 @@
     overflow-y: visible;
   }
 
-  .accountant-reports-table th {
-    padding-top: 0.32rem;
-    padding-bottom: 0.32rem;
-  }
+
 
   .accountant-reports-table td {
     padding-top: 0.3rem;
@@ -774,10 +769,6 @@
     font-size: 0.56rem;
   }
 
-  .accountant-reports-table th {
-    font-size: 0.56rem;
-    padding: 0.22rem 0.28rem;
-  }
 
   .accountant-reports-table td {
     font-size: 0.62rem;

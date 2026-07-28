@@ -1,3 +1,4 @@
+
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import axios from "axios";
 import * as XLSX from "xlsx";
@@ -6,7 +7,7 @@ import "./AccountantDashboardnew.css";
 import "./AccountantReportsPage.css";
 import EditableProfileMenu from "../shared/EditableProfileMenu.jsx";
 import InstituteBrand from "../shared/InstituteBrand.jsx";
-import { resolveInstituteDisplayName } from "../shared/instituteNameUtils";
+import { resolveInstituteDisplayName } from "../shared/instituteNameUtils.js";
 import DaywiseIcon from "../assets/Daywise.png";
 import TransactionIcon from "../assets/Transactions2.png";
 import FeesReportIcon from "../assets/Fees Report.png";
@@ -162,6 +163,15 @@ const normalizeCompleteItem = (row: ReportRow) => {
   };
 };
 
+const normalizeUnpaidItem = (row: ReportRow) => ({
+  ...row,
+  StudentName: getAny(row, ["StudentName", "student_name", "studentName"], ""),
+  Class_name: getAny(row, ["Class_name", "class_name", "className"], ""),
+  section: getAny(row, ["section", "Section"], ""),
+  unpaidAmount: toAmount(getAny(row, ["unpaidAmount", "Due", "due", "Pending", "pending"])),
+  paidDate: getAny(row, ["paidDate", "paid_date", "Payment_Date", "created_at"], ""),
+});
+
 const getFinancialYearFromDate = (rawDate: any) => {
   if (!rawDate) return "";
   const dt = new Date(rawDate);
@@ -304,7 +314,7 @@ const formatHeaderLabel = (value: string) =>
     .replace(/\b\w/g, (char) => char.toUpperCase());
 
 const formatDueReportHeaderLabel = (header: string) => {
-  if (header === "class_name") return "Class";
+  if (header === "Class_name") return "Class";
   if (header === "StudentName") return "Student Name";
   if (header === "Total_Expected") return "Total Fee";
 
@@ -340,7 +350,7 @@ const getDynamicTransactionPaidKeys = (rows: ReportRow[]) => {
 
 const getDynamicTransactionPaidLabel = (key: string) => {
   const withoutSuffix = key.replace(/_paid$/i, "");
-  return formatHeaderLabel(withoutSuffix);
+  return formatHeaderLabel(withoutSuffix); // Removed " Paid" suffix
 };
 
 const normalizeFeeBaseKey = (key: string) =>
@@ -624,7 +634,7 @@ const AccountantReportsPage: React.FC = () => {
   const [isStudentManagementPopupOpen, setIsStudentManagementPopupOpen] = useState(false);
   const [isHelpOpen, setIsHelpOpen] = useState(false);
   const [openHelpSection, setOpenHelpSection] = useState(null);
-
+  
   const userRole = localStorage.getItem("userRole");
   const [addFeePreview, setAddFeePreview] = useState({
     className: "",
@@ -1219,26 +1229,7 @@ const AccountantReportsPage: React.FC = () => {
         return false;
       });
 
-      // Group records by receipt/transaction key so single transaction per receipt is generated
-      const groupedMap = new Map<string, ReportRow>();
-      filteredResult.forEach((row) => {
-        const receiptNo = row.receiptNumber || row.receipt_number || row.transaction_id || "NO_RECEIPT";
-        const student = getAny(row, ["StudentName", "student_name", "studentName"], "");
-        const groupKey = `${receiptNo}__${student}__${row.paidDate || row.Payment_Date || row.paid_date || ""}`;
-
-        if (!groupedMap.has(groupKey)) {
-          groupedMap.set(groupKey, { ...row });
-        } else {
-          const existing = groupedMap.get(groupKey)!;
-          Object.keys(row).forEach((k) => {
-            if (k.toLowerCase().includes("paid")) {
-              existing[k] = toAmount(existing[k]) + toAmount(row[k]);
-            }
-          });
-        }
-      });
-
-      setStudentTransactions(Array.from(groupedMap.values()));
+      setStudentTransactions(filteredResult);
       setActiveView("studentTransactions");
       setActiveCardKey(sourceCardKey);
       studentTransactionsQueryRef.current = getStudentTransactionsQueryKey(filters);
@@ -1476,6 +1467,24 @@ const AccountantReportsPage: React.FC = () => {
     }
   }, [activeView, applyFilters, busData, collectionData, completeFeeData, discountsData, feeTypeData, ledgerData, mainData, paidListData, previousData, referralsData, studentTransactions, unpaidListData]);
 
+  const totalPaidToday = useMemo(() => {
+    if (activeView !== "ledger") return 0;
+    return activeRows.reduce((sum, row) => sum + toAmount(row.amount_paid), 0);
+  }, [activeView, activeRows]);
+
+  const totalTransactionsValue = useMemo(() => {
+    if (activeView !== "studentTransactions") return 0;
+    return activeRows.reduce((sum, row) => {
+      let rowTotal = 0;
+      Object.keys(row || {}).forEach((key) => {
+        if (key.toLowerCase().includes("paid")) {
+          rowTotal += toAmount(row[key]);
+        }
+      });
+      return sum + rowTotal;
+    }, 0);
+  }, [activeView, activeRows]);
+
   const totalPages = Math.max(1, Math.ceil(activeRows.length / rowsPerPage));
   const paginatedRows = activeRows.slice((currentPage - 1) * rowsPerPage, currentPage * rowsPerPage);
   
@@ -1513,21 +1522,27 @@ const AccountantReportsPage: React.FC = () => {
       { key: "others_paid", label: "Others Paid", getValue: (row: ReportRow) => toAmount(row.others_paid) },
       { key: "RES_INST_1", label: "Residential Paid", getValue: (row: ReportRow) => toAmount(row.RES_INST_1) },
       { key: "Previous_Paid", label: "Previous Paid", getValue: (row: ReportRow) => toAmount(row.Previous_Paid) },
+      {
+        key: "TuitionFee",
+        label: "Tuition Fee",
+        getValue: (row: ReportRow) => toAmount(normalizeCompleteItem(row).TuitionFee),
+      },
+      {
+        key: "StudentBooksFee",
+        label: "Books Fee",
+        getValue: (row: ReportRow) => toAmount(normalizeCompleteItem(row).StudentBooksFee),
+      },
+      {
+        key: "ResidentialCompleteFee",
+        label: "Residential Fee",
+        getValue: (row: ReportRow) => toAmount(normalizeCompleteItem(row).ResidentialCompleteFee),
+      },
+      { key: "BusFee", label: "Bus Fee", getValue: (row: ReportRow) => toAmount(normalizeCompleteItem(row).BusFee) },
+      { key: "Previous_Fee_Due", label: "Previous Due", getValue: (row: ReportRow) => toAmount(row.Previous_Fee_Due) },
     ];
 
     return columns.filter((column) => hasAnyAmount(activeRows, column.getValue));
   }, [activeRows, activeView]);
-
-  const getTransactionRowTotal = (row: ReportRow) => {
-    let sum = 0;
-    visibleTransactionStaticColumns.forEach((col) => {
-      sum += toAmount(col.getValue(row));
-    });
-    dynamicTransactionPaidKeys.forEach((key) => {
-      sum += toAmount(row[key]);
-    });
-    return sum;
-  };
 
   const renderedSummaryValue = isPreviousFinancialYearSelected ? summaryPreviousDue : summaryDue;
   const currentReportCard = activeCardKey === "FeesSearch" ? "FeesSearch" : activeCardKey === "unpaid" ? "main" : activeCardKey;
@@ -1539,7 +1554,7 @@ const AccountantReportsPage: React.FC = () => {
       case "previous":
         return "Previous Due";
       case "complete":
-        return " Fees";
+        return "Complete Fee";
       case "bus":
         return "Bus Residential";
       case "studentTransactions":
@@ -1606,40 +1621,27 @@ const AccountantReportsPage: React.FC = () => {
         ];
       }
 
- if (view === "complete") {
-  const cols = [
-    { key: "Class_name", label: "Class", getValue: (row: ReportRow) => row.Class_name },
-    { key: "section", label: "Section", getValue: (row: ReportRow) => row.section },
-    { key: "StudentName", label: "Student", getValue: (row: ReportRow) => row.StudentName },
-    ...visibleCompleteStaticColumns.map((column) => ({
-      key: column.key,
-      label: column.label,
-      getValue: (row: ReportRow) => formatMoney(column.getValue(row)),
-    })),
-    // ADD THIS NEW COLUMN DEFINITION FOR TOTAL PAID:
-    {
-      key: "TotalPaid",
-      label: "Total Paid",
-      getValue: (row: ReportRow) => {
-        // Calculate sum of all paid fields dynamically
-        const sumPaid = dynamicCompleteFeeBases.reduce(
-          (acc, baseKey) => acc + getDynamicPaidValue(row, baseKey),
-          0
-        );
-        return formatMoney(sumPaid);
-      },
-    },
-  ];
+      if (view === "complete") {
+        const cols = [
+          { key: "Class_name", label: "Class", getValue: (row: ReportRow) => row.Class_name },
+          { key: "section", label: "Section", getValue: (row: ReportRow) => row.section },
+          { key: "StudentName", label: "Student", getValue: (row: ReportRow) => row.StudentName },
+          ...visibleCompleteStaticColumns.map((column) => ({
+            key: column.key,
+            label: column.label,
+            getValue: (row: ReportRow) => formatMoney(column.getValue(row)),
+          })),
+        ];
 
-  dynamicCompleteFeeBases.forEach((baseKey) => {
-    cols.push(
-      { key: `${baseKey}_fee`, label: formatHeaderLabel(baseKey), getValue: (row: ReportRow) => formatMoney(getDynamicFeeValue(row, baseKey)) },
-      { key: `${baseKey}_paid`, label: `${formatHeaderLabel(baseKey)} Paid`, getValue: (row: ReportRow) => formatMoney(getDynamicPaidValue(row, baseKey)) }
-    );
-  });
+        dynamicCompleteFeeBases.forEach((baseKey) => {
+          cols.push(
+            { key: `${baseKey}_fee`, label: formatHeaderLabel(baseKey), getValue: (row: ReportRow) => formatMoney(getDynamicFeeValue(row, baseKey)) },
+            { key: `${baseKey}_paid`, label: `${formatHeaderLabel(baseKey)} Paid`, getValue: (row: ReportRow) => formatMoney(getDynamicPaidValue(row, baseKey)) }
+          );
+        });
 
-  return cols;
-}
+        return cols;
+      }
 
       if (view === "bus") {
         return [
@@ -1673,7 +1675,6 @@ const AccountantReportsPage: React.FC = () => {
         });
 
         cols.push(
-          { key: "Total", label: "Total", getValue: (row: ReportRow) => formatMoney(getTransactionRowTotal(row)) },
           { key: "paidDate", label: "Paid Date", getValue: (row: ReportRow) => formatDate(row.paidDate) },
           { key: "paymentMode", label: "Payment Mode", getValue: (row: ReportRow) => row.paymentMode || "-" },
           { key: "transaction_id", label: "Txn ID", getValue: (row: ReportRow) => row.transaction_id || "-" },
@@ -1967,81 +1968,31 @@ const AccountantReportsPage: React.FC = () => {
       );
     }
 
-if (activeView === "main") {
-  const headers = activeRows.length ? Object.keys(activeRows[0]) : [];
+    if (activeView === "main") {
+      const headers = activeRows.length ? Object.keys(activeRows[0]) : [];
+      const headerLabels = headers.map(formatDueReportHeaderLabel);
 
-  return (
-    <table className="accountant-reports-table">
-      <thead>
-        <tr>
-          <th>S.NO.</th>
-          {headers.map((header, index) => {
-            const label = formatDueReportHeaderLabel(header);
-            
-            // Insert Total Fee & Total Discounts before Total Paid
-            if (label === "Total Paid") {
-              return (
-                <React.Fragment key={`summary-headers-${index}`}>
-                  <th>Total Fee</th>
-                  <th>Total Discounts</th>
-                  <th>{label}</th>
-                </React.Fragment>
-              );
-            }
-
-            return <th key={`${label}-${index}`}>{label}</th>;
-          })}
-        </tr>
-      </thead>
-      <tbody>
-        {paginatedRows.map((row, rowIndex) => {
-          // Calculate Total Fee dynamically across fee keys
-          const totalFee = Object.entries(row).reduce((sum, [key, val]) => {
-            const lower = key.toLowerCase();
-            if (
-              !lower.includes("paid") &&
-              !lower.includes("discount") &&
-              !lower.includes("due") &&
-              !NON_FEE_REPORT_KEYS.has(lower)
-            ) {
-              return sum + toAmount(val);
-            }
-            return sum;
-          }, 0);
-
-          // Calculate Total Discounts dynamically across discount keys
-          const totalDiscounts = getRowDiscountTotal(row);
-
-          return (
-            <tr key={`${row.StudentName || "row"}-${rowIndex}`}>
-              <td>{(currentPage - 1) * rowsPerPage + rowIndex + 1}</td>
-              {headers.map((header) => {
-                const label = formatDueReportHeaderLabel(header);
-                const cellVal =
-                  typeof row[header] === "object" && row[header] !== null
-                    ? "-"
-                    : row[header];
-
-                // Render Total Fee and Total Discounts right before the Total Paid cell
-                if (label === "Total Paid") {
-                  return (
-                    <React.Fragment key={`summary-cells-${header}`}>
-                      <td>{formatMoney(totalFee)}</td>
-                      <td>{formatMoney(totalDiscounts)}</td>
-                      <td>{cellVal}</td>
-                    </React.Fragment>
-                  );
-                }
-
-                return <td key={header}>{cellVal}</td>;
-              })}
+      return (
+        <table className="accountant-reports-table">
+          <thead>
+            <tr>
+              {headerLabels.map((label, index) => (
+                <th key={`${label}-${index}`}>{label}</th>
+              ))}
             </tr>
-          );
-        })}
-      </tbody>
-    </table>
-  );
-}
+          </thead>
+          <tbody>
+            {paginatedRows.map((row, rowIndex) => (
+              <tr key={`${row.StudentName || "row"}-${rowIndex}`}>
+                {headers.map((header) => (
+                  <td key={header}>{typeof row[header] === "object" && row[header] !== null ? "-" : row[header]}</td>
+                ))}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      );
+    }
 
     if (activeView === "paid") {
       const headers = activeRows.length ? Object.keys(activeRows[0]) : [];
@@ -2142,66 +2093,48 @@ if (activeView === "main") {
       );
     }
 
-if (activeView === "complete") {
-  return (
-    <table className="accountant-reports-table">
-      <thead>
-        <tr>
-          <th>S.NO.</th>
-                    <th>Student Name</th>
-
-          <th>Class</th>
-          <th>Section</th>
-          {visibleCompleteStaticColumns.map((column) => (
-            <th key={column.key}>{column.label}</th>
-          ))}
-          {/* ADD TOTAL PAID HEADER HERE */}
-          {dynamicCompleteFeeBases.map((baseKey) => (
-            <React.Fragment key={baseKey}>
-              <th>{formatHeaderLabel(baseKey)}</th>
-              <th>{formatHeaderLabel(baseKey)} Paid</th>
-            </React.Fragment>
-          ))}
-                    <th>Total Paid</th>
-
-          <th>Action</th>
-        </tr>
-      </thead>
-      <tbody>
-        {paginatedRows.map((row, index) => {
-          // Calculate Total Paid for each row
-          const totalPaid = dynamicCompleteFeeBases.reduce(
-            (acc, baseKey) => acc + getDynamicPaidValue(row, baseKey),
-            0
-          );
-
-          return (
-            <tr key={`${row.StudentName}-${index}`}>
-                            <td>{(currentPage - 1) * rowsPerPage + index + 1}</td>  
-                            <td>{row.StudentName}</td>
-
-              <td>{row.Class_name}</td>
-              <td>{row.section}</td>
+    if (activeView === "complete") {
+      return (
+        <table className="accountant-reports-table">
+          <thead>
+            <tr>
+              <th>Class</th>
+              <th>Section</th>
+              <th>Student Name</th>
               {visibleCompleteStaticColumns.map((column) => (
-                <td key={column.key}>{formatMoney(column.getValue(row))}</td>
+                <th key={column.key}>{column.label}</th>
               ))}
-              {/* ADD TOTAL PAID CELL HERE */}
               {dynamicCompleteFeeBases.map((baseKey) => (
                 <React.Fragment key={baseKey}>
-                  <td>{formatMoney(getDynamicFeeValue(row, baseKey))}</td>
-                  <td>{formatMoney(getDynamicPaidValue(row, baseKey))}</td>
+                  <th>{formatHeaderLabel(baseKey)}</th>
+                  <th>{formatHeaderLabel(baseKey)} Paid</th>
                 </React.Fragment>
               ))}
-                            <td>{formatMoney(totalPaid)}</td>
-
-              <td>-</td>
+              <th>Action</th>
             </tr>
-          );
-        })}
-      </tbody>
-    </table>
-  );
-}
+          </thead>
+          <tbody>
+            {paginatedRows.map((row, index) => (
+              <tr key={`${row.StudentName}-${index}`}>
+                <td>{row.Class_name}</td>
+                <td>{row.section}</td>
+                <td>{row.StudentName}</td>
+                {visibleCompleteStaticColumns.map((column) => (
+                  <td key={column.key}>{formatMoney(column.getValue(row))}</td>
+                ))}
+                {dynamicCompleteFeeBases.map((baseKey) => (
+                  <React.Fragment key={baseKey}>
+                    <td>{formatMoney(getDynamicFeeValue(row, baseKey))}</td>
+                    <td>{formatMoney(getDynamicPaidValue(row, baseKey))}</td>
+                  </React.Fragment>
+                ))}
+                <td>-</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      );
+    }
 
     if (activeView === "bus") {
       return (
@@ -2351,7 +2284,6 @@ if (activeView === "complete") {
             {dynamicTransactionPaidKeys.map((key) => (
               <th key={key}>{getDynamicTransactionPaidLabel(key)}</th>
             ))}
-            <th>Total</th>
             <th>Paid Date</th>
             <th>Payment Mode</th>
             <th>Txn ID</th>
@@ -2373,7 +2305,6 @@ if (activeView === "complete") {
                 {dynamicTransactionPaidKeys.map((key) => (
                   <td key={key}>{formatMoney(row[key])}</td>
                 ))}
-                <td>{formatMoney(getTransactionRowTotal(row))}</td>
                 <td>{formatDate(row.paidDate)}</td>
                 <td>{row.paymentMode || "-"}</td>
                 <td>{row.transaction_id || "-"}</td>
@@ -2386,7 +2317,6 @@ if (activeView === "complete") {
       </table>
     );
   };
-
 const cumulativeActiveAmount = useMemo(() => {
   if (!activeRows.length) return 0;
 
@@ -2408,7 +2338,14 @@ const cumulativeActiveAmount = useMemo(() => {
         return sum + (toAmount(row.Bus_Paid) + toAmount(row.Residential_Paid));
 
       case "studentTransactions":
-        return sum + getTransactionRowTotal(row);
+        return (
+          sum +
+          Object.entries(row).reduce((rowSum, [key, value]) => {
+            return key.toLowerCase().includes("paid")
+              ? rowSum + toAmount(value)
+              : rowSum;
+          }, 0)
+        );
 
       case "discounts":
       case "referrals":
@@ -2426,8 +2363,7 @@ const cumulativeActiveAmount = useMemo(() => {
         return sum;
     }
   }, 0);
-}, [activeRows, activeView, dynamicTransactionPaidKeys, visibleTransactionStaticColumns]);
-
+}, [activeRows, activeView]);
   return (
     <div className="accountant-dashboard-page accountant-reports-page">
       <div className="accountant-dashboard-shell">
@@ -2670,9 +2606,10 @@ const cumulativeActiveAmount = useMemo(() => {
                 />
               <div className="accountant-reports-toolbar-meta">
   {activeView === "main" ? (
+    // DUES TAB: Show balance/due summary
     <>
       <span>
-        {isPreviousFinancialYearSelected ? "Previous Due" : "Total Due"} (
+        {isPreviousFinancialYearSelected ? "Previous Due" : "Complete Due"} (
         {filters.year === "All" ? "All Years" : filters.year}): ₹{" "}
         {summaryDueLoading ? "0.00" : formatMoney(renderedSummaryValue)}
       </span>
@@ -2684,43 +2621,44 @@ const cumulativeActiveAmount = useMemo(() => {
       )}
     </>
   ) : (
+    // ALL OTHER TABS: Show total cumulative amount
     <span>
        Total Amount: ₹ {formatMoney(cumulativeActiveAmount)}
     </span>
   )}
   <span>{activeRows.length} records</span>
 </div>
-           <div className="accountant-reports-toolbar-actions">
-  <select 
-    onChange={(e) => {
-      const value = e.target.value;
-      if (value === "excel") {
-        handleDownloadReport();
-      } else if (value === "pdf") {
-        handleDownloadPDF();
-      }
-      e.target.value = ""; // Reset dropdown selection
-    }}
-    disabled={!activeRows.length}
-    defaultValue=""
-    aria-label="Export options"
-    style={{ padding: "6px 10px", borderRadius: "4px", border: "1px solid #cfd6dd", background: "#fff" }}
-  >
-    <option value="" disabled>Export Options</option>
-    <option value="excel">Download Excel</option>
-    <option value="pdf">Download PDF</option>
-  </select>
+                <div className="accountant-reports-toolbar-actions">
+                  <button 
+                    type="button" 
+                    onClick={handleDownloadReport} 
+                    disabled={!activeRows.length}
+                    title="Download Excel"
+                    aria-label="Download Excel"
+                  >
+                    <FileSpreadsheet size={18} />
+                  </button>
 
-  <button 
-    type="button" 
-    onClick={handlePrintReport} 
-    disabled={!activeRows.length}
-    title="Print"
-    aria-label="Print"
-  >
-    <Printer size={18} />
-  </button>         
-</div>
+                  <button 
+                    type="button" 
+                    onClick={handleDownloadPDF} 
+                    disabled={!activeRows.length}
+                    title="Download PDF"
+                    aria-label="Download PDF"
+                  >
+                    <FileText size={18} />
+                  </button>
+
+                  <button 
+                    type="button" 
+                    onClick={handlePrintReport} 
+                    disabled={!activeRows.length}
+                    title="Print"
+                    aria-label="Print"
+                  >
+                    <Printer size={18} />
+                  </button>         
+                </div>
                 {activeRows.length > 0 && (
                   <div className="accountant-reports-pagination accountant-reports-pagination-inline">
                     <button type="button" onClick={() => setCurrentPage((prev) => Math.max(prev - 1, 1))} disabled={currentPage === 1}>

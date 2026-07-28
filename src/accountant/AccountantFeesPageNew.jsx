@@ -145,6 +145,15 @@ const getExplicitRemainingAmount = (row) => {
   return 0;
 };
 
+const getDiscountReasonText = (row) =>
+  row?.discount_reason ||
+  row?.discountReason ||
+  row?.Reason ||
+  row?.reason ||
+  row?.editReason ||
+  row?.remarks ||
+  "-";
+
 const getDynamicTotalBySuffix = (row, suffix, excludedKeys = []) => {
   const excluded = new Set(excludedKeys.map((key) => String(key || "").toLowerCase()));
 
@@ -251,6 +260,7 @@ const AccountantFeesPageNew = () => {
   const [isAssistantPopupOpen, setIsAssistantPopupOpen] = useState(false);
   const [isBillsPopupOpen, setIsBillsPopupOpen] = useState(false);
   const [isDiscountsPopupOpen, setIsDiscountsPopupOpen] = useState(false);
+  const [latestReceipt, setLatestReceipt] = useState(null);
   const [discountsData, setDiscountsData] = useState([]);
   const [discountsLoading, setDiscountsLoading] = useState(false);
     const [popupKey, setPopupKey] = useState(0);
@@ -419,7 +429,39 @@ const getFeeTotalsForRow = useCallback(
     []
   );
 
-  const recentFeeActivityItems = (() => {
+  const lastPaymentReceipt = (() => {
+    if (latestReceipt?.receiptNumber) {
+      const recordDate =
+        latestReceipt.paymentDate ||
+        latestReceipt.created_at ||
+        latestReceipt.record_date ||
+        latestReceipt.paidDate ||
+        null;
+      const formattedDate = recordDate ? new Date(recordDate).toLocaleDateString("en-GB") : "-";
+      const studentName =
+        latestReceipt.studentName ||
+        latestReceipt.StudentName ||
+        latestReceipt.name ||
+        "Student";
+      const className =
+        latestReceipt.className ||
+        latestReceipt.Class_name ||
+        latestReceipt.class_name ||
+        "Class";
+      const section =
+        latestReceipt.sectionName ||
+        latestReceipt.Section ||
+        latestReceipt.section ||
+        "";
+
+      return {
+        receiptNumber: latestReceipt.receiptNumber,
+        formattedDate,
+        studentName,
+        classSection: [className, section].filter(Boolean).join(" "),
+      };
+    }
+
     const rows = [...(allFeeStatusRows || [])]
       .filter((row) => row && (row.receiptNumber || row.created_at || row.record_date || row.paid_date))
       .sort((a, b) => {
@@ -429,25 +471,26 @@ const getFeeTotalsForRow = useCallback(
       })
       .slice(0, 1);
 
-    if (!rows.length) {
-      return ["No recent fee entries found"];
-    }
+    if (!rows.length) return null;
 
-    return rows.map((row) => {
-      const receiptNumber = row?.receiptNumber || row?.receipt_no || row?.receipt_no_id || "-";
-      const recordDate = row?.record_date || row?.created_at || row?.paid_date || row?.paidDate || null;
-      const formattedDate = recordDate ? new Date(recordDate).toLocaleDateString("en-GB") : "-";
-      const studentName =
-        row?.StudentName ||
-        row?.studentName ||
-        row?.name ||
-        row?.Student_Name ||
-        "Student";
-      const className = row?.Class_name || row?.class_name || row?.className || "Class";
-      const section = row?.Section || row?.section || row?.sectionName || row?.FeeSection || "";
-      const classSection = [className, section].filter(Boolean).join(" ");
-      return `Last Receipt - ${studentName}, ${classSection} - Receipt No. ${receiptNumber} - Date: ${formattedDate}`;
-    });
+    const row = rows[0];
+    const receiptNumber = row?.receiptNumber || row?.receipt_no || row?.receipt_no_id || "-";
+    const recordDate = row?.record_date || row?.created_at || row?.paid_date || row?.paidDate || null;
+    const formattedDate = recordDate ? new Date(recordDate).toLocaleDateString("en-GB") : "-";
+    const studentName =
+      row?.StudentName ||
+      row?.studentName ||
+      row?.name ||
+      row?.Student_Name ||
+      "Student";
+    const className = row?.Class_name || row?.class_name || row?.className || "Class";
+    const section = row?.Section || row?.section || row?.sectionName || row?.FeeSection || "";
+    return {
+      receiptNumber,
+      formattedDate,
+      studentName,
+      classSection: [className, section].filter(Boolean).join(" "),
+    };
   })();
 
   const fetchDashboardData = useCallback(async () => {
@@ -458,7 +501,7 @@ const getFeeTotalsForRow = useCallback(
 
     try {
       setDashboardLoading(true);
-      const [unpaidResult, summaryResult, allFeesResult, studentsResult] = await Promise.allSettled([
+      const [unpaidResult, summaryResult, allFeesResult, studentsResult, latestReceiptResult] = await Promise.allSettled([
         axios.get("https://cleezoclass.com:4000/api/fee-records", {
           params: { type: "TotalDueList", schoolCode, fromDate, toDate },
         }),
@@ -469,6 +512,9 @@ const getFeeTotalsForRow = useCallback(
           params: { type: "AllFeesStatusReport", schoolCode, fromDate, toDate },
         }),
         axios.get("https://cleezoclass.com:4000/students-details", {
+          params: { schoolCode },
+        }),
+        axios.get("https://cleezoclass.com:4000/api/bill/latest-receipt", {
           params: { schoolCode },
         }),
       ]);
@@ -489,6 +535,11 @@ const getFeeTotalsForRow = useCallback(
 
       setUnpaidStudents(unpaid);
       setStudentDirectory(masterStudents);
+      setLatestReceipt(
+        latestReceiptResult.status === "fulfilled"
+          ? latestReceiptResult.value?.data?.receipt || null
+          : null
+      );
 
       const mobileSummary =
         summaryResult.status === "fulfilled" && summaryResult.value?.data?.success
@@ -552,6 +603,7 @@ const getFeeTotalsForRow = useCallback(
       setUnpaidStudents([]);
       setAllFeeStatusRows([]);
       setStudentDirectory([]);
+      setLatestReceipt(null);
     } finally {
       setDashboardLoading(false);
     }
@@ -2038,7 +2090,7 @@ const sectionOptions = [
                 <div className="accountant-fees-bottom-left-row">
                 <div className="accountant-fees-log-card accountant-card">
                     <div className="accountant-fees-log-header">
-                      <div className="accountant-fees-log-title">Activity Log</div>
+                      <div className="accountant-fees-log-title">Last Payment Receipt</div>
                       <button
                         type="button"
                         className="accountant-view-bills-btn"
@@ -2048,9 +2100,21 @@ const sectionOptions = [
                       </button>
                     </div>
                     <div className="accountant-fees-log-list">
-                      {recentFeeActivityItems.map((item) => (
-                        <p key={item} className="accountant-fees-log-item">O {item}</p>
-                      ))}
+                      {lastPaymentReceipt ? (
+                        <>
+                          <p className="accountant-fees-log-item">
+                            Receipt No. {lastPaymentReceipt.receiptNumber}
+                          </p>
+                          <p className="accountant-fees-log-item">
+                            {lastPaymentReceipt.studentName}, {lastPaymentReceipt.classSection}
+                          </p>
+                          <p className="accountant-fees-log-item">
+                            Date: {lastPaymentReceipt.formattedDate}
+                          </p>
+                        </>
+                      ) : (
+                        <p className="accountant-fees-log-item">No recent payment receipt found</p>
+                      )}
                     </div>
                   </div>
 
@@ -2545,7 +2609,7 @@ const sectionOptions = [
                             <td>{row?.Class_name || row?.class_name || row?.className || "-"}</td>
                             <td>{row?.Section || row?.section || row?.sectionName || "-"}</td>
                             <td>{row?.["Fee Type"] || row?.feeType || row?.fee_type || row?.type || "-"}</td>
-                            <td>{row?.Reason || row?.reason || row?.remarks || "-"}</td>
+                            <td>{getDiscountReasonText(row)}</td>
                             <td>
                               {formatINR(
                                 Number(
