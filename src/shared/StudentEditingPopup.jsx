@@ -3,7 +3,7 @@ import Modal from 'react-modal';
 import Cropper from 'react-easy-crop'; // ✅ NEW: Manual cropper
 import { FaCamera, FaUpload, FaTrash, FaCheck, FaSpinner, FaTimes } from 'react-icons/fa';
 import { removeBackground } from '@imgly/background-removal';
-import { Eye } from 'lucide-react';
+import { Eye, EyeOff } from 'lucide-react';
 
 Modal.setAppElement('#root');
 
@@ -49,6 +49,7 @@ const StudentEditingPopup = ({
   editingId,
   userType,
   formData,
+  schoolCode,
   onFieldChange,
   onClassChange,
   classOptions,
@@ -73,6 +74,10 @@ const StudentEditingPopup = ({
   const [showCameraModal, setShowCameraModal] = useState(false);
   const [cameraError, setCameraError] = useState('');
   const [errors, setErrors] = useState({});
+  const [showPassword, setShowPassword] = useState(false);
+  // 'idle' | 'checking' | 'available' | 'taken'
+  const [usernameStatus, setUsernameStatus] = useState('idle');
+  const originalUsernameRef = useRef('');
 
   // ✅ NEW: Cropper State
   const [imageSrc, setImageSrc] = useState(null);
@@ -114,40 +119,125 @@ const StudentEditingPopup = ({
   useEffect(() => {
     if (isOpen) {
       setErrors({});
+      setUsernameStatus('idle');
+      originalUsernameRef.current = formData.username || '';
+      // Check the pre-filled username too — it may already be a duplicate in the DB
+      if (formData.username && formData.username.trim()) {
+        checkUsernameAvailability(formData.username);
+      }
     }
     return () => {
       if (streamRef.current) {
         streamRef.current.getTracks().forEach(track => track.stop());
       }
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isOpen]);
 
+  // Check whether a username is already taken by another user in this school
+  const checkUsernameAvailability = async (rawValue) => {
+    const trimmed = (rawValue || '').trim();
+
+    if (!trimmed) {
+      setUsernameStatus('idle');
+      setErrors((prev) => {
+        const next = { ...prev };
+        delete next.username;
+        return next;
+      });
+      return;
+    }
+
+    setUsernameStatus('checking');
+    try {
+      const excludeParam = editingId != null ? `&excludeId=${encodeURIComponent(editingId)}` : '';
+      const response = await fetch(
+        `https://cleezoclass.com:4000/api/user-info/${encodeURIComponent(trimmed)}?schoolCode=${encodeURIComponent(schoolCode || '')}${excludeParam}`
+      );
+
+      if (response.status === 404) {
+        setUsernameStatus('available');
+        setErrors((prev) => {
+          const next = { ...prev };
+          delete next.username;
+          return next;
+        });
+        return;
+      }
+
+      if (response.ok) {
+        // With excludeId sent, any 200 here means a DIFFERENT record already owns this username
+        setUsernameStatus('taken');
+        setErrors((prev) => ({ ...prev, username: 'This username is already taken' }));
+        return;
+      }
+
+      // Unexpected response — don't block the user, just stop showing a "checking" state
+      setUsernameStatus('idle');
+    } catch (err) {
+      console.error('Username availability check failed:', err);
+      setUsernameStatus('idle');
+    }
+  };
+
   // Validation handler
+  // const validateForm = () => {
+  //   let tempErrors = {};
+  //   if (!formData.name || !formData.name.trim()) {
+  //     tempErrors.name = 'Full Name is required';
+  //   }
+  //   const cleanPhone = formData.phone_no ? String(formData.phone_no).trim() : '';
+  //   if (!cleanPhone) {
+  //     tempErrors.phone_no = 'Phone Number is required';
+  //   } else if (cleanPhone.length !== 10) {
+  //     tempErrors.phone_no = 'Phone Number must be exactly 10 digits';
+  //   } else if (/^[1-5]/.test(cleanPhone)) {
+  //     tempErrors.phone_no = 'Phone Number cannot start with 1, 2, 3, 4, or 5';
+  //   }
+  //   const cleanAadhar = formData.aadhar_no ? String(formData.aadhar_no).trim() : '';
+  //   if (!cleanAadhar) {
+  //     tempErrors.aadhar_no = 'Aadhar Number is required';
+  //   } else if (cleanAadhar.length !== 12) {
+  //     tempErrors.aadhar_no = 'Aadhar Number must be exactly 12 digits';
+  //   }
+  //   if (formData.user_type === 'student' && (!formData.class_name || !formData.class_name.trim())) {
+  //     tempErrors.class_name = 'Class is required for students';
+  //   }
+  //   setErrors(tempErrors);
+  //   return Object.keys(tempErrors).length === 0;
+  // };
+
   const validateForm = () => {
     let tempErrors = {};
     if (!formData.name || !formData.name.trim()) {
       tempErrors.name = 'Full Name is required';
     }
+
     const cleanPhone = formData.phone_no ? String(formData.phone_no).trim() : '';
-    if (!cleanPhone) {
-      tempErrors.phone_no = 'Phone Number is required';
-    } else if (cleanPhone.length !== 10) {
-      tempErrors.phone_no = 'Phone Number must be exactly 10 digits';
-    } else if (/^[1-5]/.test(cleanPhone)) {
-      tempErrors.phone_no = 'Phone Number cannot start with 1, 2, 3, 4, or 5';
+    if (cleanPhone) {
+      if (cleanPhone.length !== 10) {
+        tempErrors.phone_no = 'Phone Number must be exactly 10 digits';
+      } else if (/^[1-5]/.test(cleanPhone)) {
+        tempErrors.phone_no = 'Phone Number cannot start with 1, 2, 3, 4, or 5';
+      }
     }
+
     const cleanAadhar = formData.aadhar_no ? String(formData.aadhar_no).trim() : '';
-    if (!cleanAadhar) {
-      tempErrors.aadhar_no = 'Aadhar Number is required';
-    } else if (cleanAadhar.length !== 12) {
+    if (cleanAadhar && cleanAadhar.length !== 12) {
       tempErrors.aadhar_no = 'Aadhar Number must be exactly 12 digits';
     }
+
     if (formData.user_type === 'student' && (!formData.class_name || !formData.class_name.trim())) {
       tempErrors.class_name = 'Class is required for students';
     }
+
+    if (usernameStatus === 'taken') {
+      tempErrors.username = 'This username is already taken';
+    }
+
     setErrors(tempErrors);
     return Object.keys(tempErrors).length === 0;
-  };
+};
 
   const handleFormSubmit = (e) => {
     e.preventDefault();
@@ -512,11 +602,33 @@ const StudentEditingPopup = ({
               </div>
               <div style={styles.formGroup}>
                 <label style={styles.formLabel}>Username</label>
-                <div style={styles.readOnlyValue}>{formData.username || '-'}</div>
+                <input
+                  type="text"
+                  name="username"
+                  value={formData.username || ''}
+                  onChange={(e) => {
+                    onFieldChange('username', e.target.value);
+                    if (usernameStatus !== 'idle') setUsernameStatus('idle');
+                  }}
+                  onBlur={(e) => checkUsernameAvailability(e.target.value)}
+                  style={{ ...styles.formInput, ...(errors.username ? styles.errorInput : {}) }}
+                />
+                {usernameStatus === 'checking' && (
+                  <span style={{ fontSize: '12px', color: '#64748b' }}>Checking availability...</span>
+                )}
+                {/* {usernameStatus === 'available' && !errors.username && (
+                  <span style={{ fontSize: '12px', color: '#166534' }}>Username is available</span>
+                )} */}
+                {errors.username && <span style={styles.errorText}>{errors.username}</span>}
               </div>
               <div style={styles.formGroup}>
                 <label style={styles.formLabel}>Password</label>
-                <div style={styles.readOnlyValue}>{formData.password || '-'}</div>
+                <div style={styles.passwordWrapper}>
+                  <input type={showPassword ? 'text' : 'password'} name="password" value={formData.password || ''} onChange={(e) => onFieldChange('password', e.target.value)} style={styles.formInput} />
+                  <button type="button" onClick={() => setShowPassword(!showPassword)} style={styles.passwordToggleBtn} title={showPassword ? 'Hide password' : 'Show password'}>
+                    {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
+                  </button>
+                </div>
               </div>
               <div style={styles.formGroup}>
                 <label style={styles.formLabel}>Gender</label>
@@ -635,7 +747,7 @@ const StudentEditingPopup = ({
           )}
 
           <div style={styles.formActions}>
-            <button type="submit" style={styles.saveButton} disabled={isLoading}>{isLoading ? 'Saving...' : 'Save Changes'}</button>
+            <button type="submit" style={styles.saveButton} disabled={isLoading || usernameStatus === 'checking'}>{isLoading ? 'Saving...' : 'Save Changes'}</button>
             <button type="button" onClick={onCancel} style={styles.cancelButton} disabled={isLoading}>Cancel</button>
           </div>
         </form>
@@ -689,7 +801,7 @@ const StudentEditingPopup = ({
       </Modal>
 
       <style>{`
-        @keyframes spin { from { trnpm ansform: rotate(0deg); } to { transform: rotate(360deg); } }
+        @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
         .spin-animation { animation: spin 1s linear infinite; }
       `}</style>
     </>

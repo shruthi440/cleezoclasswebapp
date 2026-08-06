@@ -1203,28 +1203,15 @@ body{
 }
 
 .receipt-copy{
-    position: relative;
-    overflow: hidden;
+    width:100%;
+    page-break-inside:auto;
 }
 
-.receipt-copy img[alt="Watermark"]{
-    position: absolute !important;
-    top: 50% !important;
-    left: 50% !important;
-    transform: translate(-50%, -50%) !important;
-    width: 180px !important;
-    height: 180px !important;
-    opacity: 0.08 !important;
-    z-index: 0 !important;
-}
-
-.receipt-copy > div,
-.receipt-copy table,
-.receipt-copy p,
-.receipt-copy h1,
-.receipt-copy h4{
-    position: relative;
-    z-index: 1;
+.receipt-title{
+    text-align:center;
+    font-size:24px;
+    font-weight:bold;
+    margin-bottom:15px;
 }
 
 .receipt-divider{
@@ -1511,8 +1498,8 @@ tr{
     admissionFee +
     residentialFee +
     examFee +
-    busFeeDue +
-    bookFeeDue +
+    (busFeeDue - (busDiscount || 0)) +
+    (bookFeeDue - (bookDiscount || 0)) +
     uniformFee +
     othersFee +
     renderDynamicFeeDueTotal;
@@ -1524,8 +1511,8 @@ const overallTotalPaid = Number(popupData?.paidAmount || 0);
       admissionFee +
       residentialFee +
       examFee +
-      busFeeDue +
-      bookFeeDue +
+      (busFeeDue - (busDiscount || 0)) +
+      (bookFeeDue - (bookDiscount || 0)) +
       uniformFee +
       othersFee +
       renderDynamicFeeDueTotal;
@@ -1576,13 +1563,7 @@ const overallTotalPaid = Number(popupData?.paidAmount || 0);
       const rowKey = String(row.key || "").toLowerCase();
       return rowLabel === String(label).toLowerCase() || rowKey === key;
     });
-    // Prefer the first source that actually has a positive total instead of
-    // stopping at staticTotal when it happens to be 0 (e.g. bus/book fee
-    // whose "due" value can compute to 0 after discount) — that was masking
-    // valid totals coming from dynamicMatch or the payment record itself.
-    const total = [staticTotal, dynamicMatch?.total, fee.total]
-      .map((v) => Number(v) || 0)
-      .find((v) => v > 0) || 0;
+    const total = Number(staticTotal ?? dynamicMatch?.total ?? fee.total ?? 0);
     const paidNow = Number(fee.paidThisTransaction || 0);
     const totalPaid = Number(fee.totalPaid || dynamicMatch?.paid || paidNow);
     return {
@@ -1595,16 +1576,7 @@ const overallTotalPaid = Number(popupData?.paidAmount || 0);
       installmentId: fee.installmentId || null,
     };
   }).filter((row) => row.total > 0 || row.paidNow > 0);
-  const seenFeeTypesForTotal = new Set();
-  const receiptTotalAmount = receiptRows.reduce((sum, row) => {
-    const feeTypeKey = String(row.label || "").trim().toLowerCase();
-    if (seenFeeTypesForTotal.has(feeTypeKey)) {
-      // Same fee type already counted (e.g. another installment row) - don't add its total again.
-      return sum;
-    }
-    seenFeeTypesForTotal.add(feeTypeKey);
-    return sum + row.total;
-  }, 0);
+  const receiptTotalAmount = receiptRows.reduce((sum, row) => sum + row.total, 0);
   const receiptPaidNowTotal = receiptRows.reduce((sum, row) => sum + row.paidNow, 0);
   const receiptTotalPaidAmount = receiptRows.reduce((sum, row) => sum + row.totalPaid, 0);
   const receiptBalanceAmount = receiptRows.reduce((sum, row) => sum + row.balance, 0);
@@ -1673,9 +1645,9 @@ const overallTotalPaid = Number(popupData?.paidAmount || 0);
             <div id="bill-preview-content" style={{ display: 'grid', gridTemplateRows: getGridClass(previewMode).includes('grid-rows-2') ? '1fr 1fr' : '1fr', gridTemplateColumns: getGridClass(previewMode).includes('grid-cols-2') ? '1fr 1fr' : '1fr', gap: '1rem', justifyContent: 'center', alignItems: 'start', overflow: 'hidden', padding: '5px', minHeight: '180px', position: 'relative' }}>
               {Array.from({ length: previewMode }).map((_, index) => (
                 <div key={index} style={{ transform: getScaleClass(previewMode), transformOrigin: 'top center', width: `calc(100% / ${getGridClass(previewMode).includes('grid-cols-2') ? 2 : 1})`, boxSizing: 'border-box', padding: '0 0.5rem' }}>
-                  {(dynamicLogoSrc || getStoredSchoolLogo()) && (
+                  {/* {(dynamicLogoSrc || getStoredSchoolLogo()) && (
                     <img src={dynamicLogoSrc || getStoredSchoolLogo()} alt="Watermark" style={{ position: 'absolute', top: '30%', left: '50%', transform: 'translate(-50%, -50%)', width: '200px', height: '200px', opacity: 0.3, zIndex: 1, pointerEvents: 'none' }} />
-                  )}
+                  )} */}
                   <div style={{ backgroundColor: '#ffffff', padding: '0.5rem', border: '1px solid #ccc', borderRadius: '0.25rem' }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '0.25rem' }}>
                       <div style={{ width: '34px', height: '34px', borderRadius: '6px', border: '1px solid #d1d5db', backgroundColor: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden', flexShrink: 0 }}>
@@ -1689,7 +1661,7 @@ const overallTotalPaid = Number(popupData?.paidAmount || 0);
                       <div style={{ flex: 1, textAlign: 'center' }}>
                         <h1 style={{ fontSize: '1rem', fontWeight: '700', color: '#1e40af', marginBottom: '0.1rem' }}>
                           {isEditing ? (
-                            <input type="text" value={editableBill?.schoolName || schoolName} onChange={(e) => handleEditChange('schoolName', e.target.value)} style={{ width: '100%', padding: '2px', textAlign: 'center', fontSize: '1rem', fontWeight: '700', border: '1px solid #ccc' , marginTop:"-10px"}} />
+                            <input type="text" value={editableBill?.schoolName || schoolName} onChange={(e) => handleEditChange('schoolName', e.target.value)} style={{ width: '100%', padding: '2px', textAlign: 'center', fontSize: '1rem', fontWeight: '700', border: '1px solid #ccc' }} />
                           ) : (
                             schoolName || 'School Name'
                           )}
@@ -1794,8 +1766,8 @@ const overallTotalPaid = Number(popupData?.paidAmount || 0);
                           <th style={{ border: "1px solid #000", padding: "3px", textAlign: "left" }}>Fee Type</th>
                           <th style={{ border: "1px solid #000", padding: "3px", textAlign: "right" }}>Total</th>
                           <th style={{ border: "1px solid #000", padding: "3px", textAlign: "right" }}>Paid Now</th>
-                          {/* <th style={{ border: "1px solid #000", padding: "3px", textAlign: "right" }}>Total Paid</th> */}
-                          {/* <th style={{ border: "1px solid #000", padding: "3px", textAlign: "right" }}>Balance</th> */}
+                          <th style={{ border: "1px solid #000", padding: "3px", textAlign: "right" }}>Total Paid</th>
+                          <th style={{ border: "1px solid #000", padding: "3px", textAlign: "right" }}>Balance</th>
                         </tr>
                       </thead>
                       <tbody>
@@ -1805,7 +1777,7 @@ const overallTotalPaid = Number(popupData?.paidAmount || 0);
                             <td style={{ border: "1px solid #000", padding: "3px", textAlign: "left" }}>
                               {row.label}
                               {row.installmentId && (
-                                <div style={{ fontSize: "8px", color: "#555", display:"inline", marginLeft:"10px" }}>Installment: {row.installmentId}</div>
+                                <div style={{ fontSize: "8px", color: "#555" }}>Installment: {row.installmentId}</div>
                               )}
                               {row.description && (
                                 <div style={{ fontSize: "8px", color: "#555" }}>{row.description}</div>
@@ -1817,20 +1789,20 @@ const overallTotalPaid = Number(popupData?.paidAmount || 0);
                             <td style={{ border: "1px solid #000", padding: "3px", textAlign: "right", color: "green" }}>
                               ₹{row.paidNow.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                             </td>
-                            {/* <td style={{ border: "1px solid #000", padding: "3px", textAlign: "right" }}>
+                            <td style={{ border: "1px solid #000", padding: "3px", textAlign: "right" }}>
                               ₹{row.totalPaid.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                            </td> */}
-                            {/* <td style={{ border: "1px solid #000", padding: "3px", textAlign: "right" }}>
+                            </td>
+                            <td style={{ border: "1px solid #000", padding: "3px", textAlign: "right" }}>
                               ₹{row.balance.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                            </td> */}
+                            </td>
                           </tr>
                         ))}
                         <tr style={{ backgroundColor: "#f9fafb", fontWeight: "bold" }}>
                           <td colSpan="2" style={{ border: "1px solid #000", padding: "3px", textAlign: "right" }}>Total</td>
                           <td style={{ border: "1px solid #000", padding: "3px", textAlign: "right" }}>₹{receiptTotalAmount.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
                           <td style={{ border: "1px solid #000", padding: "3px", textAlign: "right", color: "green" }}>₹{receiptPaidNowTotal.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
-                          {/* <td style={{ border: "1px solid #000", padding: "3px", textAlign: "right" }}>₹{receiptTotalPaidAmount.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td> */}
-                          {/* <td style={{ border: "1px solid #000", padding: "3px", textAlign: "right" }}>₹{receiptBalanceAmount.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td> */}
+                          <td style={{ border: "1px solid #000", padding: "3px", textAlign: "right" }}>₹{receiptTotalPaidAmount.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+                          <td style={{ border: "1px solid #000", padding: "3px", textAlign: "right" }}>₹{receiptBalanceAmount.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
                         </tr>
                       </tbody>
                     </table>
@@ -1890,9 +1862,9 @@ const overallTotalPaid = Number(popupData?.paidAmount || 0);
                         <div style={{ borderTop: '1px dashed #000', paddingTop: '5px', fontSize: '10px' }}>Authorised Signature</div>
                       </div>
                     </div>
-                    {/* <div style={{ marginTop: '5px', fontSize: '8px', textAlign: 'center' }}>
+                    <div style={{ marginTop: '5px', fontSize: '8px', textAlign: 'center' }}>
                       <p>This is a computer generated receipt. No signature required.</p>
-                    </div> */}
+                    </div>
                   </div>
                 </div>
               ))}

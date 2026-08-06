@@ -1673,7 +1673,7 @@ const AccountantReportsPage: React.FC = () => {
         });
 
         cols.push(
-          { key: "Total", label: "Total", getValue: (row: ReportRow) => formatMoney(getTransactionRowTotal(row)) },
+          { key: "Total", label: "Total", getValue: (row: ReportRow) => formatMoney((row.amount_paid || 0)) },
           { key: "paidDate", label: "Paid Date", getValue: (row: ReportRow) => formatDate(row.paidDate) },
           { key: "paymentMode", label: "Payment Mode", getValue: (row: ReportRow) => row.paymentMode || "-" },
           { key: "transaction_id", label: "Txn ID", getValue: (row: ReportRow) => row.transaction_id || "-" },
@@ -2373,7 +2373,7 @@ if (activeView === "complete") {
                 {dynamicTransactionPaidKeys.map((key) => (
                   <td key={key}>{formatMoney(row[key])}</td>
                 ))}
-                <td>{formatMoney(getTransactionRowTotal(row))}</td>
+                <td>{formatMoney((row.amount_paid || 0))}</td>
                 <td>{formatDate(row.paidDate)}</td>
                 <td>{row.paymentMode || "-"}</td>
                 <td>{row.transaction_id || "-"}</td>
@@ -2690,7 +2690,7 @@ const cumulativeActiveAmount = useMemo(() => {
   )}
   <span>{activeRows.length} records</span>
 </div>
-           <div className="accountant-reports-toolbar-actions">
+<div className="accountant-reports-toolbar-actions">
   <select 
     onChange={(e) => {
       const value = e.target.value;

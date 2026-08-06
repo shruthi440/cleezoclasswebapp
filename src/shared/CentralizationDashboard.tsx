@@ -390,7 +390,7 @@ const roleTabConfig: Record<
     userType: 'management',
     templateCategory: 'Management',
     columns: [
-      { key: 'id', label: 'ID' },
+      { key: 'index', label: 'S.No' },
       { key: 'name', label: 'Name' },
       { key: 'username', label: 'Username' },
       { key: 'phone', label: 'Phone' },
@@ -404,7 +404,7 @@ const roleTabConfig: Record<
     userType: 'teacher',
     templateCategory: 'Staff',
     columns: [
-      { key: 'id', label: 'ID' },
+      { key: 'index', label: 'S.No' },
       { key: 'name', label: 'Name' },
       { key: 'username', label: 'Username' },
       { key: 'phone', label: 'Phone' },
@@ -418,7 +418,7 @@ const roleTabConfig: Record<
     userType: 'student',
     templateCategory: 'Student',
     columns: [
-      { key: 'id', label: 'ID' },
+      { key: 'index', label: 'S.No' },
       { key: 'name', label: 'Name' },
       { key: 'username', label: 'Username' },
       { key: 'phone', label: 'Phone' },
@@ -2373,21 +2373,22 @@ const validateExcelRows = (rawData: any[], category: UploadPreviewCategory): Exc
     return true;
   };
 
-  const validateConditional = (
-    row: any,
-    rowNumber: number,
-    keys: string[],
-    validationFn: (val: string) => boolean,
-    errorMessage: string,
-    errors: ExcelValidationError[]
-  ) => {
-    const val = getValue(row, keys);
-    if (hasExcelValue(val)) {
-      if (!validationFn(String(val).trim())) {
-        errors.push(createError(row, rowNumber, keys, errorMessage));
-      }
+const validateConditional = (
+  row: any,
+  rowNumber: number,
+  keys: string[],
+  validationFn: (val: unknown) => boolean,
+  errorMessage: string,
+  errors: ExcelValidationError[]
+) => {
+  const val = getValue(row, keys);
+
+  if (hasExcelValue(val)) {
+    if (!validationFn(val)) {
+      errors.push(createError(row, rowNumber, keys, errorMessage));
     }
-  };
+  }
+};
 
   return rawData.flatMap((row, index) => {
     if (!isNonEmptyExcelRow(row)) return [];
@@ -2429,29 +2430,33 @@ const validateExcelRows = (rawData: any[], category: UploadPreviewCategory): Exc
     validateConditional(row, rowNumber, dateKeys, (val) => isValidExcelDate(val), 'Date of Birth must be in YYYY-MM-DD format or a valid Excel date.', errors);
 
     // Mobile numbers: check only numbers and exact length if provided
-    phoneKeys.forEach((key) => {
-      validateConditional(
-        row,
-        rowNumber,
-        [key],
-        (val) => /^\d+$/.test(val) && val.length === 10,
-        'Mobile Number must be exactly 10 numeric digits.',
-        errors
-      );
-    });
+phoneKeys.forEach((key) => {
+  validateConditional(
+    row,
+    rowNumber,
+    [key],
+    (val) => {
+      if (!hasExcelValue(val)) return true; // Skip empty cells
+      return /^\d{10}$/.test(String(val).trim());
+    },
+    "Mobile Number must be exactly 10 numeric digits.",
+    errors
+  );
+});
 
-    // ID numbers: check only numbers and exact length if provided for all categories
-    aadharKeys.forEach((key) => {
-      validateConditional(
-        row,
-        rowNumber,
-        [key],
-        (val) => /^\d+$/.test(val) && val.length === 12,
-        'Aadhar Number must be exactly 12 numeric digits.',
-        errors
-      );
-    });
-
+aadharKeys.forEach((key) => {
+  validateConditional(
+    row,
+    rowNumber,
+    [key],
+    (val) => {
+      if (!hasExcelValue(val)) return true; // Skip empty cells
+      return /^\d{12}$/.test(String(val).trim());
+    },
+    "Aadhar Number must be exactly 12 numeric digits.",
+    errors
+  );
+});
     validateConditional(row, rowNumber, fatherNameKeys, (val) => nameRegex.test(val), 'Father Name can contain only letters, spaces, dot, apostrophe, or hyphen.', errors);
 
     validateConditional(row, rowNumber, classTeacherKeys, (val) => nameRegex.test(val), 'Class Teacher can contain only letters, spaces, dot, apostrophe, or hyphen.', errors);
@@ -2875,7 +2880,10 @@ const validateExcelRows = (rawData: any[], category: UploadPreviewCategory): Exc
     );
   };
 
-  const getRoleColumnValue = (user: any, columnKey: string) => {
+  const getRoleColumnValue = (user: any, columnKey: string, rowIndex: number) => {
+    if (columnKey === 'index') {
+      return rowIndex + 1;
+    }
     if (columnKey === 'phone') {
       return user.phone_no || user.father_phone_no || user.phone || '-';
     }
@@ -2901,7 +2909,9 @@ const validateExcelRows = (rawData: any[], category: UploadPreviewCategory): Exc
     autoTable(doc, {
       startY: 28,
       head: [config.columns.map((column) => column.label)],
-      body: users.map((user) => config.columns.map((column) => String(getRoleColumnValue(user, column.key)))),
+      body: users.map((user, rowIndex) =>
+        config.columns.map((column) => String(getRoleColumnValue(user, column.key, rowIndex)))
+      ),
       styles: { fontSize: 8, cellPadding: 2 },
       headStyles: { fillColor: [51, 65, 85] },
     });
@@ -2916,9 +2926,9 @@ const validateExcelRows = (rawData: any[], category: UploadPreviewCategory): Exc
     }
 
     const config = roleTabConfig[roleTab];
-    const exportRows = users.map((user) =>
+    const exportRows = users.map((user, rowIndex) =>
       config.columns.reduce<Record<string, string>>((row, column) => {
-        row[column.label] = String(getRoleColumnValue(user, column.key));
+        row[column.label] = String(getRoleColumnValue(user, column.key, rowIndex));
         return row;
       }, {})
     );
@@ -3548,6 +3558,7 @@ const validateExcelRows = (rawData: any[], category: UploadPreviewCategory): Exc
           editingId={editingUserId}
           userType={addUserForm.user_type}
           formData={addUserForm}
+          schoolCode={formData.school_code || localStorage.getItem('schoolCode') || ''}
           onFieldChange={(field, value) => {
             setAddUserForm((prev) => ({ ...prev, [field]: value }));
           }}
@@ -4040,6 +4051,7 @@ const validateExcelRows = (rawData: any[], category: UploadPreviewCategory): Exc
                   {filteredRoleUsers.map((user, index) => {
                     const userId = getUserRecordId(user) ?? `${user.username || user.name}-${index}`;
                     const disabled = isUserDisabled(user);
+                    const rowIndex = (currentPage - 1) * pageSize + index;
                     return (
                       <tr
                         key={userId}
@@ -4052,7 +4064,7 @@ const validateExcelRows = (rawData: any[], category: UploadPreviewCategory): Exc
                           const value =
                             column.key === 'phone'
                               ? user.phone_no || user.father_phone_no || user.phone || '-'
-                              : user[column.key] || '-';
+                              : getRoleColumnValue(user, column.key, rowIndex);
                           return (
                             <td key={column.key} style={styles.roleRecordsCell}>
                               {value}

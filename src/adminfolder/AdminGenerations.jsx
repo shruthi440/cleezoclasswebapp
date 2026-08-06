@@ -673,7 +673,15 @@ const buildIdCardPreviewUrl = (templateId, student, schoolName, schoolLogoValue 
       student?.admission_number || student?.admissionNo || student?.admission_no || student?.admno || student?.id || "-"
     ),
     rollNo: String(student?.roll_no || student?.rollNo || student?.student_id || student?.id || "-"),
-    phone: String(student?.phone || student?.mobile || student?.student_mobile || student?.contact || "-"),
+    phone: String(
+      student?.phone_no ||
+        student?.phone ||
+        student?.mobile ||
+        student?.mobile_no ||
+        student?.student_mobile ||
+        student?.contact ||
+        "-"
+    ),
     emergency: String(
       student?.emergency_contact || student?.parent_mobile || student?.father_mobile || student?.mother_mobile || "-"
     ),
@@ -2073,7 +2081,6 @@ const handleDownloadAcademicReportExcel = () => {
     ["Student Name", student?.name || ""],
     ["Class", student?.class || ""],
     ["Section", student?.section || ""],
-    ["Roll Number", student?.rollNo || student?.id || ""],
     ["Father's Name", student?.fatherName || ""],
     ["Academic Year", student?.academicYear || ""],
   ];

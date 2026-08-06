@@ -128,7 +128,10 @@ const GenerateBills = () => {
   const [receiptFeeDetails, setReceiptFeeDetails] = useState([]);
   const [isStudentBillLoading, setIsStudentBillLoading] = useState(false);
   const [isReceiptNumberEditorOpen, setIsReceiptNumberEditorOpen] = useState(false);
+  const [, setReceiptPaidDateDisplay] = useState(null);
+  const receiptNumberRef = useRef('');
   const receiptFeeDetailsRef = useRef([]);
+  const receiptPaidDateRef = useRef(null);
 
   const readNumericField = useCallback((source, keys) => {
     for (const key of keys) {
@@ -150,6 +153,16 @@ const GenerateBills = () => {
     }
     return "";
   }, []);
+
+  const resolveReceiptPaidDate = useCallback((fallbackSource = null) => {
+    return (
+      receiptPaidDateRef.current ||
+      readStringField(fallbackSource, ["paidDate", "paymentDate", "created_at", "paiddate", "date"]) ||
+      readStringField(payments, ["paidDate", "paymentDate", "created_at", "paiddate", "date"]) ||
+      readStringField(payments?.paymentHistory?.[0], ["paidDate", "paymentDate", "created_at", "paiddate", "date"]) ||
+      null
+    );
+  }, [payments, readStringField]);
 
   const getFirstPositiveNumber = useCallback((...values) => {
     for (const value of values) {
@@ -420,6 +433,7 @@ const GenerateBills = () => {
     setPayments(null);
     setReceiptFeeDetails([]);
     receiptFeeDetailsRef.current = [];
+    receiptPaidDateRef.current = null;
     setStudentReceipts([]);
     setLastReceipt(null);
     setFeeStructure({
@@ -865,6 +879,22 @@ const filteredStudents = useMemo(() => {
         setSelectedClass(firstRowClass || '');
         setSelectedSection(firstRowSection || '');
         setSelectedStudentId(firstRowLoginId);
+   
+        {
+          const resolvedReceiptNumber = String(firstRow.receiptNumber || matchedReceiptNumber || numberToSearch);
+          setReceiptNumber(resolvedReceiptNumber);
+          receiptNumberRef.current = resolvedReceiptNumber;
+        }
+        // Capture this specific receipt's own paid date from the row itself -
+        // NOT from the aggregated payment-history object, which reflects the
+        // student's latest activity overall and would show today's date for
+        // every past receipt reprinted.
+        {
+          const resolvedPaidDate = readStringField(firstRow, ["paidDate", "paymentDate", "created_at", "paiddate", "date"]) || null;
+          receiptPaidDateRef.current = resolvedPaidDate;
+          setReceiptPaidDateDisplay(resolvedPaidDate);
+        }
+
         setReceiptNumber(String(firstRow.receiptNumber || matchedReceiptNumber || numberToSearch));
         setPaymentMode(readStringField(firstRow, ["paymentMode", "payment_mode"]) || '');
         setOthersDescription(readStringField(firstRow, ["others_description", "othersDescription"]) || '');
@@ -976,6 +1006,18 @@ const filteredStudents = useMemo(() => {
         setSearchResults(foundBill);
         setSelectedClass(billStudent.class || '');
         setSelectedStudentId(parseInt(billStudent.rollNumber, 10) || 0);
+
+        {
+          const resolvedReceiptNumber = String(foundBill.receiptNumber || matchedBillReceiptNumber || '');
+          setReceiptNumber(resolvedReceiptNumber);
+          receiptNumberRef.current = resolvedReceiptNumber;
+        }
+        {
+          const resolvedPaidDate = readStringField(foundBill, ["paidDate", "paymentDate", "created_at", "paiddate", "date"]) || null;
+          receiptPaidDateRef.current = resolvedPaidDate;
+          setReceiptPaidDateDisplay(resolvedPaidDate);
+        }
+
         setReceiptNumber(String(foundBill.receiptNumber || matchedBillReceiptNumber || ''));
         setPaymentMode(readStringField(foundBill, ["paymentMode", "payment_mode"]) || '');
         setOthersDescription((foundBill.othersDescription || '').trim());
@@ -1112,6 +1154,8 @@ const filteredStudents = useMemo(() => {
     setPayments(null);
     setReceiptFeeDetails([]);
     receiptFeeDetailsRef.current = [];
+    receiptPaidDateRef.current = null;
+    setReceiptPaidDateDisplay(null);
     setTotalAmount(0);
     setPaidAmount(0);
     setRemainingAmount(0);
@@ -1413,7 +1457,7 @@ const filteredStudents = useMemo(() => {
       paidAmount,
       remainingAmount,
       paymentMode,
-      currentDate: payments?.created_at || new Date(),
+      currentDate: resolveReceiptPaidDate(searchResults) || new Date(),
       academicYear: getAcademicYear(),
       amountInWords: convertAmountToWords(paidAmount),
       schoolName,
@@ -1434,6 +1478,7 @@ const filteredStudents = useMemo(() => {
         othersPaid,
         othersDescription: otherDescription,
         receiptPaidRows: printReceiptRows,
+        receiptTableRows,
         dynamicFeeRows,
         dynamicFeeDueTotal,
         dynamicFeePaidTotal,
@@ -1455,7 +1500,8 @@ const filteredStudents = useMemo(() => {
     }
   };
 
-  // Print pending bills
+  // Print pending bills — matches the "School Copy / Student-Parent Copy" receipt
+  // layout used by the Generate Bill screen (same design as a fresh payment receipt).
   const printPendingBills = (billsToPrint) => {
     const updatedBills = [...generatedBills];
     billsToPrint.forEach(billToPrint => {
@@ -1468,313 +1514,328 @@ const filteredStudents = useMemo(() => {
     });
     setGeneratedBills(updatedBills);
     localStorage.setItem('generatedBills', JSON.stringify(updatedBills));
+
+    // Only one receipt is printed (as two identical "School Copy" / "Parent Copy" halves),
+    // so the first entry supplies all the data needed.
+    const printData = billsToPrint[0];
+    if (!printData) return;
+
     setTimeout(() => {
       const printWindow = window.open('', '_blank');
-      if (printWindow) {
-        printWindow.document.write(`
-          <!DOCTYPE html>
-          <html>
-            <head>
-              <title>Fee Receipts</title>
-              <style>
-                @page { size: A4 portrait; margin: 0; }
-                * {
-                  margin: 0;
-                  padding: 0;
-                  box-sizing: border-box;
-                  font-family: Arial, sans-serif;
-                }
-                html, body {
-                  width: 210mm;
-                  height: 297mm;
-                }
-                body {
-                  -webkit-print-color-adjust: exact;
-                  print-color-adjust: exact;
-                  width: 210mm;
-                  height: 297mm;
-                  padding: 12mm;
-                }
-                .bill-container {
-                  width: 186mm;
-                  height: 273mm;
-                  display: flex;
-                  flex-direction: column;
-                  justify-content: space-between;
-                  page-break-after: always;
-                }
-                .bill-copy {
-                  width: 186mm;
-                  height: 134mm;
-                  border: 2px solid #000;
-                  padding: 12px;
-                  font-size: 12px;
-                  page-break-inside: avoid;
-                  position: relative;
-                  overflow: hidden;
-                }
-                .header-logo {
-                  height: 150px;
-                  width: 150px;
-                  position: absolute;
-                  left: 50%;
-                  top: 50%;
-                  transform: translate(-50%, -50%);
-                  opacity: 0.2;
-                  z-index: -1;
-                  pointer-events: none;
-                }
-                .text-center {
-                  text-align: center;
-                }
-                .text-right {
-                  text-align: right;
-                }
-                .bold {
-                  font-weight: 900;
-                }
-                table {
-                  width: 100%;
-                  border-collapse: collapse;
-                  margin: 8px 0;
-                }
-                table, th, td {
-                  border: 1px solid #000;
-                }
-                th, td {
-                  padding: 4px;
-                }
-                .signature-line {
-                  margin-top: 20px;
-                  border-top: 1px dashed #000;
-                  width: 120px;
-                  text-align: center;
-                  padding-top: 5px;
-                  font-size: 10px;
-                }
-                .discount-text {
-                  color: green;
-                  font-size: 10px;
-                }
-                  @media print {
-                  body {
-                  -webkit-print-color-adjust: exact !important;
-                    print-color-adjust: exact !important;
-                  }
-                    .bill-copy, .bill-copy table, .bill-copy p {
-                    color: #000000 !important;
-                    font-weight: 900 !important;
-                  }
-                }
-              </style>
-            </head>
-            <body>
-              <div class="bill-container">
-                ${billsToPrint.map((printData, index) => {
-                  const tuitionDiscount = printData.discounts?.tuitionDiscount || 0;
-                  const bookDiscount = printData.discounts?.bookDiscount || 0;
-                  const dynamicRows = Array.isArray(printData.dynamicFeeRows) ? printData.dynamicFeeRows : [];
-                  const receiptRows = Array.isArray(printData.receiptPaidRows) ? printData.receiptPaidRows : [];
-                  const receiptPaidTotal = receiptRows.reduce((sum, row) => sum + (Number(row.amount) || 0), 0);
-                  const receiptDisplayRows = receiptRows.length > 0
-                    ? receiptRows
-                    : [
-                        { label: 'Tuition Fee', amount: printData.tuitionPaid || 0 },
-                        { label: 'Admission Fee', amount: printData.admissionPaid || 0 },
-                        { label: 'Residential Fee', amount: printData.residentialPaid || 0 },
-                        { label: 'Exam Fee', amount: printData.examPaid || 0 },
-                        { label: 'Bus Fee', amount: printData.busPaid || 0 },
-                        { label: 'Book Fee', amount: printData.bookPaid || 0 },
-                        { label: 'Uniform Fee', amount: printData.uniformPaid || 0 },
-                        { label: 'Other Fees', amount: printData.othersPaid || 0, description: printData.othersDescription },
-                        ...dynamicRows.map((row) => ({
-                          label: row.label,
-                          amount: row.paid,
-                        })),
-                      ].filter((fee) => fee.amount > 0);
-                  const dynamicDueTotal = Number(printData.dynamicFeeDueTotal) || 0;
-                  const dynamicPaidTotal = Number(printData.dynamicFeePaidTotal) || 0;
-                  const currentTuitionBalance = Math.max(printData.tuitionFee - tuitionDiscount - printData.tuitionPaid, 0);
-                  const currentExamBalance = Math.max(printData.examFee - printData.examPaid, 0);
-                  const currentBusBalance = Math.max(printData.busFee - printData.busPaid, 0);
-                  const currentBookBalance = Math.max(printData.bookFee - bookDiscount - printData.bookPaid, 0);
-                  const currentUniformBalance = Math.max(printData.uniformFee - printData.uniformPaid, 0);
-                  const currentOthersBalance = Math.max(printData.othersFee - printData.othersPaid, 0);
-                  const totalAmountDue =
-                    (printData.tuitionFee - tuitionDiscount) +
-                    printData.examFee +
-                    printData.busFee +
-                    (printData.bookFee - bookDiscount) +
-                    printData.uniformFee +
-                    printData.othersFee +
-                    printData.admissionFee +
-                    printData.residentialFee +
-                    dynamicDueTotal;
-                  const totalPaidAmount =
-                    printData.tuitionPaid +
-                    printData.examPaid +
-                    printData.busPaid +
-                    printData.bookPaid +
-                    printData.uniformPaid +
-                    printData.othersPaid +
-                    printData.admissionPaid +
-                    printData.residentialPaid +
-                    dynamicPaidTotal;
-                  const totalRemainingAmount = Math.max(totalAmountDue - totalPaidAmount, 0);
-                  const printFeeTotalRows = [
-                    { label: 'Tuition Fee', value: Math.max((printData.tuitionFee || 0) - tuitionDiscount, 0) },
-                    { label: 'Admission Fee', value: printData.admissionFee || 0 },
-                    { label: 'Residential Fee', value: printData.residentialFee || 0 },
-                    { label: 'Exam Fee', value: printData.examFee || 0 },
-                    { label: 'Book Fee', value: Math.max((printData.bookFee || 0) - bookDiscount, 0) },
-                    { label: 'Bus Fee', value: printData.busFee || 0 },
-                    { label: 'Uniform Fee', value: printData.uniformFee || 0 },
-                    { label: 'Other Fees', value: printData.othersFee || 0, description: printData.othersDescription },
-                    ...dynamicRows.map((row) => ({ label: row.label, value: row.total })),
-                  ].filter((fee) => fee.value > 0);
-                  const printReceiptRowsByLabel = new Map();
-                  printFeeTotalRows.forEach((fee) => {
-                    printReceiptRowsByLabel.set(fee.label, {
-                      label: fee.label,
-                      description: fee.description || '',
-                      total: Number(fee.value || 0),
-                      paidNow: 0,
-                    });
-                  });
-                  receiptDisplayRows.forEach((paidRow) => {
-                    const existing = printReceiptRowsByLabel.get(paidRow.label) || {
-                      label: paidRow.label,
-                      description: '',
-                      total: 0,
-                      paidNow: 0,
-                    };
-                    const paidNow = Number(paidRow.amount || 0);
-                    printReceiptRowsByLabel.set(paidRow.label, {
-                      ...existing,
-                      description: existing.description || paidRow.description || '',
-                      total: existing.total > 0 ? existing.total : paidNow,
-                      paidNow: existing.paidNow + paidNow,
-                    });
-                  });
-                  const printReceiptTableRows = Array.from(printReceiptRowsByLabel.values())
-                    .map((row) => ({
-                      ...row,
-                      balance: Math.max((Number(row.total) || 0) - (Number(row.paidNow) || 0), 0),
-                    }))
-                    .filter((row) => row.total > 0 || row.paidNow > 0);
-                  const printReceiptPaidNowTotal = printReceiptTableRows.reduce((sum, row) => sum + row.paidNow, 0);
-                  const printReceiptTotalAmount = printReceiptTableRows.reduce((sum, row) => sum + row.total, 0);
-                  return `
-                    <div class="bill-copy">
-                      <div style="display: flex; align-items: center; margin-bottom: 4px;">
-                        <div style="width: 40px; height: 40px; border-radius: 6px; display: flex; align-items: center; justify-content: center; overflow: hidden; margin-right: 10px;">
-                          <img src="${printData.logoUrl || 'https://via.placeholder.com/40'}" alt="School Logo" style="width: 100%; height: 100%; object-fit: contain;" />
-                        </div>
-                        <div style="flex: 1; text-align: center;">
-                          <h2 class="bold" style="font-size: 14px; color: #1e40af; margin-bottom: 2px;">${printData.schoolName || 'Shree Narayana International School'}</h2>
-                          <div style="border: 1px solid #000; margin: 3px 0; padding: 2px 0; font-weight: bold; font-size: 12px;">
-                            FEES RECEIPT
-                          </div>
-                        </div>
-                      </div>
-                      <table>
-                        <tbody>
-                          <tr>
-                            <td><strong>Receipt No.</strong> ${formatReceiptNumber(printData.receiptNumber)}</td>
-                            <td class="text-right">
-                              <strong> Paid Date:</strong>
-                              ${formatDate(
-            printData.currentDate || new Date()
-          )}
-                            </td>
-                          </tr>
-                          <tr>
-                            <td><strong>Regn. No.</strong> ${printData.studentData?.rollNumber || 'N/A'}</td>
-                            <td class="text-right"><strong>Academic Year:</strong> ${printData.academicYear}</td>
-                          </tr>
-                          <tr>
-                            <td><strong>Student Name:</strong> ${printData.studentData?.name || 'N/A'}</td>
-                            <td class="text-right"><strong>Father Name:</strong> ${printData.studentData?.fatherName || 'N/A'}</td>
-                          </tr>
-                          <tr>
-                            <td><strong>Class / Standard:</strong> ${printData.studentData?.class?.toUpperCase() || 'N/A'}</td>
-                            <td class="text-right"><strong>Section:</strong> ${printData.studentData?.section || 'A'}</td>
-                          </tr>
-                        </tbody>
-                      </table>
-                      <table style="width: 100%; border-collapse: collapse; font-size: 10px;">
-                        <thead>
-                          <tr style="background-color: #f0f0f0; font-weight: bold;">
-                            <th style="border: 1px solid black; padding: 3px; text-align: left;">S.NO</th>
-                            <th style="border: 1px solid black; padding: 3px; text-align: left;">Fee Details</th>
-                            <th style="border: 1px solid black; padding: 3px; text-align: right;">Total (₹)</th>
-                            <th style="border: 1px solid black; padding: 3px; text-align: right;">Paid Now (₹)</th>
-                            <th style="border: 1px solid black; padding: 3px; text-align: right;">Balance (₹)</th>
-                          </tr>
-                        </thead>
-                      <tbody>
-                        ${printReceiptTableRows.map((item, idx) => `
-                            <tr>
-                              <td style="border: 1px solid black; padding: 3px; text-align: left;">${idx + 1}</td>
-                              <td style="border: 1px solid black; padding: 3px; text-align: left;">
-                                ${item.label}${item.description ? `<div style="font-size: 9px;">${item.description}</div>` : ""}
-                              </td>
-                              <td style="border: 1px solid black; padding: 3px; text-align: right;">₹${item.total.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
-                              <td style="border: 1px solid black; padding: 3px; text-align: right; color: green;">₹${item.paidNow.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
-                              <td style="border: 1px solid black; padding: 3px; text-align: right;">₹${item.balance.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
-                            </tr>
-                          `).join('')}
-                          <tr style="background-color: #f9fafb; font-weight: bold;">
-                            <td colspan="2" style="border: 1px solid black; padding: 3px; text-align: right;">Total</td>
-                            <td style="border: 1px solid black; padding: 3px; text-align: right;">₹${printReceiptTotalAmount.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
-                            <td style="border: 1px solid black; padding: 3px; text-align: right; color: green;">₹${printReceiptPaidNowTotal.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
-                            <td style="border: 1px solid black; padding: 3px; text-align: right;">₹${Math.max(printReceiptTotalAmount - printReceiptPaidNowTotal, 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
-                          </tr>
-                        </tbody>
-                      </table>
-                      <p style="font-style: italic; margin-top: 3px; font-size: 10px;">
-                        <strong>Paid Amount (in words):</strong> ${convertAmountToWords(printReceiptPaidNowTotal || totalPaidAmount)}
-                      </p>
-                      <div style="display:flex;justify-content:flex-end;font-weight:bold;padding:5px 10px;">
-                        <div style="display:flex;gap:20px;">
-                        
-                        </div>
-                      </div>
-                      <div style="margin-top: 10px; font-size: 11px;">
-                        <p><strong>Payment Mode:</strong> ${printData.paymentMode || 'Cash/Cheque/Online'}</p>
-                        ${(printData.paymentMode === 'Cheque' || printData.paymentMode === 'Online') ? `
-                          <p><strong>Cheque/Transaction No.:</strong> ___________________</p>
-                          <p><strong>Bank Name:</strong> ___________________</p>
-                        ` : ''}
-                      </div>
-                      <div style="display:flex;justify-content:space-between;margin-top:15px;">
-                        <div class="signature-line">Parent's Signature</div>
-                        <div style="text-align:center;width:120px;">
-                          <div style="font-size:9px;margin-bottom:2px;">${localStorage.getItem("name") || ''}</div>
-                          <div class="signature-line">Authorised Signature</div>
-                        </div>
-                      </div>
-                      <div style="margin-top: 5px; font-size: 8px; text-align: center;">
-                        <p>This is a computer generated receipt. No signature required.</p>
-                        <p>Please bring this receipt for any fee related queries.</p>
-                      </div>
-                    </div>
-                  `;
-                }).join('')}
-              </div>
-              <script>
-                window.onload = function() {
-                  setTimeout(function() {
-                    window.print();
-                    window.close();
-                  }, 200);
-                };
-              </script>
-            </body>
-          </html>
-        `);
-        printWindow.document.close();
-      }
+      if (!printWindow) return;
+
+      const tuitionDiscount = printData.discounts?.tuitionDiscount || 0;
+      const bookDiscount = printData.discounts?.bookDiscount || 0;
+      const dynamicRows = Array.isArray(printData.dynamicFeeRows) ? printData.dynamicFeeRows : [];
+      const receiptRows = Array.isArray(printData.receiptPaidRows) ? printData.receiptPaidRows : [];
+      const resolvedReceiptTableRows = Array.isArray(printData.receiptTableRows)
+        ? printData.receiptTableRows
+            .map((row) => ({
+              label: row.label,
+              description: row.description || '',
+              total: Number(row.total) || 0,
+              paidNow: Number(row.paidNow) || 0,
+            }))
+            .filter((row) => row.paidNow > 0)
+        : [];
+      const receiptDisplayRows = receiptRows.length > 0
+        ? receiptRows
+        : [
+            { label: 'Tuition Fee', amount: printData.tuitionPaid || 0 },
+            { label: 'Admission Fee', amount: printData.admissionPaid || 0 },
+            { label: 'Residential Fee', amount: printData.residentialPaid || 0 },
+            { label: 'Exam Fee', amount: printData.examPaid || 0 },
+            { label: 'Bus Fee', amount: printData.busPaid || 0 },
+            { label: 'Book Fee', amount: printData.bookPaid || 0 },
+            { label: 'Uniform Fee', amount: printData.uniformPaid || 0 },
+            { label: 'Other Fees', amount: printData.othersPaid || 0, description: printData.othersDescription },
+            ...dynamicRows.map((row) => ({
+              label: row.label,
+              amount: row.paid,
+            })),
+          ].filter((fee) => fee.amount > 0);
+      const dynamicDueTotal = Number(printData.dynamicFeeDueTotal) || 0;
+      const dynamicPaidTotal = Number(printData.dynamicFeePaidTotal) || 0;
+      const totalAmountDue =
+        (printData.tuitionFee - tuitionDiscount) +
+        printData.examFee +
+        printData.busFee +
+        (printData.bookFee - bookDiscount) +
+        printData.uniformFee +
+        printData.othersFee +
+        printData.admissionFee +
+        printData.residentialFee +
+        dynamicDueTotal;
+      const totalPaidAmount =
+        printData.tuitionPaid +
+        printData.examPaid +
+        printData.busPaid +
+        printData.bookPaid +
+        printData.uniformPaid +
+        printData.othersPaid +
+        printData.admissionPaid +
+        printData.residentialPaid +
+        dynamicPaidTotal;
+      const printFeeTotalRows = [
+        { label: 'Tuition Fee', value: Math.max((printData.tuitionFee || 0) - tuitionDiscount, 0) },
+        { label: 'Admission Fee', value: printData.admissionFee || 0 },
+        { label: 'Residential Fee', value: printData.residentialFee || 0 },
+        { label: 'Exam Fee', value: printData.examFee || 0 },
+        { label: 'Book Fee', value: Math.max((printData.bookFee || 0) - bookDiscount, 0) },
+        { label: 'Bus Fee', value: printData.busFee || 0 },
+        { label: 'Uniform Fee', value: printData.uniformFee || 0 },
+        { label: 'Other Fees', value: printData.othersFee || 0, description: printData.othersDescription },
+        ...dynamicRows.map((row) => ({ label: row.label, value: row.total })),
+      ].filter((fee) => fee.value > 0);
+      const printReceiptRowsByLabel = new Map();
+      printFeeTotalRows.forEach((fee) => {
+        printReceiptRowsByLabel.set(fee.label, {
+          label: fee.label,
+          description: fee.description || '',
+          total: Number(fee.value || 0),
+          paidNow: 0,
+        });
+      });
+      receiptDisplayRows.forEach((paidRow) => {
+        const existing = printReceiptRowsByLabel.get(paidRow.label) || {
+          label: paidRow.label,
+          description: '',
+          total: 0,
+          paidNow: 0,
+        };
+        const paidNow = Number(paidRow.amount || 0);
+        printReceiptRowsByLabel.set(paidRow.label, {
+          ...existing,
+          description: existing.description || paidRow.description || '',
+          total: existing.total > 0 ? existing.total : paidNow,
+          paidNow: existing.paidNow + paidNow,
+        });
+      });
+      const printReceiptTableRows = resolvedReceiptTableRows.length > 0
+        ? resolvedReceiptTableRows
+        : Array.from(printReceiptRowsByLabel.values())
+            .filter((row) => row.paidNow > 0);
+      const printReceiptPaidNowTotal = printReceiptTableRows.reduce((sum, row) => sum + row.paidNow, 0);
+      const printReceiptTotalAmount = printReceiptTableRows.reduce((sum, row) => sum + row.total, 0);
+      const paidNowOrTotal = printReceiptPaidNowTotal || totalPaidAmount;
+      const logoSrc = printData.logoUrl || 'https://via.placeholder.com/40';
+      const schoolNameDisplay = printData.schoolName || 'School Name';
+
+      const receiptCardHTML = `
+        <div style="background-color:#ffffff;padding:0.5rem;border:1px solid #ccc;border-radius:0.25rem;">
+          <img src="${logoSrc}" alt="Watermark" style="position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);width:200px;height:200px;opacity:0.15;z-index:0;pointer-events:none;" />
+          <div style="display:flex;align-items:center;gap:8px;margin-bottom:0.25rem;position:relative;z-index:1;">
+            <div style="width:34px;height:34px;border-radius:6px;border:1px solid #d1d5db;background-color:#fff;display:flex;align-items:center;justify-content:center;overflow:hidden;flex-shrink:0;">
+              <img src="${logoSrc}" alt="School Logo" style="width:100%;height:100%;object-fit:contain;" />
+            </div>
+            <div style="flex:1;text-align:center;">
+              <h1 style="font-size:1rem;font-weight:700;color:#1e40af;margin:0 0 0.1rem 0;">${schoolNameDisplay}</h1>
+              <div style="border:.5px solid black;margin:3px 0;padding:2px 0;font-weight:bold;font-size:10px;">FEES RECEIPT</div>
+            </div>
+          </div>
+          <table style="width:100%;border-collapse:collapse;margin-bottom:0.11rem;position:relative;z-index:1;">
+            <tbody>
+              <tr>
+                <td style="text-align:left;width:50%;font-size:11px;"><strong>Receipt No.</strong> ${formatReceiptNumber(printData.receiptNumber)}</td>
+                <td style="text-align:left;width:50%;font-size:11px;"><strong>Paid Date:</strong> ${formatDate(printData.currentDate || new Date())}</td>
+              </tr>
+              <tr>
+                <td style="text-align:left;font-size:11px;"><strong>Regn. No.</strong> ${printData.studentData?.rollNumber || 'N/A'}</td>
+                <td style="text-align:left;font-size:11px;"><strong>Academic Year:</strong> ${printData.academicYear}</td>
+              </tr>
+              <tr>
+                <td style="text-align:left;font-size:11px;"><strong>Student Name:</strong> ${printData.studentData?.name || 'N/A'}</td>
+                <td style="text-align:left;font-size:11px;"><strong>Father's Name:</strong> ${printData.studentData?.fatherName || 'N/A'}</td>
+              </tr>
+              <tr>
+                <td style="text-align:left;font-size:11px;"><strong>Class:</strong> ${printData.studentData?.class?.toUpperCase() || 'N/A'}</td>
+                <td style="text-align:left;font-size:11px;"><strong>Section:</strong> ${printData.studentData?.section || 'A'}</td>
+              </tr>
+            </tbody>
+          </table>
+          <h4 style="margin:5px 0 1px 0;font-size:12px;position:relative;z-index:1;">Fee Receipt Details</h4>
+          <table style="width:100%;border-collapse:collapse;margin-bottom:10px;font-size:10px;position:relative;z-index:1;">
+            <thead>
+              <tr style="background-color:#f0f0f0;">
+                <th style="border:1px solid #000;padding:3px;text-align:left;">S.No</th>
+                <th style="border:1px solid #000;padding:3px;text-align:left;">Fee Type</th>
+                <th style="border:1px solid #000;padding:3px;text-align:right;">Total</th>
+                <th style="border:1px solid #000;padding:3px;text-align:right;">Paid Now</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${printReceiptTableRows.map((item, idx) => `
+                <tr>
+                  <td style="border:1px solid #000;padding:3px;">${idx + 1}</td>
+                  <td style="border:1px solid #000;padding:3px;text-align:left;">
+                    ${item.label}${item.description ? `<div style="font-size:9px;color:#555;">${item.description}</div>` : ''}
+                  </td>
+                  <td style="border:1px solid #000;padding:3px;text-align:right;">₹${item.total.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+                  <td style="border:1px solid #000;padding:3px;text-align:right;color:green;">₹${item.paidNow.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+                </tr>
+              `).join('')}
+              <tr style="background-color:#f9fafb;font-weight:bold;">
+                <td colspan="2" style="border:1px solid #000;padding:3px;text-align:right;">Total</td>
+                <td style="border:1px solid #000;padding:3px;text-align:right;">₹${printReceiptTotalAmount.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+                <td style="border:1px solid #000;padding:3px;text-align:right;color:green;">₹${printReceiptPaidNowTotal.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+              </tr>
+            </tbody>
+          </table>
+          <p style="font-style:italic;margin-top:3px;font-size:10px;position:relative;z-index:1;">
+            <strong>Paid Amount (in words):</strong> ${convertAmountToWords(paidNowOrTotal)}
+          </p>
+          <div style="display:flex;justify-content:flex-end;font-weight:bold;padding:5px 10px;position:relative;z-index:1;">
+            <div>Total Paid by Student : ₹${paidNowOrTotal.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
+          </div>
+          <div style="margin-top:10px;font-size:12px;position:relative;z-index:1;">
+            <p><strong>Payment Mode:</strong> ${printData.paymentMode || 'Cash/Cheque/Online'}</p>
+            ${(printData.paymentMode === 'Cheque' || printData.paymentMode === 'Online') ? `
+              <p><strong>Cheque/Transaction No.:</strong> ___________________</p>
+              <p><strong>Bank Name:</strong> ___________________</p>
+            ` : ''}
+          </div>
+          <div style="display:flex;justify-content:space-between;margin-top:15px;position:relative;z-index:1;">
+            <div style="border-top:1px dashed #000;width:120px;text-align:center;padding-top:5px;font-size:11px;">Parent's Signature</div>
+            <div style="text-align:center;width:120px;">
+              <div style="font-size:11px;margin-bottom:2px;">${localStorage.getItem('name') || ''}</div>
+              <div style="border-top:1px dashed #000;padding-top:5px;font-size:11px;">Authorised Signature</div>
+            </div>
+          </div>
+        </div>
+      `;
+
+      printWindow.document.write(`
+<!DOCTYPE html>
+<html>
+<head>
+<title>Fee Receipt</title>
+<style>
+
+@page{
+    size:Letter;
+    margin:12mm;
+}
+
+body{
+    margin:0;
+    padding:0;
+    font-family:Arial,sans-serif;
+}
+
+.receipt-copy{
+    position: relative;
+    overflow: hidden;
+}
+
+.receipt-title{
+    font-weight:bold;
+    font-size:12px;
+    margin-bottom:6px;
+}
+
+.receipt-divider{
+    margin:20px 0;
+    border-top:3px dashed #000;
+    position:relative;
+}
+
+.receipt-divider::after{
+    content:"✂ Cut Here";
+    position:absolute;
+    left:50%;
+    transform:translateX(-50%);
+    top:-12px;
+    background:#fff;
+    padding:0 10px;
+    font-size:14px;
+    font-weight:bold;
+}
+
+table{
+    width:100%;
+    border-collapse:collapse;
+}
+
+thead{
+    display:table-header-group;
+}
+
+tbody{
+    display:table-row-group;
+}
+
+tr{
+    page-break-inside:avoid;
+    break-inside:avoid;
+}
+
+.page-break{
+    page-break-before:always;
+}
+
+.receipt-copy td,
+.receipt-copy th,
+.receipt-copy p,
+.receipt-copy span,
+.receipt-copy div,
+.receipt-copy label,
+.receipt-copy strong{
+    font-size:12px !important;
+}
+
+.receipt-copy h1{
+    font-size:22px !important;
+}
+
+.receipt-copy h4{
+    font-size:15px !important;
+}
+
+</style>
+</head>
+<body>
+
+<div id="schoolCopy" class="receipt-copy">
+    <div class="receipt-title">School Copy</div>
+    ${receiptCardHTML}
+</div>
+
+<div id="divider" class="receipt-divider"></div>
+
+<div id="parentCopy" class="receipt-copy">
+    <div class="receipt-title">Student / Parent Copy</div>
+    ${receiptCardHTML}
+</div>
+
+</body>
+</html>
+`);
+
+      printWindow.document.close();
+      setTimeout(() => {
+        const schoolCopy = printWindow.document.getElementById('schoolCopy');
+        const parentCopy = printWindow.document.getElementById('parentCopy');
+        const divider = printWindow.document.getElementById('divider');
+
+        if (!schoolCopy || !parentCopy || !divider) {
+          printWindow.close();
+          return;
+        }
+
+        // Approximate printable height of a Letter page after margins
+        const pageHeight = 980;
+        const totalHeight = schoolCopy.scrollHeight + divider.offsetHeight + parentCopy.scrollHeight;
+
+        // Move to page 2 only if BOTH copies don't fit together
+        if (totalHeight > pageHeight) {
+          parentCopy.classList.add('page-break');
+          divider.style.display = 'none';
+        }
+
+        printWindow.focus();
+        printWindow.print();
+        printWindow.close();
+      }, 400);
     }, 100);
   };
 
@@ -1836,7 +1897,9 @@ const filteredStudents = useMemo(() => {
               <tbody>
                   <tr>
                     <td style="text-align: left; padding: 1px;"><strong>Receipt No:</strong> ${formatReceiptNumber(receiptNumber)}</td>
-                    <td style="text-align: right; padding: 1px;"><strong>Paid Date:</strong> ${formatDate(new Date())}</td>
+                    <td style="text-align: right; padding: 1px;"><strong>Paid Date:</strong> ${formatDate(
+                      resolveReceiptPaidDate(searchResults) || new Date()
+                    )}</td>
                   </tr>
                   <tr>
                     <td style="text-align: left; padding: 1px;"><strong>Regn.No:</strong> ${studentData.rollNumber}</td>
@@ -2022,7 +2085,7 @@ const filteredStudents = useMemo(() => {
       const billData = {
         receiptNumber, studentData, tuitionFee, tuitionPaid, examFee, examPaid, busFee, busPaid, bookFee, bookPaid,
         uniformFee, uniformPaid, othersFee, othersPaid, totalAmount: totalAmountDue, paidAmount: totalPaidAmount,
-        remainingAmount: totalRemainingAmount, paymentMode, currentDate: new Date(), academicYear: getAcademicYear(),
+        remainingAmount: totalRemainingAmount, paymentMode, currentDate: resolveReceiptPaidDate(searchResults) || new Date(), academicYear: getAcademicYear(),
         amountInWords: convertAmountToWords(totalPaidAmount), schoolName, discounts: { tuitionDiscount, bookDiscount },
         dynamicFeeRows,
         dynamicFeeDueTotal,
@@ -2354,7 +2417,7 @@ const filteredStudents = useMemo(() => {
         ...row,
         balance: Math.max((Number(row.total) || 0) - (Number(row.paidNow) || 0), 0),
       }))
-      .filter((row) => row.total > 0 || row.paidNow > 0);
+      .filter((row) => row.paidNow > 0);
   })();
   const receiptPaidNowTotal = receiptTableRows.reduce((sum, row) => sum + row.paidNow, 0);
   const receiptTotalAmount = receiptTableRows.reduce((sum, row) => sum + row.total, 0);
@@ -2785,12 +2848,8 @@ onClose={() => setIsPreviewPopupOpen(false)}
                         </td>
                         <td style={{ textAlign: 'left', fontSize: '10px' }}>
                           <strong>Paid Date:</strong>
-                          {` ${payments?.paymentDate || payments?.created_at || payments?.paymentHistory?.[0]?.paymentDate
-                            ? formatDate(new Date(
-                              payments.paymentDate ||
-                              payments.created_at ||
-                              payments.paymentHistory[0].paymentDate
-                            ))
+                          {` ${resolveReceiptPaidDate(searchResults)
+                            ? formatDate(resolveReceiptPaidDate(searchResults))
                             : 'No payment date available'}`}
                         </td>
                       </tr>
